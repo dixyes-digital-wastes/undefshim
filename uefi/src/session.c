@@ -9,6 +9,7 @@ bool usSessionInit(UsSession *s) {
     usRegistryInit(&s->registry);
     s->config = NULL;
     s->patchApplied = 0;
+    s->payloadPlaced = false;
 
     if (!usPoolAllocate(&s->poolAlloc)) {
         return false;

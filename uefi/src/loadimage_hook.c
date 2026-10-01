@@ -4,6 +4,7 @@
 
 #include <uefi.h>
 
+#include "core/cfg.h"
 #include "core/pe.h"
 #include "uefi/src/console.h"
 #include "uefi/src/loadimage_hook.h"
@@ -34,6 +35,23 @@ static void registerOnOwnStack(void *arg) {
 
     req->recorded = usRegistryAddBootmgfw(&gSession->registry, req->image->ImageBase,
                                           req->image->ImageSize);
+}
+
+/*
+ * Applying the patch table also runs on our own stack, for the same reason the
+ * registration does and with less margin: it walks the table, looks images up
+ * by name and writes into them, which together is a frame this hook has no
+ * room for. Running it here is what keeps the overflow out of the boot
+ * manager's stack, where it would surface much later as something unrelated.
+ */
+typedef struct PatchRequest_t {
+    int applied;
+} PatchRequest;
+
+static void applyPatchesOnOwnStack(void *arg) {
+    PatchRequest *req = arg;
+
+    req->applied = usPatchApplyPending(gSession);
 }
 
 static efi_status_t EFIAPI loadImageHook(boolean_t bootPolicy, efi_handle_t parent,
@@ -77,8 +95,13 @@ static efi_status_t EFIAPI loadImageHook(boolean_t bootPolicy, efi_handle_t pare
     }
 
     /* A patch aimed at this image can go in now, while the loader is still
-     * holding it and before anything runs it. */
-    usPatchApplyPending(gSession);
+     * holding it and before anything runs it. On our own stack: see
+     * applyPatchesOnOwnStack. */
+    {
+        PatchRequest preq = { .applied = 0 };
+
+        usStackRunOn(gSession->bootStackTop, applyPatchesOnOwnStack, &preq);
+    }
 
     return status;
 }

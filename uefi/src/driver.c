@@ -19,8 +19,10 @@
 #include "uefi/src/console.h"
 #include "uefi/src/gmm_hook.h"
 #include "uefi/src/loadimage_hook.h"
+#include "uefi/src/payload_place.h"
 #include "uefi/src/registry.h"
 #include "uefi/src/session.h"
+#include "uefi/src/vamap.h"
 
 /* The driver's state. One instance, because there is one driver. */
 static UsSession gSession;
@@ -113,6 +115,20 @@ int main(int argc, char **argv) {
     usConsolePutHex(gSession.pool->stackTop[US_MAX_CPUS - 1]);
     usConsolePuts("\npool: ready\n");
 
+    /* The payload goes into place before anything is armed against it: if it
+     * cannot be placed there is nothing to enter, and every later step would
+     * be arming something that is not there. */
+    {
+        UsPayloadPlace place;
+
+        if (!usPayloadPlace(&gSession, &place)) {
+            usConsolePuts("payload: no executable memory\n");
+            usConsolePuts("US-M6-FAIL\n");
+            return 0;
+        }
+        usPayloadReport(&gSession);
+    }
+
     if (!usLoadImageHookInstall(&gSession)) {
         usConsolePuts("loadimage: hook failed\n");
         usConsolePuts("US-M4-FAIL\n");
@@ -128,6 +144,21 @@ int main(int argc, char **argv) {
         return 0;
     }
     usConsolePuts("gmm: armed\n");
+
+    /*
+     * The address change is not armed here, deliberately.
+     *
+     * Registering for it was measured to change what the boot manager does:
+     * with the event registered the loader stalls in one of its spare branch
+     * slots and the kernel never starts; without it the boot reaches the
+     * kernel. The notification cannot fire this early anyway, so registering
+     * now buys nothing and costs a working boot.
+     *
+     * It will have to be handled: the payload and the pool are both runtime
+     * memory, and the switch moves them. That belongs with the step that
+     * needs the moved addresses, where it can be tested. See vamap.h.
+     */
+    (void)usVaMapArm;
 
     usConsolePuts("US-M4-SETUP\n");
     return 0;
