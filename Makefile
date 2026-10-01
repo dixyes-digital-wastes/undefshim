@@ -44,8 +44,8 @@ DRIVER_MAIN_OBJ := $(BUILD_DIR)/driver_main.o
 DRIVER_SRCS := uefi/src/config.c uefi/src/registry.c \
                uefi/src/loadimage_hook.c uefi/src/cache.c uefi/src/console.c \
                uefi/src/pool.c uefi/src/service_hook.c uefi/src/gmm_hook.c \
-               uefi/src/patch.c uefi/src/session.c \
-               core/cfg.c core/pe.c core/scan.c core/rva_patch.c core/pool.c \
+               uefi/src/patch.c uefi/src/work.c uefi/src/session.c \
+               core/cfg.c core/pe.c core/scan.c core/plan.c core/rva_patch.c core/pool.c \
                $(TOML)/toml.c
 DRIVER_ASM := uefi/src/stack.S
 DRIVER_OBJS := $(DRIVER_MAIN_OBJ) \
@@ -100,7 +100,7 @@ check:
 	@$(MAKE) --no-print-directory -C $(POSIX_UEFI_TESTS) check
 	@$(MAKE) --no-print-directory -C $(TOML_TESTS) check
 	@$(MAKE) --no-print-directory -C tests/unit check
-	@$(MAKE) --no-print-directory -C $(TOOLS_TESTS) check CORPUS=$(CORPUS)
+	@$(MAKE) --no-print-directory -C $(TOOLS_TESTS) check CORPUS=$(CORPUS) PLAN_CORPUS=$(PLAN_CORPUS)
 
 # Checks that boot the image. Slower, but this is the only evidence that
 # anything actually works. The Windows disk is external, so this one is
@@ -113,6 +113,7 @@ check-qemu: esp
 	@tests/deploy/config_cases.sh
 	@WIN_DISK=$(WIN_DISK) tests/deploy/boot_hook.sh
 	@WIN_DISK=$(WIN_DISK) tests/deploy/patch_case.sh
+	@WIN_DISK=$(WIN_DISK) PLAN_CORPUS=$(PLAN_CORPUS) tests/deploy/plan_case.sh
 	@WIN_DISK=$(WIN_DISK) tests/deploy/breakpoint_case.sh
 
 clean:
