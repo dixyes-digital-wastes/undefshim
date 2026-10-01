@@ -1,0 +1,40 @@
+/*
+ * The state the driver accumulates during boot.
+ *
+ * One object rather than a set of file static variables, because the hooks
+ * need to reach the same pool and the same registry, and because the payload
+ * has to be handed the same thing later. It is the object the design document
+ * calls a session: everything that is true of this boot.
+ */
+
+#ifndef US_SESSION_H
+#define US_SESSION_H
+
+#include <stdbool.h>
+#include <stdint.h>
+
+#include "uefi/src/pool.h"
+#include "uefi/src/registry.h"
+
+typedef struct UsSession_t {
+    UsRegistry   registry;
+    UsPool      *pool;
+    UsPoolAlloc  poolAlloc;
+
+    /*
+     * The stack our own work runs on when we have been entered on someone
+     * else's. Hooks are called on the caller's stack, which we can make no
+     * assumptions about, so any work of consequence is run on this one
+     * instead. See stack.h.
+     */
+    uint64_t bootStackTop;
+} UsSession;
+
+/*
+ * Brings up everything the boot needs: the pool, the stacks, and the registry.
+ * Returns false when the firmware refuses the pool, which is fatal: without it
+ * there is no stack and no handler.
+ */
+bool usSessionInit(UsSession *s);
+
+#endif

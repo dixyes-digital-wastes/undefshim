@@ -1,0 +1,38 @@
+# Unit tests for this project. Everything here runs on the host.
+#
+# Tests for the forks live with the forks: posix-uefi's under
+# third_party/posix-uefi/tests, toml-c's under third_party/toml-c/tests. What
+# is checked here is our own logic, and how it is wired to the parser.
+
+# CC is predefined by make, so a plain ?= would never take effect.
+ifeq ($(origin CC),default)
+CC := clang
+endif
+
+ROOT := ../..
+TOML := $(ROOT)/third_party/toml-c
+
+# core/cfg is built the way the driver builds it, against the same optional
+# subsets of the parser, so the tests exercise that configuration.
+TOML_DEFS := -DTOML_NO_FLOAT -DTOML_NO_TIMESTAMP -DTOML_NO_FILE
+CFG_CFLAGS := -std=gnu23 -O2 -Wall -Wextra -I$(ROOT) -I$(TOML) $(TOML_DEFS)
+
+.PHONY: all check clean
+all: test_cfg test_layout test_scan_images
+
+test_cfg: test_cfg.c $(ROOT)/core/cfg.c $(TOML)/toml.c
+	$(CC) $(CFG_CFLAGS) $^ -o $@
+
+test_layout: test_layout.c $(ROOT)/core/pool.c
+	$(CC) -std=gnu23 -O2 -Wall -Wextra -I$(ROOT) $^ -o $@
+
+test_scan_images: test_scan_images.c $(ROOT)/core/pe.c
+	$(CC) -std=gnu23 -O2 -Wall -Wextra -I$(ROOT) $^ -o $@
+
+check: all
+	./test_cfg
+	./test_layout
+	./test_scan_images
+
+clean:
+	rm -f test_cfg test_layout test_scan_images
