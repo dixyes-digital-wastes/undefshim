@@ -13,6 +13,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "core/cfg.h"
 #include "uefi/src/pool.h"
 #include "uefi/src/registry.h"
 
@@ -20,6 +21,15 @@ typedef struct UsSession_t {
     UsRegistry   registry;
     UsPool      *pool;
     UsPoolAlloc  poolAlloc;
+
+    /*
+     * The parsed configuration, owned here. Its patch table names stages that
+     * are not loaded yet when the driver starts, so it has to outlive the
+     * function that read it.
+     */
+    UsConfig    *config;
+    /* One bit per applied patch, see patch.h. */
+    uint32_t     patchApplied;
 
     /*
      * The stack our own work runs on when we have been entered on someone

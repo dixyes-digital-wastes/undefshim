@@ -13,6 +13,7 @@ third_party/toml-c/tests/test_toml
 tests/unit/test_cfg
 tests/unit/test_layout
 tests/unit/test_scan_images
+tests/unit/test_rva_patch
 tests/tools/peprobe
 
 __pycache__/

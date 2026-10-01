@@ -44,7 +44,7 @@ DRIVER_MAIN_OBJ := $(BUILD_DIR)/driver_main.o
 DRIVER_SRCS := uefi/src/config.c uefi/src/registry.c \
                uefi/src/loadimage_hook.c uefi/src/cache.c uefi/src/console.c \
                uefi/src/pool.c uefi/src/service_hook.c uefi/src/gmm_hook.c \
-               uefi/src/session.c \
+               uefi/src/patch.c uefi/src/session.c \
                core/cfg.c core/pe.c core/scan.c core/rva_patch.c core/pool.c \
                $(TOML)/toml.c
 DRIVER_ASM := uefi/src/stack.S
@@ -112,6 +112,8 @@ check-qemu: esp
 	@tests/deploy/driver_boot.sh
 	@tests/deploy/config_cases.sh
 	@WIN_DISK=$(WIN_DISK) tests/deploy/boot_hook.sh
+	@WIN_DISK=$(WIN_DISK) tests/deploy/patch_case.sh
+	@WIN_DISK=$(WIN_DISK) tests/deploy/breakpoint_case.sh
 
 clean:
 	rm -rf $(BUILD_DIR)

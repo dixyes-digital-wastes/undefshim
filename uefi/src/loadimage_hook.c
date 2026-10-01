@@ -7,6 +7,7 @@
 #include "core/pe.h"
 #include "uefi/src/console.h"
 #include "uefi/src/loadimage_hook.h"
+#include "uefi/src/patch.h"
 #include "uefi/src/service_hook.h"
 #include "uefi/src/stack.h"
 
@@ -74,6 +75,10 @@ static efi_status_t EFIAPI loadImageHook(boolean_t bootPolicy, efi_handle_t pare
         usConsolePutHex((uint64_t)(uintptr_t)lip->ImageBase);
         usConsolePuts("\n");
     }
+
+    /* A patch aimed at this image can go in now, while the loader is still
+     * holding it and before anything runs it. */
+    usPatchApplyPending(gSession);
 
     return status;
 }
