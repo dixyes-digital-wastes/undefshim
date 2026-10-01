@@ -55,6 +55,8 @@ static void printConfig(const UsConfig *cfg) {
 }
 
 int main(int argc, char **argv) {
+    UsConfig *cfg = NULL;
+
     (void)argc;
     (void)argv;
 
@@ -62,7 +64,6 @@ int main(int argc, char **argv) {
     usConsolePuts("undefshim " US_VERSION_STRING "\n");
 
     {
-        UsConfig *cfg = NULL;
         char msg[192];
         UsConfigLoad result = usConfigLoad(&cfg, msg, sizeof(msg));
 
@@ -82,7 +83,6 @@ int main(int argc, char **argv) {
         }
 
         printConfig(cfg);
-        usConfigFree(cfg);
         usConsolePuts("US-M2-DONE\n");
     }
 
@@ -93,6 +93,10 @@ int main(int argc, char **argv) {
         usConsolePuts("US-M4-FAIL\n");
         return 0;
     }
+
+    /* Handed over rather than freed: the patch table names stages that are
+     * loaded long after this function has returned. */
+    gSession.config = cfg;
     usConsolePuts("pool: pa=");
     usConsolePutHex(gSession.poolAlloc.basePa);
     usConsolePuts(" va=");

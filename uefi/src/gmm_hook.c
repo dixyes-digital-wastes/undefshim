@@ -9,6 +9,7 @@
 #include "core/scan.h"
 #include "uefi/src/console.h"
 #include "uefi/src/gmm_hook.h"
+#include "uefi/src/patch.h"
 #include "uefi/src/service_hook.h"
 #include "uefi/src/stack.h"
 
@@ -16,6 +17,16 @@ static UsSession *gSession;
 static UsServiceHook gHook;
 static efi_get_memory_map_t gOriginal;
 static bool gDone;
+static uint32_t gScans;
+static bool gReportedWinload;
+static bool gReportedKernel;
+
+/*
+ * The kernel is loaded by the loader, which runs after the first maps the
+ * boot manager asks for, so the hook cannot leave on the first success. This
+ * cap is what keeps a boot that never loads one from scanning for ever.
+ */
+#define US_GMM_MAX_SCANS 64
 
 /*
  * Only loader memory is searched. Images are loaded into these two types and
@@ -98,8 +109,12 @@ static efi_status_t EFIAPI gmmHook(uintn_t *memoryMapSize, efi_memory_descriptor
         return status;
     }
 
-    if (usRegistryGet(&gSession->registry, UsImageNtoskrnl) != NULL
-        && usRegistryGet(&gSession->registry, UsImageWinload) != NULL) {
+    if (usRegistryGet(&gSession->registry, UsImageNtoskrnl) != NULL) {
+        /* Both stages are in hand; there is nothing left to watch for. */
+        if (!gDone) {
+            usServiceHookRemove(&gHook);
+            gDone = true;
+        }
         return status;
     }
 
@@ -115,9 +130,13 @@ static efi_status_t EFIAPI gmmHook(uintn_t *memoryMapSize, efi_memory_descriptor
 
     {
         UsImage *winload = usRegistryGet(&gSession->registry, UsImageWinload);
+        UsImage *kernel = usRegistryGet(&gSession->registry, UsImageNtoskrnl);
 
-        if (winload != NULL) {
-            usConsolePuts("\ngmm: winload found\n");
+        if (winload != NULL && !gReportedWinload) {
+            gReportedWinload = true;
+            usConsolePuts("\ngmm: winload found at ");
+            usConsolePutHex((uint64_t)(uintptr_t)winload->base);
+            usConsolePuts("\n");
 
             UsLeafSite leaf = usLocateTransferLeaf(winload);
             if (leaf.found) {
@@ -128,21 +147,36 @@ static efi_status_t EFIAPI gmmHook(uintn_t *memoryMapSize, efi_memory_descriptor
                 usConsolePuts("gmm: winload leaf ambiguous\n");
             }
         }
-        if (usRegistryGet(&gSession->registry, UsImageNtoskrnl) != NULL) {
-            usConsolePuts("gmm: ntoskrnl found\n");
+
+        if (kernel != NULL && !gReportedKernel) {
+            gReportedKernel = true;
+            usConsolePuts("gmm: ntoskrnl found at ");
+            usConsolePutHex((uint64_t)(uintptr_t)kernel->base);
+            usConsolePuts("\n");
         }
     }
+
+    /*
+     * Whatever the scan has just brought in may be what a patch was waiting
+     * for, so the table is run again here rather than only once at the end.
+     * It comes after the report, because a patch is usually what a check
+     * stops on and everything that describes the run has to be out by then.
+     */
+    usPatchApplyPending(gSession);
+
     usConsolePuts("3");
 
     /*
-     * The kernel has not been loaded yet when this first fires, so the hook
-     * stays until the loader is in memory, which is as far as this stage can
-     * get. Later calls, after the loader has run, bring the kernel too.
+     * The kernel is what this is really waiting for; the loader is reported on
+     * the way so that a boot which never produces one still says how far it
+     * got.
      */
-    if (usRegistryGet(&gSession->registry, UsImageWinload) != NULL) {
+    if (usRegistryGet(&gSession->registry, UsImageNtoskrnl) != NULL
+        || ++gScans >= US_GMM_MAX_SCANS) {
         usServiceHookRemove(&gHook);
         gDone = true;
         usConsolePuts("\ngmm: done\n");
+        usPatchReportPending(gSession);
     }
     usConsolePuts("4");
 
@@ -153,6 +187,9 @@ bool usGmmHookInstall(UsSession *session) {
     gSession = session;
     gOriginal = BS->GetMemoryMap;
     gDone = false;
+    gScans = 0;
+    gReportedWinload = false;
+    gReportedKernel = false;
 
     if (!usServiceHookInstall(&gHook, (void *const *)&BS->GetMemoryMap, (void *)gmmHook)) {
         gOriginal = NULL;

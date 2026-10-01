@@ -7,6 +7,8 @@
 
 bool usSessionInit(UsSession *s) {
     usRegistryInit(&s->registry);
+    s->config = NULL;
+    s->patchApplied = 0;
 
     if (!usPoolAllocate(&s->poolAlloc)) {
         return false;
