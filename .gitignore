@@ -14,7 +14,9 @@ tests/unit/test_cfg
 tests/unit/test_layout
 tests/unit/test_scan_images
 tests/unit/test_rva_patch
+tests/unit/test_plan
 tests/tools/peprobe
+tests/tools/planprobe
 
 __pycache__/
 

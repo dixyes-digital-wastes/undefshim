@@ -12,6 +12,7 @@
 #include "uefi/src/patch.h"
 #include "uefi/src/service_hook.h"
 #include "uefi/src/stack.h"
+#include "uefi/src/work.h"
 
 static UsSession *gSession;
 static UsServiceHook gHook;
@@ -177,6 +178,11 @@ static efi_status_t EFIAPI gmmHook(uintn_t *memoryMapSize, efi_memory_descriptor
         gDone = true;
         usConsolePuts("\ngmm: done\n");
         usPatchReportPending(gSession);
+
+        /* Everything the plan is built from is in memory now. */
+        if (usRegistryGet(&gSession->registry, UsImageNtoskrnl) != NULL) {
+            usWorkCollect(gSession);
+        }
     }
     usConsolePuts("4");
 

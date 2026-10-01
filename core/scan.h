@@ -160,4 +160,78 @@ typedef struct UsLdaprCounts_t {
 
 UsLdaprCounts usCountLdapr(UsImage *img);
 
+/* --- the sites a boot has to act on ------------------------------------- */
+
+/*
+ * A place in an image that the boot intends to do something about.
+ *
+ * These are collected before anything is written, because the decision to act
+ * is worth being able to look at on its own: a site that was found in the
+ * wrong place, or not found at all, is visible here rather than as a fault
+ * later. LDAPR instructions are not sites: there are thousands of them, they
+ * are handled when they fault rather than at boot, and enumerating them would
+ * bury everything else.
+ */
+typedef enum UsSiteKind_e {
+    /* msr vbar_el1, xN. Where a vector table is installed, and therefore the
+     * point at which an exception can be taken over. */
+    UsSiteVbarWrite = 0,
+    /*
+     * The leaf that hands control to the next stage. It is the last thing that
+     * runs before the kernel, which makes it the one moment the kernel image
+     * is in memory and not yet running.
+     */
+    UsSiteTransferLeaf,
+    /* Where the final page tables are loaded. A mapping added before this is
+     * gone after it. */
+    UsSiteTtbrHandoff,
+} UsSiteKind;
+
+typedef struct UsSite_t {
+    UsSiteKind  kind;
+    UsImageKind image;
+    uint32_t    rva;
+    /*
+     * Meaning depends on the kind. For a vector table write it is the Rt of
+     * the store, that is which register holds the address of the table.
+     */
+    uint32_t    auxiliary;
+} UsSite;
+
+/*
+ * Enough for the sites that are expected: the vector table writes are the
+ * numerous ones and there are a few dozen of them, not thousands. A list that
+ * overflows reports it rather than dropping entries silently.
+ */
+#define US_SITE_MAX 128
+
+typedef struct UsSiteList_t {
+    UsSite sites[US_SITE_MAX];
+    size_t count;   /* stored, capped at US_SITE_MAX */
+    size_t total;   /* seen, which may be larger */
+} UsSiteList;
+
+void usSiteListInit(UsSiteList *list);
+
+/* Appends one site. Returns false when the list is full, in which case the
+ * count of seen sites still goes up. */
+bool usSiteAdd(UsSiteList *list, UsSiteKind kind, UsImageKind image, uint32_t rva,
+               uint32_t auxiliary);
+
+/*
+ * Sorts by image and then by RVA, so that the same image always produces the
+ * same order. The order sites are found in depends on the section table, and
+ * comparing two dumps is the whole point of having them.
+ */
+void usSiteListSort(UsSiteList *list);
+
+const char *usSiteKindName(UsSiteKind kind);
+
+/*
+ * Collects every site in one image. Locators that are not unique are not
+ * reported as sites: a match that could be one of several places is not a
+ * place to act on, and the count of what was seen is what says so.
+ */
+size_t usCollectSites(UsSiteList *list, UsImage *img, UsImageKind kind);
+
 #endif
