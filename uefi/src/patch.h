@@ -33,6 +33,12 @@
  * It runs on whatever stack the caller is on, so it keeps to the console's
  * fixed size output and no formatted printing.
  */
+/*
+ * Runs on a stack the caller provides: it walks the table, resolves image
+ * names and writes into the images, which together is a frame too large to
+ * spend on the stack of whoever called the hook. Callers that are entered
+ * from firmware must run it through usStackRunOn.
+ */
 int usPatchApplyPending(UsSession *s);
 
 /*

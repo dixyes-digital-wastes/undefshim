@@ -14,6 +14,7 @@
 #include <stdint.h>
 
 #include "core/cfg.h"
+#include "uefi/src/payload_place.h"
 #include "uefi/src/pool.h"
 #include "uefi/src/registry.h"
 
@@ -21,6 +22,11 @@ typedef struct UsSession_t {
     UsRegistry   registry;
     UsPool      *pool;
     UsPoolAlloc  poolAlloc;
+
+    /* Where the payload was put, once it has been. Placed once and kept: the
+     * addresses in it may already have been handed out. */
+    UsPayloadPlace payloadPlace;
+    bool           payloadPlaced;
 
     /*
      * The parsed configuration, owned here. Its patch table names stages that

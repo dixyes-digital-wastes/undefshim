@@ -88,6 +88,17 @@ static void scanOnOwnStack(void *arg) {
     req->added = scanMap(req->map, req->mapSize, req->descSize);
 }
 
+/*
+ * Applying the patch table on our own stack as well. It walks the table,
+ * resolves image names and writes into the images, and none of that belongs
+ * on the caller's stack: the caller here is the boot manager, deep in a
+ * memory map of its own.
+ */
+static void applyPatchesOnOwnStack(void *arg) {
+    (void)arg;
+    usPatchApplyPending(gSession);
+}
+
 static efi_status_t EFIAPI gmmHook(uintn_t *memoryMapSize, efi_memory_descriptor_t *memoryMap,
                                    uintn_t *mapKey, uintn_t *descriptorSize,
                                    uint32_t *descriptorVersion) {
@@ -162,8 +173,11 @@ static efi_status_t EFIAPI gmmHook(uintn_t *memoryMapSize, efi_memory_descriptor
      * for, so the table is run again here rather than only once at the end.
      * It comes after the report, because a patch is usually what a check
      * stops on and everything that describes the run has to be out by then.
+     *
+     * On our own stack, like the scan: this hook is reached from inside the
+     * boot manager, and applying patches is not a small frame.
      */
-    usPatchApplyPending(gSession);
+    usStackRunOn(gSession->bootStackTop, applyPatchesOnOwnStack, NULL);
 
     usConsolePuts("3");
 
