@@ -1,0 +1,21 @@
+# Everything generated lands here: images, serial logs, variant builds.
+build/
+
+# Objects and libraries, including the ones the third party trees drop next to
+# their own sources.
+*.o
+*.a
+
+# Host side test binaries.
+third_party/posix-uefi/tests/test_printf
+third_party/posix-uefi/tests/test_strtol
+third_party/toml-c/tests/test_toml
+tests/unit/test_cfg
+tests/unit/test_layout
+tests/unit/test_scan_images
+tests/tools/peprobe
+
+__pycache__/
+
+# Editor state, not project configuration.
+.vscode/

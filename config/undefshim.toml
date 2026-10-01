@@ -1,0 +1,12 @@
+# Runtime configuration, read from the first volume that provides it.
+
+version = 1
+
+[log]
+level = "info"
+
+[scan]
+ldapr_rewrite = true
+
+[debug]
+enabled = false
