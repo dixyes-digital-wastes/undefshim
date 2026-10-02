@@ -212,10 +212,17 @@ static bool armSlot(UsSession *s, const UsArmTarget *target, uint32_t next) {
 }
 
 static bool armImage(UsSession *s, UsImageKind kind, size_t *armed) {
-    static const UsVectorSlot slots[US_STUB_SLOTS] = {
+    /*
+     * The SPx slot always, the SP0 slot when asked for. Both are synchronous
+     * entries and an exception lands in whichever matches the stack pointer
+     * in use at the time, so leaving one out means the other covers only part
+     * of the exceptions.
+     */
+    const UsVectorSlot slots[US_STUB_SLOTS] = {
         UsVectorSlotEl1tSync,
         UsVectorSlotEl1hSync,
     };
+    const size_t slotCount = s->armSlot0 ? US_STUB_SLOTS : 1U;
     UsImage *img = usRegistryGet(&s->registry, kind);
     UsVbarTables tables;
     UsSpareSlot hole;
@@ -250,7 +257,7 @@ static bool armImage(UsSession *s, UsImageKind kind, size_t *armed) {
     usConsolePuts("\n");
 
     for (size_t i = 0; i < tables.count; i++) {
-        for (size_t k = 0; k < US_STUB_SLOTS; k++) {
+        for (size_t k = 0; k < slotCount; k++) {
             /* Each table gets its own pair. Sharing one pair between two
              * tables means the second write lands on the first table's stub,
              * and that table's slots then branch into code whose tail belongs
@@ -260,7 +267,7 @@ static bool armImage(UsSession *s, UsImageKind kind, size_t *armed) {
                 .tableRva = tables.rvas[i],
                 .stubRva = hole.rva
                            + (uint32_t)(i * US_STUB_SLOTS + k) * US_SLOT_STUB_BYTES,
-                .slot = slots[k],
+                .slot = s->armSlot0 ? slots[k] : UsVectorSlotEl1hSync,
             };
 
             if (armSlot(s, &target, 0)) {

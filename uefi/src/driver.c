@@ -100,6 +100,7 @@ int main(int argc, char **argv) {
      * The switches that change what the boot does are debugging decisions
      * like any other, so they come from the configuration file. */
     gSession.armEnabled = usConfigDebugBool(cfg, "arm", false);
+    gSession.armSlot0 = usConfigDebugBool(cfg, "arm_slot0", true);
     gSession.vamapEnabled = usConfigDebugBool(cfg, "vamap", false);
     /*
      * Not from the debug section: this one is a scanning decision and is
