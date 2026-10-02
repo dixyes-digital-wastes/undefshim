@@ -18,7 +18,7 @@ TOML_DEFS := -DTOML_NO_FLOAT -DTOML_NO_TIMESTAMP -DTOML_NO_FILE
 CFG_CFLAGS := -std=gnu23 -O2 -Wall -Wextra -I$(ROOT) -I$(TOML) $(TOML_DEFS)
 
 .PHONY: all check clean
-all: test_cfg test_layout test_scan_images test_rva_patch test_plan test_pgtable
+all: test_cfg test_layout test_scan_images test_rva_patch test_plan test_pgtable test_par
 
 test_cfg: test_cfg.c $(ROOT)/core/cfg.c $(TOML)/toml.c
 	$(CC) $(CFG_CFLAGS) $^ -o $@
@@ -38,6 +38,9 @@ test_plan: test_plan.c $(ROOT)/core/pe.c $(ROOT)/core/scan.c $(ROOT)/core/plan.c
 test_pgtable: test_pgtable.c $(ROOT)/core/pgtable.c
 	$(CC) -std=gnu23 -O2 -Wall -Wextra -I$(ROOT) $^ -o $@
 
+test_par: test_par.c $(ROOT)/core/par.c
+	$(CC) -std=gnu23 -O2 -Wall -Wextra -I$(ROOT) $^ -o $@
+
 check: all
 	./test_cfg
 	./test_layout
@@ -45,6 +48,7 @@ check: all
 	./test_rva_patch
 	./test_plan
 	./test_pgtable
+	./test_par
 
 clean:
-	rm -f test_cfg test_layout test_scan_images test_rva_patch test_plan test_pgtable
+	rm -f test_cfg test_layout test_scan_images test_rva_patch test_plan test_pgtable test_par
