@@ -44,12 +44,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 
 VECTOR_TABLE_RVA = 0x604800       # where the kernel puts its vector table
 
-# KiBugCheckData, where Windows leaves the code and its four arguments. The
-# symbol tables this project keeps give it as section 24 offset 1812832, and
-# .data starts at 0xc00000 in the same numbering, so the two add up; the page
-# is added because those tables sit a page below the image.
-KEBUGCHECK_RVA = 0x25ba40         # KeBugCheck, for a breakpoint if one is wanted
-KI_BUG_CHECK_DATA_RVA = 0xc00000 + 1812832 + 0x1000
+KEBUGCHECK_RVA = 0x25ba40         # KeBugCheck, if a breakpoint is ever wanted
 
 QEMU = os.environ.get("QEMU", "../qemu/build/qemu-system-aarch64")
 FIRMWARE = os.environ.get("QEMU_FW", "../winemu/linaro_ovmf.fd")
@@ -158,17 +153,67 @@ def readWords(qmp_file, addr, count):
     physical read of the same number answers "cannot access memory", which
     reads the same as "nothing is there".
 
-    Each line the monitor prints holds more than one value, so everything
-    after the colon is taken rather than the first field only.
+    Asked for in blocks, because the monitor's own limit on one command is
+    well below what scanning a data section needs, and one command per word
+    turns a scan into a long wait.
     """
-    out = cmd(qmp_file, {"execute": "human-monitor-command",
-                         "arguments": {"command-line": "x /%dgx 0x%x" % (count, addr)}})
     values = []
-    for line in out.get("return", "").splitlines():
-        if ":" not in line:
-            continue
-        values += [int(v, 16) for v in re.findall(r"0x([0-9a-f]+)", line.split(":", 1)[1])]
+    done = 0
+    while done < count:
+        want = min(count - done, 256)
+        out = cmd(qmp_file, {"execute": "human-monitor-command",
+                             "arguments": {"command-line":
+                                           "x /%dgx 0x%x" % (want, addr + done * 8)}})
+        got = 0
+        for line in out.get("return", "").splitlines():
+            if ":" not in line:
+                continue
+            row = [int(v, 16) for v in re.findall(r"0x([0-9a-f]+)", line.split(":", 1)[1])]
+            values += row
+            got += len(row)
+        if got == 0:
+            break
+        done += got
     return values
+
+
+def findBugCheckRecord(qmp_file, base):
+    """The bugcheck code and its four arguments, found rather than assumed.
+
+    They live in the data section as a code followed by four parameters, and
+    the symbol that names them resolves to zeros -- so the record is found by
+    shape instead: a small number, then four values that are either zero or a
+    kernel address. A run of small numbers with small numbers after them, of
+    which a data section has many, does not match.
+
+    Returns (offset, words) or (None, None).
+    """
+    WINDOW_START, WINDOW_LEN = 0xdb0000, 0x20000
+    words = readWords(qmp_file, base + WINDOW_START, WINDOW_LEN // 8)
+    if not words:
+        return None, None
+
+    def plausible(v):
+        return v == 0 or v >= 0xFFFF000000000000
+
+    best = None
+    for i in range(len(words) - 4):
+        code = words[i]
+        # A bugcheck code is a small number. The exceptions that are not
+        # (0xc0000005 and friends) are exception codes, not bugcheck codes.
+        if not (0 < code < 0x1000):
+            continue
+        params = words[i + 1:i + 5]
+        score = sum(1 for p in params if p >= 0xFFFF000000000000)
+        if any(not plausible(p) for p in params):
+            continue
+        if score < 2:
+            continue
+        if best is None or score > best[0]:
+            best = (score, WINDOW_START + i * 8, [code] + params)
+    if best is None:
+        return None, None
+    return best[1], best[2]
 
 
 def programCounter(qmp_file):
@@ -257,64 +302,55 @@ arm_slot0 = %s
             return 1
         log("armed")
 
-        # A system register would say the base outright and none is readable,
-        # so it comes from memory: the vector table's first four slots have a
-        # shape nothing else has. Until the kernel is running there is no such
-        # table to find, so this is also what says the kernel has started.
+        # The screen says when the bugcheck has happened, and it says so as
+        # soon as Windows draws it -- a bluescreen is on screen well inside
+        # two minutes on this machine, so a fixed watch long enough for the
+        # slowest case wastes minutes on every run.
+        log("waiting for the screen to go blue")
+        watch = subprocess.run(
+            [sys.executable, "tests/deploy/bluescreen_watch.py",
+             "--qmp-port", str(args.qmp_port),
+             "--timeout", str(args.catch_timeout),
+             "--shots", os.path.join(work, "shots")],
+            capture_output=True, text=True)
+        log(watch.stdout.strip())
+        if watch.returncode != 0:
+            log("no bluescreen appeared: %s" % watch.stderr.strip())
+            return 1
+
+        # The colour is necessary and not sufficient: it says a bugcheck was
+        # drawn, not which one. The code and its arguments come from memory.
         qmp = socket.create_connection(("127.0.0.1", args.qmp_port), timeout=20)
         qmpFile = qmp.makefile("rwb")
         qmpFile.readline()
         cmd(qmpFile, {"execute": "qmp_capabilities"})
 
-        base = None
-        deadline = time.monotonic() + args.find_timeout
-        while time.monotonic() < deadline:
-            pc = programCounter(qmpFile)
-            if pc is not None and (pc >> 40) in (0xFFFFF8, 0xFFFFF9, 0xFFFFFA):
-                base = findKernelBase(qmpFile, pc)
-                if base is not None:
-                    break
-            time.sleep(4)
+        pc = programCounter(qmpFile)
+        if pc is None:
+            log("the program counter could not be read")
+            return 1
+        base = findKernelBase(qmpFile, pc)
         if base is None:
-            log("the kernel never appeared in memory")
+            log("no vector table found under PC=0x%x" % pc)
             return 1
         log("kernel base = 0x%x" % base)
 
-        # Polled rather than caught at a breakpoint. The value stays in memory
-        # after the crash, so being stopped at the exact instruction buys
-        # nothing that reading it later does not, and polling needs no
-        # hardware breakpoints and no stopping the machine at all.
-        at = base + KI_BUG_CHECK_DATA_RVA
-        seen = None
-        deadline = time.monotonic() + args.catch_timeout
-        while time.monotonic() < deadline:
-            words = readWords(qmpFile, at, 5)
-            # The code is a small number and the table is zero until a
-            # bugcheck fills it, so a plausible one is the signal.
-            if words and 0 < words[0] < 0x1000:
-                seen = words
-                break
-            time.sleep(5)
-
-        if seen is None:
-            log("no bugcheck appeared in %g seconds" % args.catch_timeout)
-            log("KiBugCheckData at 0x%x reads: %s" % (at, readWords(qmpFile, at, 5)))
+        offset, words = findBugCheckRecord(qmpFile, base)
+        if words is None:
+            log("no bugcheck record found in the data section")
             return 1
 
-        code = seen[0]
         log("")
-        log("bugcheck 0x%x" % code)
-        for i, v in enumerate(seen[1:], start=1):
+        log("record at kbase+0x%x" % offset)
+        log("bugcheck 0x%x" % words[0])
+        for i, v in enumerate(words[1:], start=1):
             # The registers are gone by now, so what a parameter means has to
-            # come from what it points at. An address inside the kernel is
-            # named by its offset from the base, which is the form the symbol
-            # tables are read in.
+            # come from what it is. An address inside the kernel is named by
+            # its offset, which is the form the symbol tables are read in.
             extra = ""
             if base <= v < base + 0x2000000:
                 extra = "  (kbase+0x%x)" % (v - base)
-            log("  parameter %d = 0x%-16x%s" % (i, v, extra))
-
-        # A few words below the stack pointer the crash kept, if it kept one.
+            log("  parameter %d = 0x%-18x%s" % (i, v, extra))
         return 0
     finally:
         if not args.keep:
