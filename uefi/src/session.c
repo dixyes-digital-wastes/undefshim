@@ -10,6 +10,7 @@ bool usSessionInit(UsSession *s) {
     s->config = NULL;
     s->patchApplied = 0;
     s->payloadPlaced = false;
+    s->armEnabled = false;
 
     if (!usPoolAllocate(&s->poolAlloc)) {
         return false;

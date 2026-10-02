@@ -149,6 +149,31 @@ typedef struct UsHandoffSite_t {
 
 UsHandoffSite usLocateTtbrHandoff(UsImage *img);
 
+/*
+ * A hole in the loader's code, large enough to hold something.
+ *
+ * This is a run of zero words, not a run of branches to themselves with zeros
+ * after. Both shapes look like padding, and the second is what a vector table
+ * entry looks like when it is unused: an earlier version matched that shape
+ * and picked out the exception vector table, which is not free space but the
+ * firmware's own handlers.
+ *
+ * A run has to be longer than a vector entry to be considered, which is what
+ * separates the two: an entry's padding cannot exceed the entry.
+ *
+ * The bytes are in an executable section, so they run; whether anything
+ * refers to them is a judgement about the image rather than something that
+ * can be read off it, and the longest run is preferred for that reason.
+ */
+typedef struct UsSpareSlot_t {
+    bool     found;
+    uint32_t rva;      /* where the run starts */
+    uint32_t bytes;    /* how much room it offers */
+    size_t   matches;  /* how many runs were long enough */
+} UsSpareSlot;
+
+UsSpareSlot usLocateSpareSlot(UsImage *img, uint32_t minBytes);
+
 /* Counts of the instructions the shim has to emulate, per image. */
 typedef struct UsLdaprCounts_t {
     size_t word;

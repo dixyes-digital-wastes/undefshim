@@ -5,6 +5,7 @@
 #include <uefi.h>
 
 #include "core/plan.h"
+#include "uefi/src/arm.h"
 #include "uefi/src/console.h"
 #include "uefi/src/stack.h"
 #include "uefi/src/work.h"
@@ -66,4 +67,18 @@ void usWorkCollect(UsSession *session) {
     usStackRunOn(session->bootStackTop, collectOnOwnStack, &req);
 
     usConsolePuts(req.complete ? "US-M5-PLAN\n" : "US-M5-INCOMPLETE\n");
+
+    /*
+     * Arming is off until the payload can survive the handover.
+     *
+     * It gets there: the branch lands, the stub runs, the payload is called.
+     * What it cannot do there is read the page tables, because they are not
+     * reachable from the address space that is in force by then, and reading
+     * them is the whole point. Until that is answered a different way --
+     * asking the hardware to translate rather than walking itself -- arming
+     * only turns a working boot into one that stops at the handover.
+     */
+    if (req.complete && session->armEnabled && usArmTransfer(session)) {
+        usConsolePuts("US-M6.5-ARMED\n");
+    }
 }
