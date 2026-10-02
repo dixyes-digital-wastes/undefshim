@@ -70,6 +70,28 @@
     msr     daifset, #0xF
 
     /*
+     * Sixteen bytes of the interrupted stack, for the one register the
+     * bootstrap needs and the stub does not keep.
+     *
+     * The stub, on the vector where it may push at all, has already put x16
+     * and x17 below this. x18 is spent by the lookup below, and it is the
+     * kernel's on the SP0 vector for the same reason x16 is: an exception
+     * that arrives there interrupted code entitled to its own registers, and
+     * the kernel's own path through that vector uses x18 to reach the
+     * thread's stack. So it is saved before anything else touches it, and the
+     * frame is what gets it back.
+     *
+     * The push is not only about x18. The offsets the frame is built with
+     * count it -- the interrupted SP is what is left above the stub's sixteen
+     * bytes and these sixteen -- so leaving it out moves three registers by a
+     * slot and shortens the recorded SP by sixteen, and both of those are
+     * silent.
+     */
+    .if \save
+    str     x18, [sp, #-16]!
+    .endif
+
+    /*
      * This code runs before there is a stack, and that is not a figure of
      * speech. At the vector it was entered through, SP holds whatever the
      * kernel left in it -- not a stack the kernel was using -- and once the
@@ -277,6 +299,10 @@
      * them, which is the vector whose stub pushed them. On the other one the
      * frame holds zeros and nothing is restored, because there was no stack to
      * have put them on.
+     *
+     * Nothing has to be popped on the way out: eret restores the interrupted
+     * context whole, and SP is set to the interrupted value, so the bytes this
+     * entry and the stub pushed are simply left behind.
      */
     .if \save
     ldr     x16, [x9, #US_FRAME_X16]
@@ -291,6 +317,9 @@
     ldr     x29, [x9, #US_FRAME_X29]
     ldr     x30, [x9, #US_FRAME_X30]
 
+    /* The last pair read is x9 and x10: x9 is the pointer everything above
+     * came from, and x10 is first used to put SP back and then overwritten
+     * with the value that belongs in it. */
     ldr     x10, [x9, #US_FRAME_SP]
     mov     sp, x10
     ldp     x9, x10, [x9, #US_FRAME_X9]
