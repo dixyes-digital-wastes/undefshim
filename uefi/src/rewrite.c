@@ -80,6 +80,19 @@ static size_t rewriteImage(UsImage *img) {
     return changed;
 }
 
+size_t usRewriteOne(UsImage *img) {
+    size_t changed = rewriteImage(img);
+
+    if (changed != 0) {
+        usConsolePuts("rewrite: ");
+        usConsolePutDec(changed);
+        usConsolePuts(" in an image at ");
+        usConsolePutHex((uint64_t)(uintptr_t)img->base);
+        usConsolePuts("\n");
+    }
+    return changed;
+}
+
 size_t usRewriteLdapr(UsSession *session) {
     static const UsImageKind kinds[] = {
         UsImageNtoskrnl,

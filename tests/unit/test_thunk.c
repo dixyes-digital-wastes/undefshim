@@ -218,69 +218,64 @@ static void testBranchAlignment(void) {
  * The stub has to do two opposite things depending on the exception class,
  * and the whole reason it exists is the second one: an exception that is not
  * an undefined instruction must carry on into whatever the slot used to do.
- * Both are checked by walking the instructions it produced.
  */
-static void testVectorStub(void) {
-    /* The kernel's synchronous slot on 26100: `b 0x605c78` from 0x604a00. */
-    const uint32_t origDisp = 0x1278;
-    uint32_t orig = 0x14000000U | ((origDisp / 4) & 0x03FFFFFFU);
-    uint32_t stub[US_STUB_WORDS];
-    const uint64_t target = 0x13bc00bb0ULL;
+static void testSlotStub(void) {
+    uint32_t stub[US_SLOT_STUB_WORDS];
+    uint64_t target = 0x13bc00bb0ULL;
+    uint32_t tail0 = 0xD5384112U;   /* mrs x18, sp_el0 */
+    uint32_t tail1 = 0x14000010U;
 
-    usEncodeVectorStub(stub, target, orig);
+    usEncodeSlotStub(stub, target, tail0, tail1);
 
-    /* The exception class is read out of ESR, and only EC zero is ours. */
-    /* Nothing is pushed: at this vector there is no stack, and a write to the
-     * one in SP faults inside the exception it was meant to handle. */
-    for (int i = 0; i < (int)US_STUB_WORDS; i++) {
+    /* Nothing is pushed: at this vector there may be no stack, and a write to
+     * the one in SP faults inside the exception it was meant to handle. */
+    for (int i = 0; i < (int)US_SLOT_STUB_WORDS; i++) {
         ok("the stub touches no stack", (stub[i] & 0xFFC00000U) != 0xF8000000U);
     }
     ok("it reads ESR_EL1", stub[0] == 0xD5385210U);
     ok("it shifts the class down", stub[1] == 0xD35AFE10U);
     ok("and branches on it", (stub[2] & 0xFF000000U) == 0xB5000000U);
-    ok("testing x16", (stub[2] & 0x1FU) == 16U);
 
-    /* The branch has to land on the continuation, which is where the slot's
-     * original behaviour is resumed. Landing one instruction earlier would
-     * run the address setup; one later would skip the pop. */
+    /* The branch has to land on the tail, and the tail has to be the two
+     * words it was given, in order: one before the other means an exception
+     * that is not ours runs the branch and then the instruction. */
     {
         int32_t to = (int32_t)(((stub[2] >> 5) & 0x7FFFFU) << 13) >> 13;
-        eq64("the class branch lands on the continuation",
-             (uint64_t)(2 + to), (uint64_t)US_STUB_CONTINUATION);
+
+        eq64("the class branch lands on the tail",
+             (uint64_t)(2 + to), (uint64_t)US_SLOT_STUB_CONTINUATION);
     }
+    eq64("the tail's first word is the slot's own", stub[US_SLOT_STUB_CONTINUATION], tail0);
+    eq64("and the second follows it", stub[US_SLOT_STUB_CONTINUATION + 1], tail1);
+
+    /*
+     * What the instruction is decides which way the second branch goes, and
+     * that makes its condition the whole meaning of the stub. A branch whose
+     * condition field is left at zero is `b.eq`: it would send every
+     * exception that is ours to the tail, and every one that is not to the
+     * payload. That is the inverse, and it looks like nothing in the words.
+     */
+    ok("the instruction branch is conditional", (stub[9] & 0xFF000010U) == 0x54000000U);
+    eq64("and its condition is not-equal", (uint64_t)(stub[9] & 0xFU), 1U);
+    {
+        int32_t to = (int32_t)(((stub[9] >> 5) & 0x7FFFFU) << 13) >> 13;
+
+        eq64("and it lands on the tail too",
+             (uint64_t)(9 + to), (uint64_t)US_SLOT_STUB_CONTINUATION);
+    }
+    /* The first branch is not conditional at all, so it cannot be confused
+     * with the second. */
+    ok("the class branch has no condition", (stub[2] & 0xFF000000U) == 0xB5000000U);
 
     /* The address is built from four halves, in order. */
     {
         uint32_t built[US_THUNK_WORDS];
 
-        /* The same shape the interpreter understands: a push it can see,
-         * then the four immediates and the branch the stub builds. */
         built[0] = US_STR_PRE;
         for (int i = 0; i < 5; i++) {
-            built[1 + i] = stub[3 + i];
+            built[1 + i] = stub[US_SLOT_STUB_ADDRESS + i];
         }
         eq64("the stub reaches the payload", runThunk(built, US_THUNK_WORDS), target);
-    }
-
-    /* The continuation has to arrive where the original branch arrived. The
-     * branch has moved, so its displacement has to shrink by that much;
-     * keeping the original encoding would land past the handler, inside it or
-     * past its end. */
-    {
-        int32_t disp = (int32_t)(stub[US_STUB_CONTINUATION] << 6) >> 6;
-
-        eq64("the continuation still reaches the original handler",
-             (uint64_t)(uint32_t)(disp * 4),
-             (uint64_t)(origDisp - (US_STUB_WORDS - 1U) * 4U));
-    }
-
-    /* A slot that branched to itself keeps doing so: the place it used to
-     * point at now holds this stub. */
-    {
-        uint32_t selfStub[US_STUB_WORDS];
-
-        usEncodeVectorStub(selfStub, target, 0x14000000U);
-        eq64("a self branch is left as one", selfStub[US_STUB_CONTINUATION], 0x14000000U);
     }
 }
 
@@ -289,7 +284,7 @@ int main(void) {
     testThunkShape();
     testBranchRange();
     testBranchAlignment();
-    testVectorStub();
+    testSlotStub();
 
     printf("%d checks, %d failures\n", checks, failures);
     return failures != 0;

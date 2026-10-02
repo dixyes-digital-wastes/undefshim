@@ -9,6 +9,7 @@
 #include "uefi/src/console.h"
 #include "uefi/src/loadimage_hook.h"
 #include "uefi/src/patch.h"
+#include "uefi/src/rewrite.h"
 #include "uefi/src/service_hook.h"
 #include "uefi/src/stack.h"
 
@@ -35,6 +36,34 @@ static void registerOnOwnStack(void *arg) {
 
     req->recorded = usRegistryAddBootmgfw(&gSession->registry, req->image->ImageBase,
                                           req->image->ImageSize);
+}
+
+/*
+ * Replacing the RCpc loads in whatever was just loaded.
+ *
+ * The image is in memory and has not been started: LoadImage has returned and
+ * the caller has yet to call StartImage. That is the same window the kernel is
+ * rewritten in, and it is the one place where an image can be changed without
+ * anything running out of it.
+ *
+ * This is what covers the drivers and libraries that arrive long after the
+ * boot, ci.dll among them. Without it they are only covered by the exception
+ * path, which needs the vector slot they happen to use and the registers that
+ * slot's handler happens to preserve.
+ */
+static void rewriteOnOwnStack(void *arg) {
+    RegisterRequest *req = arg;
+    UsImage img;
+
+    /* The smallest thing that could hold a header: the parse refuses the
+     * rest, and this keeps a firmware structure from being read as one. */
+    if (req->image->ImageBase == NULL || req->image->ImageSize < 0x1000) {
+        return;
+    }
+    if (!usImageInitMemory(&img, req->image->ImageBase, req->image->ImageSize)) {
+        return;
+    }
+    usRewriteOne(&img);
 }
 
 /*
@@ -89,6 +118,8 @@ static efi_status_t EFIAPI loadImageHook(boolean_t bootPolicy, efi_handle_t pare
         RegisterRequest req = { .image = lip, .recorded = false };
 
         usStackRunOn(gSession->bootStackTop, registerOnOwnStack, &req);
+        /* And its instructions replaced, before anything runs out of it. */
+        usStackRunOn(gSession->bootStackTop, rewriteOnOwnStack, &req);
         usConsolePuts(req.recorded ? "\nloadimage: registered at " : "\nloadimage: seen at ");
         usConsolePutHex((uint64_t)(uintptr_t)lip->ImageBase);
         usConsolePuts("\n");

@@ -42,8 +42,16 @@ if [ ! -f "$WIN_DISK" ]; then
 fi
 
 mkdir -p "$WORK"
+# Whether to carry out the instructions by rewriting them or by taking the
+# exception they cause. Both are delivery candidates and they fail in
+# different places, so the run that is looked at has to say which one it was:
+# a picture of the wrong mechanism is a picture of nothing.
+REWRITE="${REWRITE:-true}"
 cat > "$WORK/run.toml" <<EOF
 version = 1
+
+[scan]
+ldapr_rewrite = $REWRITE
 
 [log]
 level = "info"

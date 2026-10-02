@@ -32,17 +32,47 @@
 #define US_THUNK_WORDS 6U
 #define US_THUNK_BYTES (US_THUNK_WORDS * 4U)
 
-/* The branch back into what the slot used to do is the last of them, and is
- * where the exception classes that are not ours end up. */
-#define US_STUB_WORDS 9U
-#define US_STUB_BYTES (US_STUB_WORDS * 4U)
-#define US_STUB_CONTINUATION 8U
+void usEncodeThunk(uint32_t out[US_THUNK_WORDS], uint64_t target);
 
 /*
- * Writes the thunk. The address may be anything; the encoding covers the
- * full 64 bits because the immediates are four sixteen bit halves.
+ * The stub that goes in a vector slot, or in a hole the slot branches to.
+ *
+ *   mrs  x16, esr_el1            the exception class
+ *   lsr  x16, x16, #26
+ *   cbnz x16, tail               not an undefined instruction: not ours
+ *   mrs  x16, elr_el1            the instruction that faulted
+ *   ldr  w17, [x16]
+ *   and  w17, w17, #0x3ffffc00   everything about an RCpc load but its width
+ *   movz w16, #0xc000
+ *   movk w16, #0x38bf, lsl #16
+ *   cmp  w17, w16
+ *   b.ne tail                    an undefined instruction, but not one of ours
+ *   movz x16, ...                four halves of the payload's address
+ *   br   x16
+ * tail:
+ *   the slot's own behaviour, two instructions
+ *
+ * The instruction is examined rather than only the class, and that is what
+ * makes the tail safe to reach. Windows uses `udf` as a trap of its own, and
+ * an undefined instruction that is not an RCpc load has to go to the kernel's
+ * handler; sending it to the payload instead means the payload has to find its
+ * way back with the interrupted registers restored, which is a second exit
+ * from the entry and a lot of places to get it wrong. Four instructions of
+ * masking avoid all of it: only the four loads ever leave this stub.
+ *
+ * The width is not tested. The four loads differ only in the two bits the
+ * mask clears, so one comparison covers all of them.
  */
-void usEncodeThunk(uint32_t out[US_THUNK_WORDS], uint64_t target);
+#define US_SLOT_STUB_WORDS 17U
+#define US_SLOT_STUB_BYTES (US_SLOT_STUB_WORDS * 4U)
+
+/* Where the four halves of the payload's address are, and the two words the
+ * slot's own behaviour is written into. */
+#define US_SLOT_STUB_ADDRESS 10U
+#define US_SLOT_STUB_CONTINUATION 15U
+
+void usEncodeSlotStub(uint32_t out[US_SLOT_STUB_WORDS], uint64_t target,
+                      uint32_t tail0, uint32_t tail1);
 
 /*
  * arm64's unconditional branch: a 26 bit word offset, in instructions, so it
@@ -50,47 +80,16 @@ void usEncodeThunk(uint32_t out[US_THUNK_WORDS], uint64_t target);
  * bottom two bits.
  *
  * Returns false when the target is out of reach. A caller that ignored this
- * and encoded anyway would produce a branch to somewhere else entirely, which
- * is a fault in code that has nothing to do with the mistake.
+ * would produce a branch to somewhere else entirely, which is a fault in code
+ * that has nothing to do with the mistake.
  */
 #define US_BRANCH_RANGE (1U << 27)
-/* The instruction a branch encodes to with a zero offset: b . */
 #define US_BRANCH_OPCODE 0x14000000U
 
 bool usEncodeBranch(uint32_t from, uint32_t to, uint32_t *out);
 
-/*
- * The code that goes in a vector table's synchronous slot.
- *
- * It writes nothing and pushes nothing. At the moment an exception arrives
- * there is no stack to use: at this vector SP holds whatever the kernel left
- * in it, which is not mapped once the address space has been rebuilt, and the
- * kernel's own handler discards it rather than reading it. A push here is a
- * fault taken inside the exception it was meant to handle, which repeats
- * until the machine resets.
- *
- * Nothing is preserved either, because nothing needs to be: x16 is one of the
- * two registers the platform reserves for this kind of use, and the kernel's
- * own handler clobbers it and x18 before saving anything. A register that the
- * platform's own path does not preserve cannot be holding anything across one
- * of these exceptions.
- *
- * The first thing it does is look at the exception class. Only an undefined
- * instruction is ours. Everything else takes the last instruction, which
- * carries on into whatever the slot used to do.
- *
- * That continuation is kept as a branch rather than as an address because a
- * branch is position relative: the image is relocated when the kernel builds
- * its own address space, and an address written here would be the address it
- * had before that.
- *
- * originalBranch is the slot's original word, which must be a branch. The
- * displacement is carried across, adjusted for the distance the instruction
- * moved inside the slot. A branch to itself is kept as one, because that is
- * what an unused slot holds and branching into this code would be worse than
- * stopping.
- */
-void usEncodeVectorStub(uint32_t out[US_STUB_WORDS], uint64_t target,
-                        uint32_t originalBranch);
+/* The instruction that does nothing, for a tail whose slot needs no
+ * instruction replayed. */
+#define US_NOP 0xD503201FU
 
 #endif
