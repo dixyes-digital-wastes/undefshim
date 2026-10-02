@@ -44,6 +44,18 @@ typedef struct UsSession_t {
     bool           vamapEnabled;
 
     /*
+     * Whether to take over the SP0 synchronous slot as well as the SPx one.
+     *
+     * The two are not interchangeable and are not equally safe to write. The
+     * SPx slot holds a branch, so its own behaviour is two instructions that
+     * the stub can replay. The SP0 slot holds a handler written out in place,
+     * and that handler's first instructions clobber registers the stub also
+     * needs -- so taking it over is a different proposition and is kept
+     * separate rather than assumed.
+     */
+    bool           armSlot0;
+
+    /*
      * Whether to replace the RCpc loads in the images rather than only
      * handling the exceptions they cause. On by default: it is the mechanism
      * that covers the kernel, and the exception path covers what it cannot.
