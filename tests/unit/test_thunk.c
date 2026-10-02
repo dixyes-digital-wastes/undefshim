@@ -219,13 +219,28 @@ static void testBranchAlignment(void) {
  * and the whole reason it exists is the second one: an exception that is not
  * an undefined instruction must carry on into whatever the slot used to do.
  */
+/*
+ * The index of the `br x16` that leaves for the payload. Found rather than
+ * counted, because the form changes how many instructions come before it and
+ * a number that has to be adjusted by hand is a number that will not be.
+ */
+static uint32_t brIndex(const uint32_t *stub) {
+    for (uint32_t i = 0; i < US_SLOT_STUB_WORDS; i++) {
+        if (stub[i] == 0xD61F0200U) {   /* br x16 */
+            return i;
+        }
+    }
+    return US_SLOT_STUB_WORDS;
+}
+
 static void testSlotStub(void) {
     uint32_t stub[US_SLOT_STUB_WORDS];
     uint64_t target = 0x13bc00bb0ULL;
     uint32_t tail0 = 0xD5384112U;   /* mrs x18, sp_el0 */
     uint32_t tail1 = 0x14000010U;
+    uint32_t tailIndex = usSlotStubTailIndex(false);
 
-    usEncodeSlotStub(stub, target, tail0, tail1);
+    usEncodeSlotStub(stub, target, tail0, tail1, false);
 
     /* Nothing is pushed: at this vector there may be no stack, and a write to
      * the one in SP faults inside the exception it was meant to handle. */
@@ -242,11 +257,10 @@ static void testSlotStub(void) {
     {
         int32_t to = (int32_t)(((stub[2] >> 5) & 0x7FFFFU) << 13) >> 13;
 
-        eq64("the class branch lands on the tail",
-             (uint64_t)(2 + to), (uint64_t)US_SLOT_STUB_CONTINUATION);
+        eq64("the class branch lands on the tail", (uint64_t)(2 + to), (uint64_t)tailIndex);
+        eq64("the tail's first word is the slot's own", stub[tailIndex], tail0);
+        eq64("and the second follows it", stub[tailIndex + 1], tail1);
     }
-    eq64("the tail's first word is the slot's own", stub[US_SLOT_STUB_CONTINUATION], tail0);
-    eq64("and the second follows it", stub[US_SLOT_STUB_CONTINUATION + 1], tail1);
 
     /*
      * What the instruction is decides which way the second branch goes, and
@@ -260,8 +274,7 @@ static void testSlotStub(void) {
     {
         int32_t to = (int32_t)(((stub[9] >> 5) & 0x7FFFFU) << 13) >> 13;
 
-        eq64("and it lands on the tail too",
-             (uint64_t)(9 + to), (uint64_t)US_SLOT_STUB_CONTINUATION);
+        eq64("and it lands on the tail too", (uint64_t)(9 + to), (uint64_t)tailIndex);
     }
     /* The first branch is not conditional at all, so it cannot be confused
      * with the second. */
@@ -270,13 +283,85 @@ static void testSlotStub(void) {
     /* The address is built from four halves, in order. */
     {
         uint32_t built[US_THUNK_WORDS];
+        uint32_t at = brIndex(stub) - 4;   /* the four halves before the br */
 
         built[0] = US_STR_PRE;
         for (int i = 0; i < 5; i++) {
-            built[1 + i] = stub[US_SLOT_STUB_ADDRESS + i];
+            built[1 + i] = stub[at + i];
         }
         eq64("the stub reaches the payload", runThunk(built, US_THUNK_WORDS), target);
     }
+}
+
+/*
+ * The form that saves the registers, for the vector where a stack is
+ * available.
+ *
+ * What it has to do that the other does not is give them back on BOTH ways
+ * out. There are two branches to the tail and one fall-through into the
+ * payload, and the registers are the kernel's on all three -- its own
+ * breakpoint services are `mov x16, #n; brk`, with the number carried in
+ * x16 and read by the handler the tail reaches.
+ *
+ * An earlier version emitted only one restore, on the fall-through. That
+ * leaves the tail path running with the stub's values, which is invisible in
+ * the words and shows up as a service number that does not exist.
+ */
+static void testSlotStubKeepingRegisters(void) {
+    uint32_t stub[US_SLOT_STUB_WORDS];
+    uint64_t target = 0x13bc00bb0ULL;
+    const uint32_t PUSH = 0xA9BF47F0U;   /* stp x16, x17, [sp, #-16]! */
+    const uint32_t POP = 0xA8C147F0U;    /* ldp x16, x17, [sp], #16   */
+    uint32_t tailIndex = usSlotStubTailIndex(true);
+    uint32_t pops = 0;
+
+    usEncodeSlotStub(stub, target, 0xD5384112U, 0x14000010U, true);
+
+    eq64("the saving form saves the registers", stub[0], PUSH);
+
+    /* One restore before each way out, and there are two. */
+    for (uint32_t i = 0; i < US_SLOT_STUB_WORDS; i++) {
+        if (stub[i] == POP) {
+            pops++;
+        }
+    }
+    eq64("and gives them back twice", pops, 2U);
+
+    /* Specifically: one after the second branch and before the payload's
+     * address, and one immediately before the tail's own words. */
+    eq64("the first restore follows the second branch", stub[11], POP);
+    eq64("the second restore precedes the tail", stub[tailIndex - 1], POP);
+
+    /* Both branches land on that second restore, not past it, so the slot's
+     * own words run with the registers as they were. */
+    {
+        int32_t a = (int32_t)(((stub[3] >> 5) & 0x7FFFFU) << 13) >> 13;
+        int32_t b = (int32_t)(((stub[10] >> 5) & 0x7FFFFU) << 13) >> 13;
+
+        eq64("the class branch lands on the restore",
+             (uint64_t)(3 + a), (uint64_t)(tailIndex - 1));
+        eq64("the instruction branch lands there too",
+             (uint64_t)(10 + b), (uint64_t)(tailIndex - 1));
+    }
+    eq64("the tail is the slot's own words", stub[tailIndex], 0xD5384112U);
+    eq64("and the word after it", stub[tailIndex + 1], 0x14000010U);
+
+    /* The address still reaches the payload, which is what the fall-through
+     * is for. */
+    {
+        uint32_t built[US_THUNK_WORDS];
+        uint32_t at = brIndex(stub) - 4;
+
+        built[0] = US_STR_PRE;
+        for (int i = 0; i < 5; i++) {
+            built[1 + i] = stub[at + i];
+        }
+        eq64("and it still reaches the payload", runThunk(built, US_THUNK_WORDS), target);
+    }
+
+    /* The longer form is the one the array has to fit. */
+    ok("the array is sized for the longer form",
+       usSlotStubTailIndex(true) + 2U <= US_SLOT_STUB_WORDS);
 }
 
 int main(void) {
@@ -285,6 +370,7 @@ int main(void) {
     testBranchRange();
     testBranchAlignment();
     testSlotStub();
+    testSlotStubKeepingRegisters();
 
     printf("%d checks, %d failures\n", checks, failures);
     return failures != 0;
