@@ -8,6 +8,18 @@
  *
  * The offsets come from layout_defs.inc, generated from the C structures, so
  * the two halves cannot drift apart.
+ *
+ * Three registers are borrowed before there is anywhere to put them, and the
+ * borrow is the part worth reading twice. Working out where the landing pad
+ * is takes two registers (x9 for the address, x10 for the stride) and a third
+ * to hold the CPU index while that is done, and none of the three can be
+ * stored anywhere until the pad address is known. So all three go on the
+ * interrupted stack and come back into the frame afterwards. An earlier
+ * version borrowed only x18 and left x9 and x10 holding the pad address and
+ * the stride, which meant every exception returned to the code it interrupted
+ * with two of its registers replaced by ours. It went unnoticed while the
+ * payload was only entered by a call; the first time an exception was claimed
+ * and resumed, the kernel faulted two instructions later.
  */
 
 #include "layout_defs.inc"
@@ -32,10 +44,10 @@
  * are per CPU because the exception can arrive on any of them.
  *
  * Everything is addressed PC relatively, which is all a position independent
- * blob may use. One register has to be spent on that address before there is
- * anywhere to store it, so sixteen bytes of the interrupted stack are borrowed
- * for exactly one register and given straight back. That is the smallest use
- * of someone else's stack that works.
+ * blob may use. Registers have to be spent on that address before there is
+ * anywhere to store them, so thirty two bytes of the interrupted stack are
+ * borrowed and given straight back. That is the smallest use of someone
+ * else's stack that works.
  */
     .globl usSyncEntry
     .type usSyncEntry, %function
@@ -43,7 +55,27 @@
 usSyncEntry:
     msr     daifset, #0xF
 
-    /* Park x18 on the interrupted stack; it is needed to compute the pad. */
+    /*
+     * Borrow on the interrupted stack, because nothing can be stored until
+     * the frame has been found and finding it takes these three registers.
+     *
+     * The layout matters and is easy to get wrong: two pairs and a single do
+     * not line up. Written this way the three land at sp+0, sp+8 and sp+16,
+     * with nothing in between them, so the reads below are one offset apart
+     * and there is no slot that is never written. An earlier version pushed
+     * x18, x9 and then x10, which left x18 and x9 one slot further along than
+     * the reads expected: x9 was read back holding x18, x18 was read back
+     * holding whatever was under the stack, and the real x9 was never read at
+     * all. Every exception returned with two registers of the interrupted
+     * code replaced.
+     *
+     * The thunk below the vector slot has already pushed x16, sixteen bytes
+     * below the interrupted SP, which is why the interrupts SP is sp+48. That
+     * push is part of this arrangement, not a separate one: x16 is where the
+     * thunk carries the payload's address, so it is the one register the
+     * thunk destroys and this code is what puts it back.
+     */
+    stp     x9, x10, [sp, #-16]!
     str     x18, [sp, #-16]!
 
     mrs     x18, mpidr_el1
@@ -57,11 +89,11 @@ usSyncEntry:
     stp     x2, x3, [x9, #US_FRAME_X2]
     stp     x4, x5, [x9, #US_FRAME_X4]
     stp     x6, x7, [x9, #US_FRAME_X6]
-    stp     x8, x9, [x9, #US_FRAME_X8]
-    stp     x10, x11, [x9, #US_FRAME_X10]
+    str     x8, [x9, #US_FRAME_X8]
+    str     x11, [x9, #US_FRAME_X11]
     stp     x12, x13, [x9, #US_FRAME_X12]
     stp     x14, x15, [x9, #US_FRAME_X14]
-    stp     x16, x17, [x9, #US_FRAME_X16]
+    str     x17, [x9, #US_FRAME_X17]
     stp     x19, x20, [x9, #US_FRAME_X19]
     stp     x21, x22, [x9, #US_FRAME_X21]
     stp     x23, x24, [x9, #US_FRAME_X23]
@@ -70,14 +102,27 @@ usSyncEntry:
     str     x29, [x9, #US_FRAME_X29]
     str     x30, [x9, #US_FRAME_X30]
 
-    /* Take x18 back, which also puts SP where the exception left it. */
-    ldr     x18, [sp], #16
+    /* The borrowed three, from where they were put. Two pairs and a single do
+     * not pack, so the offsets are what the pushes above actually produce:
+     * x18 at sp+0, x9 at sp+16, x10 at sp+24, with a slot between them that
+     * nothing writes and nothing reads. */
+    ldr     x18, [sp]
     str     x18, [x9, #US_FRAME_X18]
+    ldr     x11, [sp, #16]
+    str     x11, [x9, #US_FRAME_X9]
+    ldr     x10, [sp, #24]
+    str     x10, [x9, #US_FRAME_X10]
+
+    /* And x16, which the thunk saved on its way in. */
+    ldr     x11, [sp, #32]
+    str     x11, [x9, #US_FRAME_X16]
 
     /* The interrupted SP is the one thing the CPU did not keep for us, and
-     * SP cannot be the source of a store, so it goes through a register. */
-    mov     x10, sp
-    str     x10, [x9, #US_FRAME_SP]
+     * SP cannot be the source of a store, so it goes through a register.
+     * What stands between it and this SP is the thunk's sixteen bytes and
+     * this code's thirty two. */
+    add     x11, sp, #48
+    str     x11, [x9, #US_FRAME_SP]
 
     mrs     x10, elr_el1
     str     x10, [x9, #US_FRAME_ELR]
@@ -133,13 +178,18 @@ usSyncResume:
      * else comes back first, and SP is put back before the final load: from
      * then on the payload's stack is gone and only the interrupted one is
      * addressable, which is where the landing pad still is.
+     *
+     * x10 is restored twice, and the second time is the one that counts: the
+     * first is overwritten by the SP restore, which needs a register of its
+     * own and can only use one that has already been restored. Leaving it at
+     * the first restore returned every exception with x10 holding the
+     * interrupted SP.
      */
     ldp     x0, x1, [x9, #US_FRAME_X0]
     ldp     x2, x3, [x9, #US_FRAME_X2]
     ldp     x4, x5, [x9, #US_FRAME_X4]
     ldp     x6, x7, [x9, #US_FRAME_X6]
     ldr     x8, [x9, #US_FRAME_X8]
-    ldp     x10, x11, [x9, #US_FRAME_X10]
     ldp     x12, x13, [x9, #US_FRAME_X12]
     ldp     x14, x15, [x9, #US_FRAME_X14]
     ldp     x16, x17, [x9, #US_FRAME_X16]
@@ -153,7 +203,7 @@ usSyncResume:
 
     ldr     x10, [x9, #US_FRAME_SP]
     mov     sp, x10
-    ldr     x9, [x9, #US_FRAME_X9]
+    ldp     x9, x10, [x9, #US_FRAME_X9]
 
     eret
 

@@ -37,4 +37,18 @@
  */
 bool usArmTransfer(UsSession *session);
 
+/*
+ * Draws the exception path into the payload.
+ *
+ * The loader's vector table is what is in force when the kernel first
+ * executes an instruction this hardware does not have, so its synchronous
+ * slot is where the shim has to be reachable from. Tables are found by
+ * following what the writes of VBAR_EL1 load, and only a slot that is still
+ * a branch to itself is written: anything else is a handler that works.
+ *
+ * Returns false when no slot was taken over, which means the shim cannot be
+ * reached and the boot will fail the same way it did before.
+ */
+bool usArmVectorTable(UsSession *session);
+
 #endif

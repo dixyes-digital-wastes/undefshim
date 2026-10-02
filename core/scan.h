@@ -150,7 +150,7 @@ typedef struct UsHandoffSite_t {
 UsHandoffSite usLocateTtbrHandoff(UsImage *img);
 
 /*
- * A hole in the loader's code, large enough to hold something.
+ * A hole in a mapped, executable section, large enough to hold something.
  *
  * This is a run of zero words, not a run of branches to themselves with zeros
  * after. Both shapes look like padding, and the second is what a vector table
@@ -161,9 +161,14 @@ UsHandoffSite usLocateTtbrHandoff(UsImage *img);
  * A run has to be longer than a vector entry to be considered, which is what
  * separates the two: an entry's padding cannot exceed the entry.
  *
- * The bytes are in an executable section, so they run; whether anything
- * refers to them is a judgement about the image rather than something that
- * can be read off it, and the longest run is preferred for that reason.
+ * Zero words are `udf #0`, and the section is mapped executable, so what is
+ * written here runs. Whether anything refers to the run is a judgement about
+ * the image rather than something that can be read off it, and the longest
+ * run is preferred for that reason.
+ *
+ * Note what this is not: a section with no raw data at all is only an entry
+ * in the section table and is not mapped, however large it declares itself to
+ * be. Only runs inside sections that carry data can be used.
  */
 typedef struct UsSpareSlot_t {
     bool     found;
@@ -173,6 +178,96 @@ typedef struct UsSpareSlot_t {
 } UsSpareSlot;
 
 UsSpareSlot usLocateSpareSlot(UsImage *img, uint32_t minBytes);
+
+/*
+ * An exception vector table: sixteen slots of 0x80 bytes, each starting with
+ * a branch.
+ *
+ * This is what VBAR_EL1 points at, and therefore what has to be rewritten for
+ * an exception to reach us instead of whoever installed the table. It is
+ * found structurally because the address it ends up at is a runtime one: the
+ * table is installed by the image and the register that holds it is only
+ * written once the image runs.
+ *
+ * The check is deliberately about shape rather than about contents. Every
+ * slot starts with a branch, and unused slots branch to themselves; which
+ * targets are live is reported rather than required, because a table that is
+ * still being filled in is a table, and the caller is the one that knows when
+ * it is complete.
+ *
+ * A table has to be inside a section that carries data. A section that is
+ * only an entry in the section table is not mapped, so a table found there
+ * could not be executed and is not the one in use.
+ */
+typedef struct UsVectorTable_t {
+    bool     found;
+    uint32_t rva;
+    uint32_t liveSlots;   /* slots that branch somewhere other than themselves */
+    uint32_t sameSlots;   /* slots that are `b .`, which is what an unused one holds */
+    size_t   matches;     /* tables seen; more than one means a choice was made */
+} UsVectorTable;
+
+UsVectorTable usLocateVectorTable(UsImage *img);
+
+/*
+ * The tables an image actually installs, found by following the register that
+ * each `msr vbar_el1, xN` writes.
+ *
+ * Shape alone does not answer this. An image can carry more than one table,
+ * and the one in use need not be the one that looks most like a table: the
+ * table winload installs has its interrupt entries written out in full rather
+ * than branched to, so a search for sixteen slots that begin with a branch
+ * finds a different table and reports it with no hint that it made a choice.
+ * Following the register needs no such assumption.
+ *
+ * Three sources are followed:
+ *
+ *   adrp + add     the address is a constant in the image, resolved here
+ *   ldr            the value is a runtime one, so only its existence is known
+ *
+ * A site whose register is written from memory cannot be resolved without
+ * running, and is counted rather than guessed at. For the tables that matter
+ * the first form is what appears, so the count being nonzero is information
+ * rather than a failure.
+ */
+#define US_VBAR_MAX_TABLES 8
+
+typedef struct UsVbarTables_t {
+    uint32_t rvas[US_VBAR_MAX_TABLES];
+    bool     syncFree[US_VBAR_MAX_TABLES];
+    size_t   count;       /* distinct tables resolved, in the order found */
+    size_t   sites;       /* msr vbar_el1 sites seen */
+    size_t   unresolved;  /* sites whose register came from memory */
+    bool     overflow;    /* more distinct tables than this can hold */
+} UsVbarTables;
+
+UsVbarTables usFindVbarTables(UsImage *img);
+
+/*
+ * The slots that can matter, as the architecture orders them.
+ *
+ * The offsets are the ones a running exception selects between: a synchronous
+ * exception taken at EL1 with SP_EL1 uses the second group, and that is the
+ * shape of every exception this project exists to handle.
+ */
+typedef enum UsVectorSlot_e {
+    UsVectorSlotEl1tSync = 0,  /* +0x000 */
+    UsVectorSlotEl1hSync = 4,  /* +0x200 */
+    UsVectorSlotEl0Sync32 = 8, /* +0x400, the kernel's lower EL entry */
+} UsVectorSlot;
+
+/*
+ * Whether a slot still holds the branch to itself that an unused one is
+ * filled with, and can therefore be taken over without losing a handler.
+ *
+ * An image is free to leave a slot unset, and one does: the table winload
+ * installs has its interrupt entries written out while its synchronous entry
+ * is still a branch to itself. That is why this is asked rather than assumed
+ * -- the same table in another build, or another table in this one, may have
+ * something there, and overwriting it would replace a handler that was
+ * working.
+ */
+bool usVectorSlotIsFree(UsImage *img, uint32_t tableRva, UsVectorSlot slot);
 
 /* Counts of the instructions the shim has to emulate, per image. */
 typedef struct UsLdaprCounts_t {

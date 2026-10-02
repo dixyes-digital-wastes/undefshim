@@ -31,7 +31,7 @@ PAYLOAD_CFLAGS := --target=aarch64-none-elf -std=gnu23 -ffreestanding \
 
 PAYLOAD_SRCS := $(PAYLOAD_DIR)/payload.c $(PAYLOAD_DIR)/uart.c $(PAYLOAD_DIR)/us_mem.c \
                 $(PAYLOAD_DIR)/selfmap.c $(PAYLOAD_DIR)/transfer.c $(PAYLOAD_DIR)/vamap.c \
-                core/pgtable.c core/par.c
+                core/pgtable.c core/par.c core/ldapr.c
 PAYLOAD_ASM := $(PAYLOAD_DIR)/entry.S $(PAYLOAD_DIR)/end.S
 PAYLOAD_OBJS := $(patsubst %.c,$(PAYLOAD_BUILD)/%.o,$(notdir $(PAYLOAD_SRCS))) \
                 $(patsubst $(PAYLOAD_DIR)/%.S,$(PAYLOAD_BUILD)/%.o,$(PAYLOAD_ASM))
@@ -94,6 +94,7 @@ DRIVER_SRCS := uefi/src/config.c uefi/src/registry.c \
                uefi/src/vamap.c \
                uefi/src/session.c \
                core/cfg.c core/pe.c core/scan.c core/plan.c core/rva_patch.c core/pool.c \
+               core/thunk.c core/ldapr.c \
                $(TOML)/toml.c
 DRIVER_ASM := uefi/src/stack.S
 DRIVER_OBJS := $(DRIVER_MAIN_OBJ) \
@@ -291,6 +292,7 @@ check-qemu: esp
 	@WIN_DISK=$(WIN_DISK) tests/deploy/patch_case.sh
 	@WIN_DISK=$(WIN_DISK) PLAN_CORPUS=$(PLAN_CORPUS) tests/deploy/plan_case.sh
 	@WIN_DISK=$(WIN_DISK) tests/deploy/breakpoint_case.sh
+	@WIN_DISK=$(WIN_DISK) tests/deploy/vector_case.sh
 
 clean:
 	rm -rf $(BUILD_DIR)

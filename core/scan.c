@@ -403,6 +403,13 @@ UsHandoffSite usLocateTtbrHandoff(UsImage *img) {
  * A hole is also taken to be executable, since it is inside a code section,
  * and unreferenced, which is a judgement about the image rather than
  * something that can be checked from its bytes.
+ *
+ * In particular, a section must carry data. One that declares only a virtual
+ * size is an entry in the section table and nothing else -- the loader does
+ * not map it, so there is no code there to overwrite and none to run. Reading
+ * one produces zeros like any other unwritten range, which is how such a
+ * section came to be picked: the runs inside it looked like the largest in
+ * the image, and two of them do not exist.
  */
 #define US_HOLE_MIN_SLOP 256U
 /* A hole is a hole, not a search for the longest run in the image. */
@@ -421,6 +428,9 @@ UsSpareSlot usLocateSpareSlot(UsImage *img, uint32_t minBytes) {
         uint32_t off;
 
         if ((s->characteristics & US_PE_SECTION_EXECUTABLE) == 0 || s->virtualSize == 0) {
+            continue;
+        }
+        if (s->rawSize == 0) {
             continue;
         }
         span = s->virtualSize;
@@ -453,14 +463,249 @@ UsSpareSlot usLocateSpareSlot(UsImage *img, uint32_t minBytes) {
     return best;
 }
 
-UsLdaprCounts usCountLdapr(UsImage *img) {    UsLdaprCounts c = { 0 };
+/*
+ * The exception vector table, found by its shape.
+ *
+ * Sixteen slots of 0x80 bytes, each starting with a branch. That layout is
+ * fixed by the architecture, so recognising it needs nothing about the image
+ * it is in, and the address it will live at is a runtime one anyway: the
+ * image installs it and only then writes the register.
+ *
+ * Slots that branch to themselves are counted rather than rejected. An
+ * unused slot holds `b .`, and a table that is still being filled in is still
+ * a table; the caller knows whether the slots it cares about are live.
+ */
+#define US_VECTOR_TABLE_BYTES 0x800U
+#define US_VECTOR_SLOT_BYTES 0x80U
+#define US_VECTOR_SLOTS 16U
 
-    c.word = usScanImage(img, &usPatLdaprW).total;
-    c.xword = usScanImage(img, &usPatLdaprX).total;
+/* A branch: the top six bits are the opcode, the rest is the offset. */
+#define US_BRANCH_CLASS_MASK 0xFC000000U
+#define US_BRANCH_CLASS 0x14000000U
+
+static bool isBranch(uint32_t word) {
+    return (word & US_BRANCH_CLASS_MASK) == US_BRANCH_CLASS;
+}
+
+/* The offset a branch encodes, sign extended. */
+static int64_t branchOffset(uint32_t word) {
+    return (int64_t)((int32_t)(word << 6) >> 6) * 4;
+}
+
+UsVectorTable usLocateVectorTable(UsImage *img) {
+    UsVectorTable best = { 0 };
+
+    if (img == NULL || !img->valid) {
+        return best;
+    }
+
+    for (uint16_t i = 0; i < img->sectionCount; i++) {
+        const UsPeSection *s = &img->sections[i];
+        uint32_t end;
+        uint32_t rva;
+
+        if ((s->characteristics & US_PE_SECTION_EXECUTABLE) == 0 || s->rawSize == 0) {
+            continue;
+        }
+        if (s->virtualSize < US_VECTOR_TABLE_BYTES) {
+            continue;
+        }
+        end = s->virtualAddress + s->virtualSize;
+
+        /* Only aligned positions can hold one, so only those are tried. */
+        for (rva = (s->virtualAddress + US_VECTOR_TABLE_BYTES - 1)
+                   & ~(US_VECTOR_TABLE_BYTES - 1);
+             rva + US_VECTOR_TABLE_BYTES <= end;
+             rva += US_VECTOR_TABLE_BYTES) {
+            uint32_t live = 0;
+            uint32_t same = 0;
+            bool ok = true;
+
+            for (uint32_t slot = 0; slot < US_VECTOR_SLOTS; slot++) {
+                uint32_t word = readInsn(img, rva + slot * US_VECTOR_SLOT_BYTES);
+
+                if (!isBranch(word)) {
+                    ok = false;
+                    break;
+                }
+                if (branchOffset(word) == 0) {
+                    same++;
+                } else {
+                    live++;
+                }
+            }
+            if (!ok) {
+                continue;
+            }
+
+            best.matches++;
+            if (!best.found) {
+                best.found = true;
+                best.rva = rva;
+                best.liveSlots = live;
+                best.sameSlots = same;
+            }
+        }
+    }
+
+    return best;
+}
+
+/*
+ * Following the register a vector table write puts in VBAR_EL1.
+ *
+ * The forms that appear are short: an adrp and an add two or three
+ * instructions ahead of the write, or a load from a structure. Looking back a
+ * handful of instructions covers the first without pretending to cover a
+ * compiler's whole repertoire, and anything not recognised is counted rather
+ * than guessed at.
+ */
+#define US_DEFUSE_LOOKBACK 8U
+
+/* adrp: 1 at bit 31, opcode 10 at 30..29, so the fixed bits are 0x90000000. */
+#define US_ADRP_MASK 0x9F000000U
+#define US_ADRP_OPCODE 0x90000000U
+/* add xD, xN, #imm12, 64 bit. */
+#define US_ADD_IMM_MASK 0xFF000000U
+#define US_ADD_IMM_OPCODE 0x91000000U
+
+#define US_RD(word) ((word) & 0x1FU)
+#define US_RN(word) (((word) >> 5) & 0x1FU)
+#define US_IMM12(word) (((word) >> 10) & 0xFFFU)
+
+/*
+ * The page an adrp refers to. The immediate is a signed 21 bit count of
+ * pages, counted from the page the instruction itself is on.
+ */
+static uint64_t adrpPage(uint32_t at, uint32_t word) {
+    int64_t immlo = (int64_t)((word >> 29) & 3U);
+    int64_t imm = (int64_t)((word >> 5) & 0x7FFFFU);
+
+    imm = (imm << 2) | immlo;
+    /* Sign extend from bit 20 without shifting into the sign bit. */
+    imm = (imm ^ 0x100000) - 0x100000;
+    return (uint64_t)(int64_t)(at & ~0xFFFU) + ((uint64_t)imm << 12);
+}
+
+UsVbarTables usFindVbarTables(UsImage *img) {
+    UsVbarTables out = { 0 };
+
+    if (img == NULL || !img->valid) {
+        return out;
+    }
+
+    for (uint16_t i = 0; i < img->sectionCount; i++) {
+        const UsPeSection *s = &img->sections[i];
+        const uint8_t *p;
+        size_t avail = 0;
+        size_t offset = 0;
+
+        if ((s->characteristics & US_PE_SECTION_EXECUTABLE) == 0 || s->virtualSize == 0
+            || s->rawSize == 0) {
+            continue;
+        }
+        p = usImageRvaSpan(img, s->virtualAddress, &avail);
+        if (p == NULL) {
+            continue;
+        }
+        if (avail > s->virtualSize) {
+            avail = s->virtualSize;
+        }
+
+        while (offset + 4 <= avail) {
+            uint32_t rva;
+            uint32_t word;
+            uint32_t reg;
+            uint32_t tableRva = 0;
+            bool resolved = false;
+
+            if (!patMatchAt(p + offset, &usPatMsrVbarEl1)) {
+                offset += 4;
+                continue;
+            }
+
+            rva = s->virtualAddress + (uint32_t)offset;
+            word = readInsn(img, rva);
+            reg = word & 0x1FU;
+            out.sites++;
+
+            for (uint32_t back = 1; back <= US_DEFUSE_LOOKBACK && back <= rva / 4; back++) {
+                uint32_t at = rva - back * 4;
+                uint32_t w = readInsn(img, at);
+
+                if ((w & US_ADD_IMM_MASK) == US_ADD_IMM_OPCODE && US_RD(w) == reg
+                    && US_RN(w) == reg) {
+                    uint32_t prev = readInsn(img, at - 4);
+
+                    if ((prev & US_ADRP_MASK) == US_ADRP_OPCODE && US_RD(prev) == reg) {
+                        tableRva = (uint32_t)adrpPage(at - 4, prev) + US_IMM12(w);
+                        resolved = true;
+                    }
+                    /* The definition is this add either way; anything before
+                     * it is a different value. */
+                    break;
+                }
+                if ((w & 0xFF000000U) == 0xF9000000U || (w & 0xFFC00000U) == 0xF9400000U
+                    || (w & 0xFFC00000U) == 0xF8400000U) {
+                    /* A load into this register: the address is a runtime
+                     * value, so it is counted and not guessed at. */
+                    break;
+                }
+                if (((w & 0x9F000000U) == 0x10000000U || (w & 0x9F000000U) == 0x90000000U)
+                    && US_RD(w) == reg) {
+                    break;
+                }
+            }
+
+            if (!resolved) {
+                out.unresolved++;
+                offset += 4;
+                continue;
+            }
+
+            {
+                bool seen = false;
+
+                for (size_t k = 0; k < out.count; k++) {
+                    if (out.rvas[k] == tableRva) {
+                        seen = true;
+                    }
+                }
+                if (!seen) {
+                    if (out.count < US_VBAR_MAX_TABLES) {
+                        uint32_t slot = readInsn(img, tableRva
+                                                 + (uint32_t)UsVectorSlotEl1hSync
+                                                       * US_VECTOR_SLOT_BYTES);
+
+                        out.syncFree[out.count] = isBranch(slot) && branchOffset(slot) == 0;
+                        out.rvas[out.count++] = tableRva;
+                    } else {
+                        out.overflow = true;
+                    }
+                }
+            }
+            offset += 4;
+        }
+    }
+
+    return out;
+}
+
+UsLdaprCounts usCountLdapr(UsImage *img) {    UsLdaprCounts c = { 0 };    c.word = usScanImage(img, &usPatLdaprW).total;    c.xword = usScanImage(img, &usPatLdaprX).total;
     c.byte = usScanImage(img, &usPatLdaprB).total;
     c.half = usScanImage(img, &usPatLdaprH).total;
     c.total = c.word + c.xword + c.byte + c.half;
     return c;
+}
+
+bool usVectorSlotIsFree(UsImage *img, uint32_t tableRva, UsVectorSlot slot) {
+    uint32_t word;
+
+    if (img == NULL || !img->valid || (uint32_t)slot >= US_VECTOR_SLOTS) {
+        return false;
+    }
+    word = readInsn(img, tableRva + (uint32_t)slot * US_VECTOR_SLOT_BYTES);
+    return isBranch(word) && branchOffset(word) == 0;
 }
 
 /* --- collecting the sites ------------------------------------------------ */

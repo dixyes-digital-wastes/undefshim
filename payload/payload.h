@@ -92,6 +92,23 @@ typedef struct UsPayloadConfig_t {
      * exception is fatal rather than forwarded.
      */
     uint64_t forwardTarget;
+
+    /*
+     * The pool, for the trace of what happened. It is reachable at this
+     * address from the moment the kernel is running, which is not true of
+     * anything else the boot placed.
+     */
+    uint64_t poolBase;
+
+    /*
+     * Whether to keep quiet.
+     *
+     * The serial port is reachable during boot and is not once the kernel has
+     * built its own page tables, where writing to it faults and the fault is
+     * not survivable. The exception path is entered in exactly that state, so
+     * it has to be told not to print rather than finding out.
+     */
+    uint64_t quiet;
 } UsPayloadConfig;
 
 /*

@@ -41,11 +41,85 @@
 /* "USPL", used to tell a plausible pool from an uninitialised page. */
 #define US_POOL_MAGIC 0x4C505355U
 
+/*
+ * What the payload records about being entered.
+ *
+ * There is no console once the kernel is running: its page tables do not map
+ * the serial port, and the first write to it stops the machine rather than
+ * printing anything. So the payload leaves a trace in memory instead, and
+ * whoever can still read memory -- the host, through the monitor -- reports
+ * it. This lives in the pool rather than in the payload itself because the
+ * payload sits in memory the firmware keeps for code, which may well be
+ * mapped read only by the time anything would want to write here.
+ */
+#define US_POOL_ENTRY_MAGIC 0x5952544E55504355ULL /* "UCPUNTRY", readable in a dump */
+
+/*
+ * One exception, as it was when the handler was entered.
+ *
+ * The whole frame is kept rather than a chosen few registers. A register
+ * that looks wrong is only evidence of something if the ones around it can
+ * be checked against what the interrupted code was doing, and which register
+ * that will be is not known in advance.
+ */
+typedef struct UsPoolTrace_t {
+    uint64_t cpu;
+    /* The whole MPIDR, not the part used to pick a landing pad: the part used
+     * is the part that is wrong when two CPUs share one. */
+    uint64_t mpidr;
+    /* x0 to x30, then sp, elr, spsr, esr and far: the frame, as stored. */
+    uint64_t words[36];
+} UsPoolTrace;
+
+#define US_POOL_TRACE_WORDS 36U
+#define US_POOL_TRACE_SLOTS 4U
+
+typedef struct UsPoolEntry_t {
+    uint64_t magic;
+    uint64_t entries;    /* how many times the handler was entered */
+    uint64_t handled;    /* how many of those it claimed */
+    uint64_t lastEsr;
+    uint64_t lastElr;
+    uint64_t lastFar;
+    uint64_t lastCpu;
+    uint64_t lastSp;
+    /* The instruction that faulted, so the host can see what was emulated
+     * rather than only how often. */
+    uint64_t lastInsn;
+
+    /*
+     * The first load that was carried out: the instruction, the address it
+     * read, and what came back.
+     *
+     * An emulator that returns the wrong value does not fail where it is;
+     * it fails wherever the value is next used, which is a fault with no
+     * obvious connection to this code. Keeping the first one makes that
+     * connection visible from outside, where nothing else can be.
+     */
+    uint64_t emuInsn;
+    uint64_t emuAddr;
+    uint64_t emuValue;
+    uint64_t emuElr;
+    /* The two registers the address was built from, so an address that looks
+     * wrong can be traced to which part of it was wrong. */
+    uint64_t emuX0;
+    uint64_t emuX9;
+
+    /* Every entry, in arrival order, up to the ring's size. */
+    UsPoolTrace trace[US_POOL_TRACE_SLOTS];
+} UsPoolEntry;
+
 typedef struct UsPool_t {
     uint32_t magic;
     /* Slots provided, which is US_MAX_CPUS. The payload checks its own CPU
      * index against this before using a stack. */
     uint32_t stackSlots;
+
+    /*
+     * Written by the payload on every entry. Zeroed by the boot, so a magic
+     * that is present is proof the payload ran rather than a leftover.
+     */
+    UsPoolEntry entry;
 
     /*
      * Physical address of this pool. At bootPhase the pool is identity mapped

@@ -25,6 +25,7 @@
 #include "common/layout.h"
 #include "core/pe.h"
 #include "core/scan.h"
+#include "core/thunk.h"
 
 /*
  * Where a plan's text goes.
@@ -50,6 +51,22 @@ typedef struct UsPlan_t {
     size_t   imageCount;
     uint32_t ntoskrnlSizeOfImage;
     uint32_t winloadSizeOfImage;
+
+    /*
+     * Where the kernel image will carry the thunk, which is the one place a
+     * vector table slot can reach: the slot's branch cannot leave its own
+     * image, and the payload is not in it. See core/thunk.h.
+     */
+    UsSpareSlot thunk;
+
+    /*
+     * The vector tables the loader installs, and whether the synchronous slot
+     * of each is still free. The loader runs before the kernel does, and it is
+     * the loader's table that is in force when the kernel first executes an
+     * instruction this hardware does not have -- which is before the kernel
+     * has installed a table of its own.
+     */
+    UsVbarTables vbar;
 
     /* What the payload will need. Constant today, but it is a requirement of
      * the plan rather than a fact about the allocator, so it is stated here. */

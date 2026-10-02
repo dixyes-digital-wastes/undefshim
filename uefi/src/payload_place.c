@@ -42,6 +42,21 @@ static void writeConfig(const UsPayloadPlace *place, const UsSession *session) {
      * answer until there is somewhere to hand it to.
      */
     cfg->forwardTarget = 0;
+
+    /* The trace of what happened goes here, and it has to survive the address
+     * space being rebuilt, which the pool does and the payload does not. */
+    cfg->poolBase = (uint64_t)(uintptr_t)session->pool;
+    session->pool->entry = (UsPoolEntry){ 0 };
+
+    /*
+     * Silence from the moment the kernel is running.
+     *
+     * The serial port is reachable during boot and is not after the kernel
+     * builds its own page tables, where a write to it faults. Whether the
+     * payload is entered in that state is not something it can find out by
+     * trying, so it is told.
+     */
+    cfg->quiet = 1;
 }
 
 bool usPayloadPlace(UsSession *session, UsPayloadPlace *out) {

@@ -6,6 +6,7 @@
  */
 
 #include "common/layout.h"
+#include "core/ldapr.h"
 #include "payload/payload.h"
 #include "payload/selfmap.h"
 #include "payload/uart.h"
@@ -36,11 +37,19 @@ UsFrame usPayloadLanding[US_MAX_CPUS];
  */
 static UsFrame *gCurrentFrame;
 
-static uint32_t currentCpu(void) {
+/* How many loads have been carried out, kept here rather than in the pool
+ * because the pool is what the host reads and this is only a counter. */
+static uint64_t gEmulated;
+
+static uint64_t currentMpidr(void) {
     uint64_t mpidr;
 
     __asm__ volatile("mrs %0, mpidr_el1" : "=r"(mpidr));
-    return (uint32_t)(mpidr & 0xFFU);
+    return mpidr;
+}
+
+static uint32_t currentCpu(void) {
+    return (uint32_t)(currentMpidr() & 0xFFU);
 }
 
 UsPayloadConfig *usPayloadConfig(void) {
@@ -60,41 +69,199 @@ static int isHandledClass(uint32_t ec) {
     return ec == US_EC_UNKNOWN || ec == US_EC_BRK64;
 }
 
+/*
+ * Carries out one of the RCpc loads.
+ *
+ * The instruction that faulted is at ELR_EL1, because the exception is taken
+ * before it runs. Reading it there and doing what it says is the whole of the
+ * emulation.
+ *
+ * The substitutes are the acquire loads rather than ordinary ones. LDAPR only
+ * promises release consistency, and these promise more, so a replacement that
+ * is at least as strong cannot turn a correct program into an incorrect one.
+ * The alternative -- a plain load -- would be weaker, and would be wrong in a
+ * way that only shows up under concurrency.
+ *
+ * A destination of 31 is the zero register: the value is read and thrown
+ * away, which is what the instruction does, and it is not written anywhere.
+ */
+static uint64_t loadAcquire(UsLdaprKind kind, uint64_t address) {
+    uint64_t value = 0;
+
+    switch (kind) {
+    case UsLdaprByte:
+        __asm__ volatile("ldarb %w0, [%1]" : "=r"(value) : "r"(address) : "memory");
+        break;
+    case UsLdaprHalf:
+        __asm__ volatile("ldarh %w0, [%1]" : "=r"(value) : "r"(address) : "memory");
+        break;
+    case UsLdaprWord:
+        __asm__ volatile("ldar %w0, [%1]" : "=r"(value) : "r"(address) : "memory");
+        break;
+    default:
+        __asm__ volatile("ldar %x0, [%1]" : "=r"(value) : "r"(address) : "memory");
+        break;
+    }
+    return value;
+}
+
+/*
+ * Performs the instruction the frame was trapped on.
+ *
+ * Returns false when it is not one of ours, in which case nothing has been
+ * changed and the caller has to answer for the exception the same way it
+ * would have without us.
+ */
+static bool emulateLdapr(UsFrame *frame) {
+    uint32_t insn = *(const volatile uint32_t *)(uintptr_t)frame->elr;
+    UsLdaprInsn decoded = usLdaprDecode(insn);
+    uint64_t address;
+    uint64_t value;
+
+    if (decoded.kind == UsLdaprNone) {
+        return false;
+    }
+
+    /* A base of 31 would be the zero register, which is not an address this
+     * instruction can be given; the encoding is reserved and not decoded. */
+    if (decoded.rn == 31) {
+        return false;
+    }
+
+    address = frame->x[decoded.rn];
+    value = loadAcquire(decoded.kind, address);
+
+    if (decoded.rt < 31) {
+        frame->x[decoded.rt] = value;
+    }
+
+    /*
+     * The first one is kept, because an emulator that returns the wrong value
+     * does not fail here: it fails wherever that value is used next, and the
+     * two are only connectable if this is written down.
+     */
+    if (gEmulated == 0) {
+        UsPayloadConfig *cfg = usPayloadConfig();
+
+        if (cfg->poolBase != 0) {
+            UsPool *pool = (UsPool *)(uintptr_t)cfg->poolBase;
+
+            pool->entry.emuInsn = insn;
+            pool->entry.emuAddr = address;
+            pool->entry.emuValue = value;
+            pool->entry.emuElr = frame->elr;
+            pool->entry.emuX0 = frame->x[0];
+            pool->entry.emuX9 = frame->x[9];
+        }
+    }
+    gEmulated++;
+
+    /* The value is in the frame, and the frame is what the entry restores, so
+     * moving past the instruction is all that is left to do. Doing it here
+     * rather than in assembly keeps the two halves of the emulation together:
+     * a resume that ran the instruction again would fault again, forever. */
+    frame->elr += 4;
+    return true;
+}
+
 int usPayloadHandle(UsFrame *frame) {
     UsPayloadConfig *cfg = usPayloadConfig();
     uint32_t ec;
+    uint32_t cpu;
 
     gCurrentFrame = frame;
-    usUartInit(cfg->uartBase);
+    cpu = currentCpu();
+
+    /*
+     * The trace goes down first, and before anything that can fault. It is
+     * the only evidence this code ran: the console is unreachable from here,
+     * and a fault in the payload would otherwise leave nothing behind but a
+     * machine that stopped.
+     */
+    if (cfg->poolBase != 0) {
+        UsPool *pool = (UsPool *)(uintptr_t)cfg->poolBase;
+        uint64_t at = pool->entry.entries;
+
+        pool->entry.magic = US_POOL_ENTRY_MAGIC;
+        pool->entry.entries++;
+        pool->entry.lastCpu = cpu;
+        pool->entry.lastSp = frame != NULL ? frame->sp : 0;
+        if (frame != NULL) {
+            pool->entry.lastEsr = frame->esr;
+            pool->entry.lastElr = frame->elr;
+            pool->entry.lastFar = frame->far;
+            pool->entry.lastInsn = *(const volatile uint32_t *)(uintptr_t)frame->elr;
+        }
+
+        /* Kept apart from the summary so that two exceptions arriving at once
+         * read as two events rather than as one that cannot have happened. */
+        if (frame != NULL && at < US_POOL_TRACE_SLOTS) {
+            UsPoolTrace *t = &pool->entry.trace[at];
+            const uint64_t *src = (const uint64_t *)(const void *)frame;
+
+            t->cpu = cpu;
+            t->mpidr = currentMpidr();
+            for (uint32_t i = 0; i < US_POOL_TRACE_WORDS; i++) {
+                t->words[i] = src[i];
+            }
+        }
+    }
+
+    /*
+     * The console is only usable before the kernel has its own page tables.
+     * Printing from here would fault on the write and the fault would not be
+     * survivable, so the quiet flag is obeyed rather than discovered.
+     */
+    if (cfg->quiet == 0) {
+        usUartInit(cfg->uartBase);
+    }
 
     if (frame == NULL) {
-        usUartPuts("US-PAYLOAD no-frame\n");
+        if (cfg->quiet == 0) {
+            usUartPuts("US-PAYLOAD no-frame\n");
+        }
         return 0;
     }
 
     ec = (uint32_t)US_ESR_EC(frame->esr);
-    usUartPuts("US-PAYLOAD ec=");
-    usUartPutHex(ec);
-    usUartPuts(" elr=");
-    usUartPutHex(frame->elr);
-    usUartPuts(" far=");
-    usUartPutHex(frame->far);
-    usUartPuts(" cpu=");
-    usUartPutDec(currentCpu());
-    usUartPuts("\n");
+    if (cfg->quiet == 0) {
+        usUartPuts("US-PAYLOAD ec=");
+        usUartPutHex(ec);
+        usUartPuts(" elr=");
+        usUartPutHex(frame->elr);
+        usUartPuts(" far=");
+        usUartPutHex(frame->far);
+        usUartPuts(" cpu=");
+        usUartPutDec(cpu);
+        usUartPuts("\n");
+    }
 
     if (!isHandledClass(ec)) {
-        usUartPuts("US-PAYLOAD not-mine\n");
+        if (cfg->quiet == 0) {
+            usUartPuts("US-PAYLOAD not-mine\n");
+        }
         return 0;
     }
 
+    if (ec == US_EC_UNKNOWN && emulateLdapr(frame)) {
+        if (cfg->poolBase != 0) {
+            ((UsPool *)(uintptr_t)cfg->poolBase)->entry.handled++;
+        }
+        if (cfg->quiet == 0) {
+            usUartPuts("US-PAYLOAD emulated\n");
+        }
+        /* Claimed: the entry resumes at the instruction after this one. */
+        return 1;
+    }
+
     /*
-     * Nothing is emulated yet, so the most that can be said is that the
-     * exception arrived and was understood. Reporting it and refusing to
-     * claim it is the honest answer, and the one that leaves the kernel to
-     * deal with it exactly as it would have.
+     * Not something this can carry out. Saying so is the honest answer, and
+     * the one that leaves the kernel to deal with it exactly as it would
+     * have; claiming it would resume at an instruction that was never done.
      */
-    usUartPuts("US-PAYLOAD reached\n");
+    if (cfg->quiet == 0) {
+        usUartPuts("US-PAYLOAD reached\n");
+    }
     return 0;
 }
 
