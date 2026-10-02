@@ -15,6 +15,10 @@
  *
  * This is the same problem for the pool and for the payload. Both are runtime
  * memory, both hold addresses of their own, and both have to be told.
+ *
+ * Where the answers go, and why the code that produces them cannot live here:
+ * see payload/vamap.h. The short version is that this file's own text is gone
+ * by the time the notification runs, so only its setup can be here.
  */
 
 #ifndef US_VAMAP_H

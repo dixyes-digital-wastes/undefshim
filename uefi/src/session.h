@@ -32,6 +32,9 @@ typedef struct UsSession_t {
      * default: see work.c for what still has to be true for it to work. */
     bool           armEnabled;
 
+    /* Whether to catch the address change notification. Off by default. */
+    bool           vamapEnabled;
+
     /*
      * The parsed configuration, owned here. Its patch table names stages that
      * are not loaded yet when the driver starts, so it has to outlive the
