@@ -19,7 +19,10 @@ CFG_CFLAGS := -std=gnu23 -O2 -Wall -Wextra -I$(ROOT) -I$(TOML) $(TOML_DEFS)
 
 .PHONY: all check clean
 all: test_cfg test_layout test_scan_images test_rva_patch test_plan test_pgtable test_par \
-     test_thunk test_ldapr test_acpi
+     test_thunk test_ldapr test_acpi test_ldr
+
+test_ldr: test_ldr.c $(ROOT)/core/ldr.c
+	$(CC) -std=gnu23 -O2 -Wall -Wextra -I$(ROOT) $^ -o $@
 
 test_acpi: test_acpi.c $(ROOT)/core/acpi.c
 	$(CC) -std=gnu23 -O2 -Wall -Wextra -I$(ROOT) $^ -o $@
@@ -62,3 +65,4 @@ check: all
 	./test_thunk
 	./test_ldapr
 	./test_acpi
+	./test_ldr
