@@ -177,7 +177,7 @@ $(PAYLOAD_BIN): $(PAYLOAD_ELF) $(TOOLS_TESTS)/blobcheck.c | $(PAYLOAD_BUILD)
 $(PAYLOAD_HDR): $(PAYLOAD_BIN)
 	@printf '/* Generated from %s. */\n' "$<" > $@
 	@printf '#define US_PAYLOAD_BYTES %s\n' "$$(stat -c %s $<)" >> $@
-	@for sym in usSyncEntry:ENTRY usPayloadConfigBlock:CONFIG usPayloadSelfTest:SELFTEST \
+	@for sym in usSyncEntry:ENTRY usSyncEntrySp0:ENTRYSP0 usPayloadConfigBlock:CONFIG usPayloadSelfTest:SELFTEST \
 	           usPayloadHandle:HANDLE usTransferEntry:TRANSFER usVaMapRecord:VAMAP \
 	           usVaMapHook:VAMAPHOOK usVaMapNotify:VAMAPNOTIFY; do \
 	    name=$${sym%%:*}; tag=$${sym##*:}; \

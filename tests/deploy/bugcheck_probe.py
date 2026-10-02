@@ -194,7 +194,11 @@ def findBugCheckRecord(qmp_file, base):
         return None, None
 
     def plausible(v):
-        return v == 0 or v >= 0xFFFF000000000000
+        # An address, a small number, or zero. The small ones are real and not
+        # an accident of the search: PAGE_FAULT_IN_NONPAGED_AREA passes a flag
+        # of 1, and a filter that only accepted addresses skipped the whole
+        # record and reported that there was none.
+        return v == 0 or v < 0x10000 or v >= 0xFFFF000000000000
 
     best = None
     for i in range(len(words) - 4):

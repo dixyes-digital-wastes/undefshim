@@ -131,12 +131,18 @@ static bool armSlot(UsSession *s, const UsArmTarget *target, uint32_t next) {
     uint32_t tail0;
     uint32_t tail1;
     /*
-     * Whether this slot's stub may use the interrupted stack. It may where
-     * execution was using SP_EL0, because that is a stack and the interrupted
-     * stack pointer is still in SP; it may not where SP holds whatever SP_EL1
-     * happened to be, which is not a stack this can push on.
+     * Whether this slot's stub may use the interrupted stack, and with it
+     * which of the payload's two entries it reaches.
+     *
+     * It may where execution was using SP_EL0: that is a stack, the
+     * interrupted stack pointer is still in SP, and the stub pushes the
+     * registers the entry spends so the entry can give them back. It may not
+     * where SP holds whatever SP_EL1 happened to be, which is not a stack
+     * anything can push on.
      */
-    bool keep = target->slot == UsVectorSlotEl1tSync;
+    bool save = target->slot == UsVectorSlotEl1tSync;
+    uint32_t entryOffset = save ? US_PAYLOAD_ENTRYSP0_OFFSET
+                                : US_PAYLOAD_ENTRY_OFFSET;
 
     slotAt = (uint8_t *)(uintptr_t)usImageRvaToPtr(target->image,
                                                    target->tableRva
@@ -166,7 +172,7 @@ static bool armSlot(UsSession *s, const UsArmTarget *target, uint32_t next) {
      * has never heard of an RCpc load.
      */
     {
-        uint32_t tailIndex = usSlotStubTailIndex(keep);
+        uint32_t tailIndex = usSlotStubTailIndex(save);
         uint32_t from = target->stubRva + (tailIndex + 1U) * 4U;
         uint32_t slotRva = target->tableRva + (uint32_t)target->slot * 0x80U;
 
@@ -196,8 +202,8 @@ static bool armSlot(UsSession *s, const UsArmTarget *target, uint32_t next) {
         return false;
     }
 
-    usEncodeSlotStub(stub, s->payloadPlace.baseVa + US_PAYLOAD_ENTRY_OFFSET,
-                     tail0, tail1, keep);
+    usEncodeSlotStub(stub, s->payloadPlace.baseVa + entryOffset, tail0, tail1,
+                     save);
     memcpy(stubAt, stub, US_SLOT_STUB_BYTES);
     usCacheFlushRange(stubAt, US_SLOT_STUB_BYTES);
 
@@ -213,7 +219,7 @@ static bool armSlot(UsSession *s, const UsArmTarget *target, uint32_t next) {
     usConsolePuts(" -> stub +");
     usConsolePutHex(target->stubRva);
     usConsolePuts(" -> payload ");
-    usConsolePutHex(s->payloadPlace.baseVa + US_PAYLOAD_ENTRY_OFFSET);
+    usConsolePutHex(s->payloadPlace.baseVa + entryOffset);
     usConsolePuts("\n");
     (void)next;
     return true;

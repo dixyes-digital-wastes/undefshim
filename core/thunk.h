@@ -63,10 +63,10 @@ void usEncodeThunk(uint32_t out[US_THUNK_WORDS], uint64_t target);
  * The width is not tested. The four loads differ only in the two bits the
  * mask clears, so one comparison covers all of them.
  *
- * x16 and x17 are spent here, and on one vector that matters. `keep` selects a
- * form that pushes them first and gives them back on both exits, and it is
- * used wherever there is a stack to push on. The two vectors differ in exactly
- * that:
+ * x16, x17 and x18 are spent here, and on one vector that matters. `save`
+ * selects a form that pushes all three first and gives them back on both
+ * exits, and it is used wherever there is a stack to push on. The two vectors
+ * differ in exactly that:
  *
  *   EL1t  SP is the interrupted stack, because execution was using SP_EL0 and
  *         an exception taken with SP_EL0 selected leaves it in place. The
@@ -80,19 +80,33 @@ void usEncodeThunk(uint32_t out[US_THUNK_WORDS], uint64_t target);
  * brk`, with the number carried in x16 and read by the handler this stub hands
  * to. Clobbering it turns every one of those into a service that does not
  * exist.
+ *
+ * x18 is spent by the entry as well as by this, so it is saved with them: a
+ * register the entry destroys has to come back, and the set of registers the
+ * entry destroys is what says which ones to save.
  */
-#define US_SLOT_STUB_WORDS 20U
+#define US_SLOT_STUB_WORDS 23U
 #define US_SLOT_STUB_BYTES (US_SLOT_STUB_WORDS * 4U)
 
 void usEncodeSlotStub(uint32_t *out, uint64_t target, uint32_t tail0,
-                      uint32_t tail1, bool keep);
+                      uint32_t tail1, bool save);
 
 /*
- * Where the two tail words end up, for a caller that needs to encode a branch
- * into them: a relative branch is relative to its own address, so the second
- * word is the one a displacement is measured from.
+ * Where the saving form leaves them, and how much it took. These are a
+ * property of the stub, so they live beside it and reach the entry through the
+ * generated header rather than being written out a second time in assembly.
  */
-uint32_t usSlotStubTailIndex(bool keep);
+#define US_STUB_SAVE_BYTES 32U
+#define US_STUB_SAVE_X18 0U
+#define US_STUB_SAVE_X16 16U
+#define US_STUB_SAVE_X17 24U
+
+/*
+ * The index of the first of the two tail words. A caller that has to encode a
+ * branch into them needs it, because a relative branch is relative to its own
+ * address.
+ */
+uint32_t usSlotStubTailIndex(bool save);
 
 /*
  * arm64's unconditional branch: a 26 bit word offset, in instructions, so it
