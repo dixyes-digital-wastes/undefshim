@@ -56,6 +56,16 @@ typedef struct UsSession_t {
     bool           armSlot0;
 
     /*
+     * Whether to treat the SPx vector's stack as one the stub may push on.
+     *
+     * It is a question, not a preference, and it is kept switchable because
+     * two recorded observations disagree: a probe logged that pushing there
+     * faults until the machine resets, and a frame read later shows SP holding
+     * an ordinary kernel stack. One run settles it.
+     */
+    bool           spxStack;
+
+    /*
      * Whether to replace the RCpc loads in the images rather than only
      * handling the exceptions they cause. On by default: it is the mechanism
      * that covers the kernel, and the exception path covers what it cannot.

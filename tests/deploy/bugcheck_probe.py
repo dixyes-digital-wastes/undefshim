@@ -310,6 +310,8 @@ def main():
                     help="whether to take over the SP0 synchronous slot too")
     ap.add_argument("--rewrite", default="true",
                     help="whether to replace the RCpc loads in the images")
+    ap.add_argument("--spx-stack", default="false",
+                    help="whether the stub may push on the SPx vector too")
     ap.add_argument("--keep", action="store_true",
                     help="leave the machine running, to be looked at afterwards")
     # QEMU's own logging is the only record of the exceptions a run took: the
@@ -337,7 +339,8 @@ ldapr_rewrite = %s
 enabled = true
 arm = %s
 arm_slot0 = %s
-""" % (args.rewrite, args.arm, args.arm_slot0))
+spx_stack = %s
+""" % (args.rewrite, args.arm, args.arm_slot0, args.spx_stack))
 
     esp = os.path.join(work, "run.img")
     serialLog = os.path.join(work, "serial.log")

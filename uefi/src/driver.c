@@ -101,6 +101,7 @@ int main(int argc, char **argv) {
      * like any other, so they come from the configuration file. */
     gSession.armEnabled = usConfigDebugBool(cfg, "arm", false);
     gSession.armSlot0 = usConfigDebugBool(cfg, "arm_slot0", true);
+    gSession.spxStack = usConfigDebugBool(cfg, "spx_stack", false);
     gSession.vamapEnabled = usConfigDebugBool(cfg, "vamap", false);
     /*
      * Not from the debug section: this one is a scanning decision and is
