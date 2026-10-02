@@ -31,4 +31,14 @@
  */
 size_t usRewriteLdapr(UsSession *session);
 
+/*
+ * The same thing for one image, for the ones that arrive one at a time.
+ *
+ * An image the firmware loads -- ci.dll, a driver -- is in memory and not yet
+ * running between LoadImage returning and the caller calling StartImage, which
+ * is the same situation the kernel is in when this is done for it. Doing it
+ * there means the exception path does not have to cover them at all.
+ */
+size_t usRewriteOne(UsImage *img);
+
 #endif

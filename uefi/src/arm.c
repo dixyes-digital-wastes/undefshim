@@ -88,100 +88,184 @@ bool usArmTransfer(UsSession *s) {
 /*
  * Drawing the exception path into the payload, see arm.h.
  *
- * Both tables are taken over, and both are needed:
+ * Both tables are taken over, and both of their synchronous slots:
  *
  *   - the loader installs a table before the kernel runs, and that is the one
  *     in force when the kernel takes its first undefined instruction
  *   - the kernel installs its own table once it is running, and images it
  *     loads later -- ci.dll among them -- fault into that one
  *
- * The second is the one that matters for everything the replacement pass
- * cannot reach. An image that is read off disk after the boot has never been
- * scanned, so its instructions are still the ones this hardware does not have.
+ * And both slots per table, because Windows switches between SP_EL0 and
+ * SP_EL1: an exception taken with SP_EL0 selected arrives at offset 0 of the
+ * table and one taken with SP_EL1 at offset 0x200. Only the second of those
+ * was being written, so the exceptions this project exists for went past the
+ * stub and into the kernel's own handler -- which is a fault loop, since that
+ * handler has no idea what an RCpc load is.
  *
- * Each table is found by following the register the writes of VBAR_EL1 load,
- * not by looking for a table-shaped thing. An image carries more than one, and
- * the one that looks most like a table is not the one in use.
+ * A slot is replaced by a branch to a stub, whatever it held. The stub reads
+ * the exception class and either leaves for the payload or runs the slot's
+ * own two-instruction tail, which for the board's table means a branch to
+ * where it branched and for the kernel's SP_EL0 slot means the instruction
+ * that was written there before continuing past it.
  *
- * A slot holding a branch is written; one holding anything else is left alone,
- * because those bytes are a handler and the stub has nothing to keep.
+ * The stubs live in a run of zero words inside the kernel image. They have to
+ * be in the same image as the slots they are reached from, because the branch
+ * that reaches them is relative and the image moves when the address space is
+ * rebuilt.
  */
+#define US_STUB_SLOTS 2U
+
 typedef struct UsArmTarget_t {
     UsImage   *image;
     uint32_t   tableRva;
-    uint32_t   syncWord;
+    uint32_t   stubRva;
     UsVectorSlot slot;
 } UsArmTarget;
 
-static bool armSlot(UsSession *s, const UsArmTarget *target) {
-    uint32_t stub[US_STUB_WORDS];
-    uint8_t *at;
-    uint64_t payloadEntry;
+static bool armSlot(UsSession *s, const UsArmTarget *target, uint32_t next) {
+    uint32_t stub[US_SLOT_STUB_WORDS];
+    uint8_t *slotAt;
+    uint8_t *stubAt;
+    uint32_t original;
+    uint32_t enter;
+    uint32_t tail0;
+    uint32_t tail1;
 
-    at = (uint8_t *)(uintptr_t)usImageRvaToPtr(target->image,
-                                               target->tableRva
-                                                   + (uint32_t)target->slot * 0x80U);
-    if (at == NULL) {
+    slotAt = (uint8_t *)(uintptr_t)usImageRvaToPtr(target->image,
+                                                   target->tableRva
+                                                       + (uint32_t)target->slot * 0x80U);
+    stubAt = (uint8_t *)(uintptr_t)usImageRvaToPtr(target->image, target->stubRva);
+    if (slotAt == NULL || stubAt == NULL) {
+        return false;
+    }
+    original = (uint32_t)slotAt[0] | ((uint32_t)slotAt[1] << 8)
+               | ((uint32_t)slotAt[2] << 16) | ((uint32_t)slotAt[3] << 24);
+
+
+    /*
+     * The tail: what happens when the exception is not one of ours -- and the
+     * test for that is the instruction, not the class, so the branch slots are
+     * not the only ones this is safe for.
+     *
+     * A slot holding a branch keeps its meaning, adjusted for the distance the
+     * stub is away from it. A slot holding a handler written out in place runs
+     * its first instruction and continues past it. That is faithful because of
+     * what the stub has and has not done by then: it writes no memory, and the
+     * only registers it has is x16 and x17, which the platform does not
+     * preserve across this vector. This matters because Windows takes its
+     * exceptions on SP_EL0, and the kernel's table has the handler at that
+     * offset written out rather than branched to: leaving that slot alone
+     * leaves the exceptions this project exists for going to a handler that
+     * has never heard of an RCpc load.
+     */
+    {
+        uint32_t from = target->stubRva + (US_SLOT_STUB_CONTINUATION + 1U) * 4U;
+        uint32_t slotRva = target->tableRva + (uint32_t)target->slot * 0x80U;
+
+        if ((original & 0xFC000000U) == 0x14000000U) {
+            int32_t displacement = (int32_t)(original << 6) >> 6;
+
+            tail0 = US_NOP;
+            if (displacement == 0) {
+                /* A branch to itself is what an unused slot holds. Keeping
+                 * that meaning rather than adjusting it: the place it would
+                 * point at is this stub. */
+                tail1 = 0x14000000U;
+            } else if (!usEncodeBranch(from, slotRva + (uint32_t)(displacement * 4),
+                                       &tail1)) {
+                return false;
+            }
+        } else {
+            tail0 = original;
+            if (!usEncodeBranch(from, slotRva + 4U, &tail1)) {
+                return false;
+            }
+        }
+    }
+
+    if (!usEncodeBranch(target->tableRva + (uint32_t)target->slot * 0x80U,
+                        target->stubRva, &enter)) {
         return false;
     }
 
-    /*
-     * The pool's address as it is now. Physical memory stays reachable at its
-     * own address from the kernel's side, which was measured rather than
-     * assumed: the kernel's page tables are not the only ones in force, and
-     * the identity mapping built at boot survives.
-     */
-    payloadEntry = s->payloadPlace.baseVa + US_PAYLOAD_ENTRY_OFFSET;
+    usEncodeSlotStub(stub, s->payloadPlace.baseVa + US_PAYLOAD_ENTRY_OFFSET,
+                     tail0, tail1);
+    memcpy(stubAt, stub, US_SLOT_STUB_BYTES);
+    usCacheFlushRange(stubAt, US_SLOT_STUB_BYTES);
 
-    usEncodeVectorStub(stub, payloadEntry, target->syncWord);
-    memcpy(at, stub, US_STUB_BYTES);
-    usCacheFlushRange(at, US_STUB_BYTES);
+    /* The slot last: until the stub is there, a branch into it would be a
+     * branch into whatever the hole held, which is zeroes. */
+    memcpy(slotAt, &enter, sizeof(enter));
+    usCacheFlushRange(slotAt, sizeof(enter));
 
     usConsolePuts("arm: vbar +");
     usConsolePutHex(target->tableRva);
     usConsolePuts(" slot ");
     usConsolePutDec((uint64_t)target->slot);
-    usConsolePuts(" -> ");
-    usConsolePutHex(payloadEntry);
+    usConsolePuts(" -> stub +");
+    usConsolePutHex(target->stubRva);
+    usConsolePuts(" -> payload ");
+    usConsolePutHex(s->payloadPlace.baseVa + US_PAYLOAD_ENTRY_OFFSET);
     usConsolePuts("\n");
+    (void)next;
     return true;
 }
 
 static bool armImage(UsSession *s, UsImageKind kind, size_t *armed) {
+    static const UsVectorSlot slots[US_STUB_SLOTS] = {
+        UsVectorSlotEl1tSync,
+        UsVectorSlotEl1hSync,
+    };
     UsImage *img = usRegistryGet(&s->registry, kind);
     UsVbarTables tables;
+    UsSpareSlot hole;
 
     if (img == NULL) {
         return false;
     }
     tables = usFindVbarTables(img);
+    if (tables.count == 0) {
+        return false;
+    }
+    /*
+     * Where the stubs go. The hole has to be in the same image as the slots,
+     * for the branch that reaches it.
+     */
+    hole = usLocateSpareSlot(img, US_SLOT_STUB_BYTES * US_STUB_SLOTS);
+    if (!hole.found) {
+        usConsolePuts("arm: no room in ");
+        usConsolePuts(usImageKindName(kind));
+        usConsolePuts(" for a stub\n");
+        return false;
+    }
 
     usConsolePuts("arm: ");
     usConsolePuts(usImageKindName(kind));
-    usConsolePuts(" vbar sites=");
-    usConsolePutDec(tables.sites);
-    usConsolePuts(" unresolved=");
-    usConsolePutDec(tables.unresolved);
     usConsolePuts(" tables=");
     usConsolePutDec(tables.count);
+    usConsolePuts(" stubs at +");
+    usConsolePutHex(hole.rva);
+    usConsolePuts(" room=");
+    usConsolePutDec(hole.bytes);
     usConsolePuts("\n");
 
     for (size_t i = 0; i < tables.count; i++) {
-        UsArmTarget target = {
-            .image = img,
-            .tableRva = tables.rvas[i],
-            .syncWord = tables.syncWord[i],
-            .slot = UsVectorSlotEl1hSync,
-        };
+        for (size_t k = 0; k < US_STUB_SLOTS; k++) {
+            /* Each table gets its own pair. Sharing one pair between two
+             * tables means the second write lands on the first table's stub,
+             * and that table's slots then branch into code whose tail belongs
+             * to the other one. */
+            UsArmTarget target = {
+                .image = img,
+                .tableRva = tables.rvas[i],
+                .stubRva = hole.rva
+                           + (uint32_t)(i * US_STUB_SLOTS + k) * US_SLOT_STUB_BYTES,
+                .slot = slots[k],
+            };
 
-        if (!tables.syncUsable[i]) {
-            usConsolePuts("arm: +");
-            usConsolePutHex(tables.rvas[i]);
-            usConsolePuts(" has a handler written out in full, left alone\n");
-            continue;
-        }
-        if (armSlot(s, &target)) {
-            (*armed)++;
+            if (armSlot(s, &target, 0)) {
+                (*armed)++;
+            }
         }
     }
 

@@ -7,18 +7,20 @@ build/
 *.a
 
 # Host side test binaries.
+#
+# By pattern rather than by name: a written out list has gone stale three
+# times, and it shows up as a binary that differs after every build rather
+# than as an error. The sources are taken back out afterwards.
+tests/unit/test_*
+!tests/unit/test_*.c
+tests/tools/peprobe
+tests/tools/planprobe
+tests/tools/holes
+
+# The same in the third party trees.
 third_party/posix-uefi/tests/test_printf
 third_party/posix-uefi/tests/test_strtol
 third_party/toml-c/tests/test_toml
-tests/unit/test_cfg
-tests/unit/test_layout
-tests/unit/test_scan_images
-tests/unit/test_rva_patch
-tests/unit/test_plan
-tests/unit/test_pgtable
-tests/unit/test_par
-tests/tools/peprobe
-tests/tools/planprobe
 
 __pycache__/
 

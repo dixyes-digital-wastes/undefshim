@@ -63,49 +63,53 @@ bool usEncodeBranch(uint32_t from, uint32_t to, uint32_t *out) {
  *
  * The encodings are the ones the assembler produces for the same source; they
  * are written here rather than assembled because the payload's address and the
- * continuation are the only things that vary, and assembling this at build
- * time would mean carrying a second copy of it into the driver.
+ * tail are the only things that vary, and assembling this at build time would
+ * mean carrying a second copy of it into the driver.
+ *
+ * The two branches to the tail are the assembler's own displacements: the
+ * tail is word 15, so the first moves 13 instructions and the second 6.
  */
-#define US_STUB_READ_ESR 0xD5385210U    /* mrs  x16, esr_el1       */
-#define US_STUB_EC_SHIFT 0xD35AFE10U    /* lsr  x16, x16, #26      */
-#define US_STUB_CBNZ_X16 0xB5000000U    /* cbnz x16, <offset>      */
-#define US_STUB_JUMP_X16 0xD61F0200U    /* br   x16                */
+#define US_STUB_READ_ESR 0xD5385210U    /* mrs  x16, esr_el1              */
+#define US_STUB_EC_SHIFT 0xD35AFE10U    /* lsr  x16, x16, #26             */
+#define US_STUB_READ_ELR 0xD5384030U    /* mrs  x16, elr_el1              */
+#define US_STUB_LOAD_INS 0xB9400211U    /* ldr  w17, [x16]                */
+#define US_STUB_MASK_INS 0x12164E31U    /* and  w17, w17, #0x3ffffc00     */
+#define US_STUB_LDAPR_LO 0x52980010U    /* movz w16, #0xc000              */
+#define US_STUB_LDAPR_HI 0x72A717F0U    /* movk w16, #0x38bf, lsl #16     */
+#define US_STUB_COMPARE 0x6B10023FU     /* cmp  w17, w16                  */
+#define US_STUB_JUMP_X16 0xD61F0200U    /* br   x16                       */
 
-/* How far the continuation has moved from the slot's first instruction,
- * which is where the original branch was. A relative branch has to be
- * adjusted by that distance to still arrive at the same place. */
-#define US_STUB_BRANCH_MOVE ((int32_t)US_STUB_CONTINUATION * 4)
+#define US_STUB_BRANCH_EC 0xB5000000U   /* cbnz x16, <tail>               */
+/* b.<cond> <tail>. The condition is in the bottom four bits and it is the
+ * whole difference between this and a branch to the tail for every exception:
+ * NE sends the ones that are not ours away, and anything else sends the ones
+ * that are. Leaving the field at zero makes it EQ, which is the inverse. */
+#define US_STUB_BRANCH_NE 0x54000000U   /* b.ne <tail>                    */
+#define US_STUB_COND_NE 1U
 
-void usEncodeVectorStub(uint32_t out[US_STUB_WORDS], uint64_t target,
-                        uint32_t originalBranch) {
-    int32_t offset;
+void usEncodeSlotStub(uint32_t out[US_SLOT_STUB_WORDS], uint64_t target,
+                      uint32_t tail0, uint32_t tail1) {
+    int32_t toTail = (int32_t)US_SLOT_STUB_CONTINUATION;
 
     out[0] = US_STUB_READ_ESR;
     out[1] = US_STUB_EC_SHIFT;
-    /* Forward to the continuation, which is where the exception class says
-     * this is not ours. The offset is in instructions, from this one. */
-    offset = (int32_t)US_STUB_CONTINUATION - 2;
-    out[2] = US_STUB_CBNZ_X16 | (((uint32_t)offset & 0x7FFFFU) << 5) | (16U << 0);
+    out[2] = US_STUB_BRANCH_EC | (((uint32_t)(toTail - 2) & 0x7FFFFU) << 5) | 16U;
 
-    out[3] = movz((uint32_t)(target & 0xFFFFU), 0, US_THUNK_REG);
-    out[4] = movk((uint32_t)((target >> 16) & 0xFFFFU), 16, US_THUNK_REG);
-    out[5] = movk((uint32_t)((target >> 32) & 0xFFFFU), 32, US_THUNK_REG);
-    out[6] = movk((uint32_t)((target >> 48) & 0xFFFFU), 48, US_THUNK_REG);
-    out[7] = US_STUB_JUMP_X16;
+    out[3] = US_STUB_READ_ELR;
+    out[4] = US_STUB_LOAD_INS;
+    out[5] = US_STUB_MASK_INS;
+    out[6] = US_STUB_LDAPR_LO;
+    out[7] = US_STUB_LDAPR_HI;
+    out[8] = US_STUB_COMPARE;
+    out[9] = US_STUB_BRANCH_NE | (((uint32_t)(toTail - 9) & 0x7FFFFU) << 5)
+             | US_STUB_COND_NE;
 
-    {
-        int32_t displacement = (int32_t)(originalBranch << 6) >> 6;
+    out[10] = movz((uint32_t)(target & 0xFFFFU), 0, US_THUNK_REG);
+    out[11] = movk((uint32_t)((target >> 16) & 0xFFFFU), 16, US_THUNK_REG);
+    out[12] = movk((uint32_t)((target >> 32) & 0xFFFFU), 32, US_THUNK_REG);
+    out[13] = movk((uint32_t)((target >> 48) & 0xFFFFU), 48, US_THUNK_REG);
+    out[14] = US_STUB_JUMP_X16;
 
-        if (displacement == 0) {
-            /* The slot branched to itself, which is what an unused one holds.
-             * Keeping that meaning rather than adjusting it: the place it
-             * would now point at is this code. */
-            out[US_STUB_CONTINUATION] = US_BRANCH_OPCODE;
-        } else {
-            int32_t moved = displacement - US_STUB_BRANCH_MOVE / 4;
-
-            out[US_STUB_CONTINUATION] = US_BRANCH_OPCODE
-                                        | ((uint32_t)moved & 0x03FFFFFFU);
-        }
-    }
+    out[US_SLOT_STUB_CONTINUATION] = tail0;
+    out[US_SLOT_STUB_CONTINUATION + 1U] = tail1;
 }
