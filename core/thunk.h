@@ -62,17 +62,37 @@ void usEncodeThunk(uint32_t out[US_THUNK_WORDS], uint64_t target);
  *
  * The width is not tested. The four loads differ only in the two bits the
  * mask clears, so one comparison covers all of them.
+ *
+ * x16 and x17 are spent here, and on one vector that matters. `keep` selects a
+ * form that pushes them first and gives them back on both exits, and it is
+ * used wherever there is a stack to push on. The two vectors differ in exactly
+ * that:
+ *
+ *   EL1t  SP is the interrupted stack, because execution was using SP_EL0 and
+ *         an exception taken with SP_EL0 selected leaves it in place. The
+ *         kernel's own handler for this vector uses it as a stack.
+ *   EL1h  SP is whatever SP_EL1 happened to hold, which after the address
+ *         space is rebuilt is not necessarily mapped. A push there is a fault
+ *         taken inside the exception it was meant to handle.
+ *
+ * It has to be done on the first of those because the kernel uses x16 on its
+ * own path through that vector: its breakpoint services are `mov x16, #n;
+ * brk`, with the number carried in x16 and read by the handler this stub hands
+ * to. Clobbering it turns every one of those into a service that does not
+ * exist.
  */
-#define US_SLOT_STUB_WORDS 17U
+#define US_SLOT_STUB_WORDS 20U
 #define US_SLOT_STUB_BYTES (US_SLOT_STUB_WORDS * 4U)
 
-/* Where the four halves of the payload's address are, and the two words the
- * slot's own behaviour is written into. */
-#define US_SLOT_STUB_ADDRESS 10U
-#define US_SLOT_STUB_CONTINUATION 15U
+void usEncodeSlotStub(uint32_t *out, uint64_t target, uint32_t tail0,
+                      uint32_t tail1, bool keep);
 
-void usEncodeSlotStub(uint32_t out[US_SLOT_STUB_WORDS], uint64_t target,
-                      uint32_t tail0, uint32_t tail1);
+/*
+ * Where the two tail words end up, for a caller that needs to encode a branch
+ * into them: a relative branch is relative to its own address, so the second
+ * word is the one a displacement is measured from.
+ */
+uint32_t usSlotStubTailIndex(bool keep);
 
 /*
  * arm64's unconditional branch: a 26 bit word offset, in instructions, so it

@@ -232,6 +232,8 @@ def main():
     ap.add_argument("--catch-timeout", type=float, default=1200)
     ap.add_argument("--arm-slot0", default="true",
                     help="whether to take over the SP0 synchronous slot too")
+    ap.add_argument("--keep", action="store_true",
+                    help="leave the machine running, to be looked at afterwards")
     args = ap.parse_args()
 
     os.chdir(ROOT)
