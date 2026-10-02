@@ -677,7 +677,8 @@ UsVbarTables usFindVbarTables(UsImage *img) {
                                                  + (uint32_t)UsVectorSlotEl1hSync
                                                        * US_VECTOR_SLOT_BYTES);
 
-                        out.syncFree[out.count] = isBranch(slot) && branchOffset(slot) == 0;
+                        out.syncWord[out.count] = slot;
+                        out.syncUsable[out.count] = isBranch(slot);
                         out.rvas[out.count++] = tableRva;
                     } else {
                         out.overflow = true;
@@ -699,13 +700,26 @@ UsLdaprCounts usCountLdapr(UsImage *img) {    UsLdaprCounts c = { 0 };    c.word
 }
 
 bool usVectorSlotIsFree(UsImage *img, uint32_t tableRva, UsVectorSlot slot) {
+    int32_t displacement = 0;
+
+    return usVectorSlotBranch(img, tableRva, slot, &displacement) && displacement == 0;
+}
+
+bool usVectorSlotBranch(UsImage *img, uint32_t tableRva, UsVectorSlot slot,
+                        int32_t *displacement) {
     uint32_t word;
 
     if (img == NULL || !img->valid || (uint32_t)slot >= US_VECTOR_SLOTS) {
         return false;
     }
     word = readInsn(img, tableRva + (uint32_t)slot * US_VECTOR_SLOT_BYTES);
-    return isBranch(word) && branchOffset(word) == 0;
+    if (!isBranch(word)) {
+        return false;
+    }
+    if (displacement != NULL) {
+        *displacement = (int32_t)branchOffset(word) / 4;
+    }
+    return true;
 }
 
 /* --- collecting the sites ------------------------------------------------ */

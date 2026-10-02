@@ -101,6 +101,14 @@ int main(int argc, char **argv) {
      * like any other, so they come from the configuration file. */
     gSession.armEnabled = usConfigDebugBool(cfg, "arm", false);
     gSession.vamapEnabled = usConfigDebugBool(cfg, "vamap", false);
+    /*
+     * Not from the debug section: this one is a scanning decision and is
+     * parsed into the configuration proper, under [scan]. Reading it here as
+     * a debug key would silently override whatever the file said with the
+     * default, which is how a check that turns the replacement off ended up
+     * running with it on.
+     */
+    gSession.ldaprRewrite = cfg->ldaprRewrite;
 
     /* Handed over rather than freed: the patch table names stages that are
      * loaded long after this function has returned. */

@@ -23,6 +23,20 @@
 #define US_PAGE_SIZE 4096U
 
 /*
+ * The bits of MPIDR_EL1 that identify a processor.
+ *
+ * The register also carries a bit saying whether the value is multiprocessor
+ * capable and a bit indicating a thread, and neither is part of a processor's
+ * identity. ACPI's copy of the value has those bits as zero, so a comparison
+ * between the two is made on the fields they agree on.
+ *
+ * This is here rather than beside the ACPI reading because three things need
+ * it: the reading, the payload's lookup, and the assembly entry, which takes
+ * it from a generated header.
+ */
+#define US_MPIDR_AFFINITY_MASK 0x000000FF00FFFFFFULL
+
+/*
  * One stack per possible CPU rather than per present CPU. The count is not
  * known when the pool is allocated, and finding out costs more than the
  * reservation does: eight stacks is 128 KiB, and having a slot for a CPU that

@@ -7,6 +7,7 @@
 #include "core/plan.h"
 #include "uefi/src/arm.h"
 #include "uefi/src/console.h"
+#include "uefi/src/rewrite.h"
 #include "uefi/src/stack.h"
 #include "uefi/src/work.h"
 
@@ -69,10 +70,25 @@ void usWorkCollect(UsSession *session) {
     usConsolePuts(req.complete ? "US-M5-PLAN\n" : "US-M5-INCOMPLETE\n");
 
     /*
-     * Drawing the exception path is what the whole thing is for, and it is
-     * done from the boot because everything it needs -- the loader's table,
+     * Replacing the instructions is done first and separately, because it is
+     * the mechanism that does not depend on anything else working: the image
+     * is in memory and not yet running, so there is nothing to take over and
+     * no address to work out. It is also the one that covers the kernel, whose
+     * own vector table is installed later and whose synchronous slot is not
+     * free.
+     */
+    if (req.complete && session->ldaprRewrite) {
+        size_t replaced = usRewriteLdapr(session);
+
+        usConsolePuts(replaced != 0 ? "US-M7-REWRITTEN\n" : "US-M7-NOREWRITE\n");
+    }
+
+    /*
+     * Drawing the exception path covers what the replacement cannot reach:
+     * code generated after the boot, and images that were never scanned. It
+     * is done from the boot because everything it needs -- the loader's table,
      * the payload's address -- is known there, and the memory it writes is
-     * writable there. Nothing later has to write anything.
+     * writable there.
      */
     if (req.complete && session->armEnabled && usArmVectorTable(session)) {
         usConsolePuts("US-M6.5-ARMED\n");

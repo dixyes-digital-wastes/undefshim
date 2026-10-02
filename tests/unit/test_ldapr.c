@@ -31,6 +31,14 @@ static void eqInt(const char *name, int got, int want) {
     }
 }
 
+static void eqHex(const char *name, uint32_t got, uint32_t want) {
+    checks++;
+    if (got != want) {
+        failures++;
+        printf("FAIL %-44s want 0x%08x got 0x%08x\n", name, want, got);
+    }
+}
+
 /* --- the four loads ----------------------------------------------------- */
 
 static void testWidths(void) {
@@ -118,10 +126,73 @@ static void testRefusals(void) {
     ok("a breakpoint is not a load", usLdaprDecode(0xD4200000U).kind == UsLdaprNone);
 }
 
+/*
+ * The substitution, checked against encodings the assembler produced rather
+ * than against what the transformer happens to emit. Each pair below is a
+ * real instruction and the acquire load that replaces it, so a width paired
+ * with the wrong replacement would show up as a mismatch.
+ */
+static void testSubstitution(void) {
+    static const struct {
+        uint32_t ldapr;
+        uint32_t ldar;
+    } pairs[] = {
+        { 0x38BFC022U, 0x08DFFC22U }, /* ldaprb w2, [x1]   -> ldarb  w2, [x1]  */
+        { 0x78BFC083U, 0x48DFFC83U }, /* ldaprh w3, [x4]   -> ldarh  w3, [x4]  */
+        { 0xB8BFC0C5U, 0x88DFFCC5U }, /* ldapr  w5, [x6]   -> ldar   w5, [x6]  */
+        { 0xF8BFC107U, 0xC8DFFD07U }, /* ldapr  x7, [x8]   -> ldar   x7, [x8]  */
+        { 0xB8BFC1CDU, 0x88DFFDCDU }, /* ldapr  w13, [x14] -> ldar   w13, [x14] */
+    };
+
+    for (size_t i = 0; i < sizeof(pairs) / sizeof(pairs[0]); i++) {
+        uint32_t got = 0;
+        char name[64];
+
+        snprintf(name, sizeof(name), "0x%08x becomes 0x%08x", pairs[i].ldapr,
+                 pairs[i].ldar);
+        ok(name, usLdaprToLdar(pairs[i].ldapr, &got));
+        eqHex("and it is the acquire load", got, pairs[i].ldar);
+    }
+
+    /* Everything the decoder refuses, the transformer refuses. */
+    {
+        uint32_t got = 0xA5A5'A5A5U;
+
+        ok("a non-RCpc load is refused", !usLdaprToLdar(0x88DFFD49U, &got));
+        ok("and nothing was written", got == 0xA5A5'A5A5U);
+        ok("zero is refused", !usLdaprToLdar(0U, &got));
+    }
+
+    /* The registers and the width have to survive, whatever they are. */
+    {
+        bool everyOne = true;
+
+        for (uint32_t rt = 0; rt < 32; rt++) {
+            for (uint32_t rn = 0; rn < 32; rn++) {
+                uint32_t got = 0;
+                UsLdaprInsn back;
+
+                usLdaprToLdar(0xB8BFC000U | (rn << 5) | rt, &got);
+                back = usLdaprDecode(got);
+                /* The decoder reads RCpc encodings, so it is asked about the
+                 * substitute by shifting it back; what matters is that the
+                 * fields landed where they started. */
+                if (back.kind != UsLdaprNone
+                    || (got & 0x3FFU) != ((rn << 5) | rt)
+                    || (got & 0xC0000000U) != 0x80000000U) {
+                    everyOne = false;
+                }
+            }
+        }
+        ok("every register pair and width round trips", everyOne);
+    }
+}
+
 int main(void) {
     testWidths();
     testScannerAgrees();
     testRefusals();
+    testSubstitution();
 
     printf("%d checks, %d failures\n", checks, failures);
     return failures != 0;

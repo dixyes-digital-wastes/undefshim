@@ -54,6 +54,12 @@ level = "info"
 [debug]
 enabled = true
 arm = true
+
+[scan]
+# The exception path is what this checks, so the replacement that would keep
+# the instructions from faulting in the first place is turned off. With it on
+# there is nothing to take over and nothing to enter.
+ldapr_rewrite = false
 EOF
 
 log="$WORK/armed.log"
@@ -67,13 +73,26 @@ fi
 # The run is not stopped by a marker: the payload is entered long after the
 # last thing the driver can say, so the machine is left running and then asked
 # directly.
-ESP="$WORK/armed.img" SERIAL_LOG="$log" WIN_DISK="$WIN_DISK" \
-STOP_PATTERN='vector-case-never-matches' BOOT_TIMEOUT=$((SETTLE + 300)) \
+# Its own socket as well as its own log. run.sh shares one socket path by
+# default, and a socket left behind by an interrupted run is then the socket
+# the next run talks to, or cannot talk to at all -- which looks like a guest
+# that produced no output.
+#
+# Its own process group, so that everything it starts goes away with it. An
+# earlier version killed the pid the shell reported, which is the subshell the
+# environment prefix creates rather than run.sh itself: the run survived, kept
+# the serial socket, and the next check talked to it instead of to its own
+# machine.
+setsid env ESP="$WORK/armed.img" SERIAL_LOG="$log" SERIAL_SOCK="$WORK/armed.sock" \
+    WIN_DISK="$WIN_DISK" \
+    STOP_PATTERN='vector-case-never-matches' BOOT_TIMEOUT=$((SETTLE + 300)) \
     tests/deploy/run.sh >"$WORK/armed.run" 2>&1 &
 runpid=$!
 
 stop() {
-    kill "$runpid" 2>/dev/null || true
+    kill -TERM -"$runpid" 2>/dev/null || true
+    sleep 1
+    kill -KILL -"$runpid" 2>/dev/null || true
     pkill -f "file=$WORK/armed.img" 2>/dev/null || true
 }
 trap stop EXIT INT TERM
@@ -94,6 +113,17 @@ done
 if [ "$armed" != "yes" ]; then
     echo "FAIL: the vector table was never taken over"
     grep -aE 'arm:|plan: vbar|US-M5' "$log" | tail -10
+    exit 1
+fi
+grep -a 'arm: vbar' "$log" | tail -2
+
+# The replacement has to be off, or nothing faults and the exception path has
+# nothing to do. A key read from the wrong configuration section looks exactly
+# like a check that found nothing, so it is asserted rather than assumed: that
+# mistake has already been made once.
+if ! grep -q 'ldapr_rewrite=0' "$log"; then
+    echo "FAIL: the replacement is on, so this checks nothing"
+    grep -a 'ldapr_rewrite' "$log" | head -2
     exit 1
 fi
 

@@ -56,117 +56,162 @@ usSyncEntry:
     msr     daifset, #0xF
 
     /*
-     * Borrow on the interrupted stack, because nothing can be stored until
-     * the frame has been found and finding it takes these three registers.
+     * This code runs before there is a stack, and that is not a figure of
+     * speech. At the vector it was entered through, SP holds whatever the
+     * kernel left in it -- not a stack the kernel was using -- and once the
+     * address space has been rebuilt that value is not mapped. A push here is
+     * a fault taken inside the exception it was meant to handle, and the
+     * fault arrives at the same instruction, until the machine resets.
      *
-     * The layout matters and is easy to get wrong: two pairs and a single do
-     * not line up. Written this way the three land at sp+0, sp+8 and sp+16,
-     * with nothing in between them, so the reads below are one offset apart
-     * and there is no slot that is never written. An earlier version pushed
-     * x18, x9 and then x10, which left x18 and x9 one slot further along than
-     * the reads expected: x9 was read back holding x18, x18 was read back
-     * holding whatever was under the stack, and the real x9 was never read at
-     * all. Every exception returned with two registers of the interrupted
-     * code replaced.
+     * So: registers only, until a stack of our own has been switched to.
      *
-     * The thunk below the vector slot has already pushed x16, sixteen bytes
-     * below the interrupted SP, which is why the interrupts SP is sp+48. That
-     * push is part of this arrangement, not a separate one: x16 is where the
-     * thunk carries the payload's address, so it is the one register the
-     * thunk destroys and this code is what puts it back.
+     * x16, x17 and x18 are the bootstrap. None of them can be live across one
+     * of these exceptions, and the proof is the platform's own handler for
+     * the same vector: it writes x18 before saving anything and calls
+     * functions, which destroys x16 and x17. A register the platform's own
+     * path does not preserve cannot be holding anything that has to survive
+     * one. The same is true of SP, which that handler discards.
+     *
+     * The first memory touched is the landing pad, and its address is worked
+     * out without a stack: everything below is PC relative.
      */
-    stp     x9, x10, [sp, #-16]!
-    str     x18, [sp, #-16]!
+    adrp    x16, usPayloadConfigBlock
+    add     x16, x16, #:lo12:usPayloadConfigBlock
+    add     x16, x16, #US_CONFIG_CPUS
 
-    mrs     x18, mpidr_el1
-    and     x18, x18, #0xFF
-    adrp    x9, usPayloadLanding
-    add     x9, x9, #:lo12:usPayloadLanding
-    mov     x10, #US_FRAME_STRIDE
-    madd    x9, x18, x10, x9
+    /*
+     * Which processor this is.
+     *
+     * Not the low byte of MPIDR_EL1: that is Aff0, the core within a cluster,
+     * so the first core of every cluster has the same one and two processors
+     * would share a landing pad. The list comes from the firmware and gives
+     * each processor a position of its own.
+     *
+     * The register is normalised first. MPIDR_EL1 carries a bit saying the
+     * value is multiprocessor capable, a bit saying the cluster is
+     * multithreaded, and a reserved bit that reads as one; ACPI's copy of the
+     * value has all three as zero, so the comparison is made on what both
+     * sides agree on. The instruction clears bits 24 to 31, which is where
+     * all three live.
+     *
+     * The list ends with an entry whose index is all ones, which is not a
+     * position any processor can have.
+     */
+    mrs     x17, mpidr_el1
+    and     x17, x17, #0xFFFFFFFF00FFFFFF
+usSyncCpu:
+    ldr     x18, [x16, #US_CPU_INDEX]
+    cmn     x18, #1
+    b.eq    usSyncNoStack
+    ldr     x18, [x16]
+    cmp     x18, x17
+    b.eq    usSyncFound
+    add     x16, x16, #US_CPU_STRIDE
+    b       usSyncCpu
 
-    stp     x0, x1, [x9, #US_FRAME_X0]
-    stp     x2, x3, [x9, #US_FRAME_X2]
-    stp     x4, x5, [x9, #US_FRAME_X4]
-    stp     x6, x7, [x9, #US_FRAME_X6]
-    str     x8, [x9, #US_FRAME_X8]
-    str     x11, [x9, #US_FRAME_X11]
-    stp     x12, x13, [x9, #US_FRAME_X12]
-    stp     x14, x15, [x9, #US_FRAME_X14]
-    str     x17, [x9, #US_FRAME_X17]
-    stp     x19, x20, [x9, #US_FRAME_X19]
-    stp     x21, x22, [x9, #US_FRAME_X21]
-    stp     x23, x24, [x9, #US_FRAME_X23]
-    stp     x25, x26, [x9, #US_FRAME_X25]
-    stp     x27, x28, [x9, #US_FRAME_X27]
-    str     x29, [x9, #US_FRAME_X29]
-    str     x30, [x9, #US_FRAME_X30]
+usSyncFound:
+    /* x18 is this processor's index, and x16 is where it was found. */
+    ldr     x18, [x16, #US_CPU_INDEX]
+    adrp    x16, usPayloadLanding
+    add     x16, x16, #:lo12:usPayloadLanding
+    mov     x17, #US_FRAME_STRIDE
+    madd    x16, x18, x17, x16
 
-    /* The borrowed three, from where they were put. Two pairs and a single do
-     * not pack, so the offsets are what the pushes above actually produce:
-     * x18 at sp+0, x9 at sp+16, x10 at sp+24, with a slot between them that
-     * nothing writes and nothing reads. */
-    ldr     x18, [sp]
-    str     x18, [x9, #US_FRAME_X18]
-    ldr     x11, [sp, #16]
-    str     x11, [x9, #US_FRAME_X9]
-    ldr     x10, [sp, #24]
-    str     x10, [x9, #US_FRAME_X10]
+    /*
+     * The frame. Every register that is still the interrupted code's is saved;
+     * the three the bootstrap used are not, because by now they hold its
+     * values rather than the interrupted code's, and the platform does not
+     * preserve them across this vector anyway.
+     */
+    stp     x0, x1, [x16, #US_FRAME_X0]
+    stp     x2, x3, [x16, #US_FRAME_X2]
+    stp     x4, x5, [x16, #US_FRAME_X4]
+    stp     x6, x7, [x16, #US_FRAME_X6]
+    stp     x8, x9, [x16, #US_FRAME_X8]
+    stp     x10, x11, [x16, #US_FRAME_X10]
+    stp     x12, x13, [x16, #US_FRAME_X12]
+    stp     x14, x15, [x16, #US_FRAME_X14]
+    stp     x19, x20, [x16, #US_FRAME_X19]
+    stp     x21, x22, [x16, #US_FRAME_X21]
+    stp     x23, x24, [x16, #US_FRAME_X23]
+    stp     x25, x26, [x16, #US_FRAME_X25]
+    stp     x27, x28, [x16, #US_FRAME_X27]
+    str     x29, [x16, #US_FRAME_X29]
+    str     x30, [x16, #US_FRAME_X30]
+    str     xzr, [x16, #US_FRAME_X16]
+    str     xzr, [x16, #US_FRAME_X17]
+    str     xzr, [x16, #US_FRAME_X18]
 
-    /* And x16, which the thunk saved on its way in. */
-    ldr     x11, [sp, #32]
-    str     x11, [x9, #US_FRAME_X16]
+    mrs     x17, elr_el1
+    str     x17, [x16, #US_FRAME_ELR]
+    mrs     x17, spsr_el1
+    str     x17, [x16, #US_FRAME_SPSR]
+    mrs     x17, esr_el1
+    str     x17, [x16, #US_FRAME_ESR]
+    mrs     x17, far_el1
+    str     x17, [x16, #US_FRAME_FAR]
 
-    /* The interrupted SP is the one thing the CPU did not keep for us, and
-     * SP cannot be the source of a store, so it goes through a register.
-     * What stands between it and this SP is the thunk's sixteen bytes and
-     * this code's thirty two. */
-    add     x11, sp, #48
-    str     x11, [x9, #US_FRAME_SP]
+    /*
+     * The interrupted SP, read straight out of the register before it is
+     * replaced. The CPU does not save SP on the way in, so this is the only
+     * way to have it back, and the exception may have interrupted code that
+     * was using it -- at the vector this arrives on the kernel's own handler
+     * discards it, but that is the kernel's business and not something to
+     * assume on its behalf.
+     */
+    mov     x17, sp
+    str     x17, [x16, #US_FRAME_SP]
 
-    mrs     x10, elr_el1
-    str     x10, [x9, #US_FRAME_ELR]
-    mrs     x10, spsr_el1
-    str     x10, [x9, #US_FRAME_SPSR]
-    mrs     x10, esr_el1
-    str     x10, [x9, #US_FRAME_ESR]
-    mrs     x10, far_el1
-    str     x10, [x9, #US_FRAME_FAR]
+    /* Now a stack of our own, chosen by this processor's index. */
+    adrp    x17, usPayloadConfigBlock
+    add     x17, x17, #:lo12:usPayloadConfigBlock
+    add     x17, x17, #US_CONFIG_STACK_TOP
+    ldr     x17, [x17, x18, lsl #3]
+    cbz     x17, usSyncNoStack
+    mov     sp, x17
 
-    /* Now the payload's own stack, chosen by this CPU's affinity. */
-    mrs     x11, mpidr_el1
-    and     x11, x11, #0xFF
-    adrp    x10, usPayloadConfigBlock
-    add     x10, x10, #:lo12:usPayloadConfigBlock
-    add     x10, x10, #US_CONFIG_STACK_TOP
-    ldr     x12, [x10, x11, lsl #3]
-    cbz     x12, usSyncNoStack
-    mov     sp, x12
-
-    mov     x0, x9
+    mov     x0, x16
     bl      usPayloadHandle
     cbnz    x0, usSyncResume
 
-    /* Not ours. Handing it back is what keeps the payload out of the way when
-     * it has nothing to say; there is nowhere to hand it to without a
-     * forwarding address, and continuing would re-run the faulting
-     * instruction and loop. */
+    /*
+     * Not ours. Handing it back is what keeps the payload out of the way when
+     * it has nothing to say. There is nowhere to hand it to without a
+     * forwarding address, and continuing would re-run the instruction that
+     * faulted.
+     */
     adrp    x10, usPayloadConfigBlock
     add     x10, x10, #:lo12:usPayloadConfigBlock
     ldr     x11, [x10, #US_CONFIG_FORWARD]
     cbz     x11, usSyncNoForward
-    mov     x0, x9
+    mov     x0, x16
     br      x11
 
 usSyncResume:
     /* The call is free to have used every register, so the pad is found
-     * again rather than assumed. */
-    mrs     x11, mpidr_el1
-    and     x11, x11, #0xFF
-    adrp    x9, usPayloadLanding
-    add     x9, x9, #:lo12:usPayloadLanding
-    mov     x10, #US_FRAME_STRIDE
-    madd    x9, x11, x10, x9
+     * again rather than assumed, by the same register-only lookup. */
+    adrp    x16, usPayloadConfigBlock
+    add     x16, x16, #:lo12:usPayloadConfigBlock
+    add     x16, x16, #US_CONFIG_CPUS
+    mrs     x17, mpidr_el1
+    and     x17, x17, #0xFFFFFFFF00FFFFFF
+usSyncResumeCpu:
+    ldr     x18, [x16, #US_CPU_INDEX]
+    cmn     x18, #1
+    b.eq    usSyncNoStack
+    ldr     x18, [x16]
+    cmp     x18, x17
+    b.eq    usSyncResumeFound
+    add     x16, x16, #US_CPU_STRIDE
+    b       usSyncResumeCpu
+
+usSyncResumeFound:
+    ldr     x9, [x16, #US_CPU_INDEX]
+    adrp    x16, usPayloadLanding
+    add     x16, x16, #:lo12:usPayloadLanding
+    mov     x17, #US_FRAME_STRIDE
+    madd    x16, x9, x17, x16
+    mov     x9, x16
 
     ldr     x10, [x9, #US_FRAME_ELR]
     msr     elr_el1, x10
@@ -192,13 +237,16 @@ usSyncResume:
     ldr     x8, [x9, #US_FRAME_X8]
     ldp     x12, x13, [x9, #US_FRAME_X12]
     ldp     x14, x15, [x9, #US_FRAME_X14]
-    ldp     x16, x17, [x9, #US_FRAME_X16]
-    ldp     x18, x19, [x9, #US_FRAME_X18]
-    ldp     x20, x21, [x9, #US_FRAME_X20]
-    ldp     x22, x23, [x9, #US_FRAME_X22]
-    ldp     x24, x25, [x9, #US_FRAME_X24]
-    ldp     x26, x27, [x9, #US_FRAME_X26]
-    ldp     x28, x29, [x9, #US_FRAME_X28]
+    /* x16, x17 and x18 are not restored: they hold the bootstrap's values by
+     * the time the frame is written, and the platform does not preserve them
+     * across this vector. The frame records zeros for them so that the
+     * omission is visible rather than accidental. */
+    ldp     x19, x20, [x9, #US_FRAME_X19]
+    ldp     x21, x22, [x9, #US_FRAME_X21]
+    ldp     x23, x24, [x9, #US_FRAME_X23]
+    ldp     x25, x26, [x9, #US_FRAME_X25]
+    ldp     x27, x28, [x9, #US_FRAME_X27]
+    ldr     x29, [x9, #US_FRAME_X29]
     ldr     x30, [x9, #US_FRAME_X30]
 
     ldr     x10, [x9, #US_FRAME_SP]
@@ -208,17 +256,39 @@ usSyncResume:
     eret
 
 /*
- * Where the payload cannot go on. Reported on the serial port and then
- * stopped: there is no stack to unwind to, and carrying on would run the
- * handler somewhere whose size is not known, which is the failure all of this
- * exists to avoid. A silent stop would be worse than a loud one.
+ * Where the payload cannot go on: a CPU with no stack of its own, or an
+ * exception with nowhere to be forwarded to. Stopped, rather than carried on
+ * with: running the handler on a stack whose size is not known is the failure
+ * all of this exists to avoid.
+ *
+ * The mark is written only when the console is usable. In kernel context it
+ * is not, and a write to it faults -- from inside an exception handler, which
+ * means the fault arrives here again, and again, until the machine resets.
+ * That is a loud failure turning into a silent one, which is the opposite of
+ * what the mark is for.
  */
 usSyncNoStack:
+    /*
+     * A mark goes into the pool before stopping. Without it this path is
+     * indistinguishable from the machine simply dying, and "no stack for this
+     * processor" is a different fault from "nothing was ever entered" -- the
+     * one says the lookup failed, the other says the payload was never
+     * reached at all.
+     */
     adrp    x10, usPayloadConfigBlock
     add     x10, x10, #:lo12:usPayloadConfigBlock
-    ldr     x10, [x10, #US_CONFIG_UART]
-    cbz     x10, usSyncHalt
-    mov     x11, x10
+    ldr     x11, [x10, #US_CONFIG_POOL]
+    cbz     x11, usSyncMarked
+    movz    x12, #0x5354
+    movk    x12, #0x4143, lsl #16
+    movk    x12, #0x4f4e, lsl #32
+    movk    x12, #0x4f4e, lsl #48
+    str     x12, [x11, #8]
+usSyncMarked:
+    ldr     x11, [x10, #US_CONFIG_QUIET]
+    cbnz    x11, usSyncHalt
+    ldr     x11, [x10, #US_CONFIG_UART]
+    cbz     x11, usSyncHalt
     mov     w12, #'!'
     str     w12, [x11]
     b       usSyncHalt

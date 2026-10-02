@@ -45,11 +45,30 @@ static uint64_t currentMpidr(void) {
     uint64_t mpidr;
 
     __asm__ volatile("mrs %0, mpidr_el1" : "=r"(mpidr));
-    return mpidr;
+    return mpidr & US_MPIDR_AFFINITY_MASK;
 }
 
-static uint32_t currentCpu(void) {
-    return (uint32_t)(currentMpidr() & 0xFFU);
+/*
+ * Which processor this is, as an index.
+ *
+ * Looked up rather than taken out of the register's low byte. That byte is
+ * Aff0, the core within a cluster, so the first core of every cluster has the
+ * same one: two processors would share a landing pad, a stack and a frame,
+ * and the damage would appear wherever the other one happened to be running.
+ *
+ * The list comes from the firmware, through the boot. A processor that is not
+ * in it has no index, and the caller has to refuse rather than pick one.
+ */
+static int currentCpu(void) {
+    UsPayloadConfig *cfg = usPayloadConfig();
+    uint64_t mpidr = currentMpidr();
+
+    for (uint64_t i = 0; i < cfg->cpuCount && i < US_MAX_CPUS; i++) {
+        if (cfg->cpus[i].mpidr == mpidr) {
+            return (int)cfg->cpus[i].index;
+        }
+    }
+    return -1;
 }
 
 UsPayloadConfig *usPayloadConfig(void) {
@@ -167,7 +186,7 @@ static bool emulateLdapr(UsFrame *frame) {
 int usPayloadHandle(UsFrame *frame) {
     UsPayloadConfig *cfg = usPayloadConfig();
     uint32_t ec;
-    uint32_t cpu;
+    int cpu;
 
     gCurrentFrame = frame;
     cpu = currentCpu();
@@ -184,7 +203,7 @@ int usPayloadHandle(UsFrame *frame) {
 
         pool->entry.magic = US_POOL_ENTRY_MAGIC;
         pool->entry.entries++;
-        pool->entry.lastCpu = cpu;
+        pool->entry.lastCpu = (uint64_t)(int64_t)cpu;
         pool->entry.lastSp = frame != NULL ? frame->sp : 0;
         if (frame != NULL) {
             pool->entry.lastEsr = frame->esr;
@@ -199,7 +218,7 @@ int usPayloadHandle(UsFrame *frame) {
             UsPoolTrace *t = &pool->entry.trace[at];
             const uint64_t *src = (const uint64_t *)(const void *)frame;
 
-            t->cpu = cpu;
+            t->cpu = (uint64_t)(int64_t)cpu;
             t->mpidr = currentMpidr();
             for (uint32_t i = 0; i < US_POOL_TRACE_WORDS; i++) {
                 t->words[i] = src[i];
@@ -232,7 +251,7 @@ int usPayloadHandle(UsFrame *frame) {
         usUartPuts(" far=");
         usUartPutHex(frame->far);
         usUartPuts(" cpu=");
-        usUartPutDec(cpu);
+        usUartPutDec((uint64_t)(int64_t)cpu);
         usUartPuts("\n");
     }
 
@@ -273,7 +292,7 @@ void usPayloadSelfTest(void) {
 
     usUartInit(cfg->uartBase);
     usUartPuts("US-PAYLOAD alive cpu=");
-    usUartPutDec(currentCpu());
+    usUartPutDec((uint64_t)currentCpu());
     usUartPuts(" frame=");
     usUartPutDec(sizeof(UsFrame));
     usUartPuts("\n");

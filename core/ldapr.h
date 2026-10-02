@@ -49,4 +49,18 @@ typedef struct UsLdaprInsn_t {
  */
 UsLdaprInsn usLdaprDecode(uint32_t insn);
 
+/*
+ * The acquire load that does the same job, more strongly.
+ *
+ * An RCpc load orders releases; the acquire loads order everything, so a
+ * substitute made of one cannot be weaker than what it replaces and cannot
+ * turn a correct program incorrect. That is the whole argument for this
+ * substitution, and it is why the replacement is not a plain load.
+ *
+ * The two encodings differ only in their fixed bits, so the register fields
+ * are carried across untouched. Returns false when the instruction is not one
+ * of the four, in which case nothing is written.
+ */
+bool usLdaprToLdar(uint32_t insn, uint32_t *out);
+
 #endif

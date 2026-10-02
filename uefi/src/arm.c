@@ -88,29 +88,33 @@ bool usArmTransfer(UsSession *s) {
 /*
  * Drawing the exception path into the payload, see arm.h.
  *
- * The loader installs a vector table before the kernel runs, and it is that
- * table which is in force when the kernel first executes an instruction this
- * hardware does not have. So taking over the table's synchronous slot is what
- * makes the shim reachable at all; the kernel's own table is a later problem,
- * and one that cannot happen before this one works.
+ * Both tables are taken over, and both are needed:
  *
- * The table is found by following the register each write of VBAR_EL1 loads,
- * not by looking for a table-shaped thing. An image carries more than one,
- * and the one that looks most like a table is not the one in use.
+ *   - the loader installs a table before the kernel runs, and that is the one
+ *     in force when the kernel takes its first undefined instruction
+ *   - the kernel installs its own table once it is running, and images it
+ *     loads later -- ci.dll among them -- fault into that one
  *
- * The slot is written only if it is still a branch to itself. That is a free
- * slot; anything else is a handler that works, and replacing it would break a
- * boot that was otherwise fine. Refusing costs a shim, which is the cheaper
- * of the two failures.
+ * The second is the one that matters for everything the replacement pass
+ * cannot reach. An image that is read off disk after the boot has never been
+ * scanned, so its instructions are still the ones this hardware does not have.
+ *
+ * Each table is found by following the register the writes of VBAR_EL1 load,
+ * not by looking for a table-shaped thing. An image carries more than one, and
+ * the one that looks most like a table is not the one in use.
+ *
+ * A slot holding a branch is written; one holding anything else is left alone,
+ * because those bytes are a handler and the stub has nothing to keep.
  */
 typedef struct UsArmTarget_t {
     UsImage   *image;
     uint32_t   tableRva;
+    uint32_t   syncWord;
     UsVectorSlot slot;
 } UsArmTarget;
 
 static bool armSlot(UsSession *s, const UsArmTarget *target) {
-    uint32_t thunk[US_THUNK_WORDS];
+    uint32_t stub[US_STUB_WORDS];
     uint8_t *at;
     uint64_t payloadEntry;
 
@@ -129,9 +133,9 @@ static bool armSlot(UsSession *s, const UsArmTarget *target) {
      */
     payloadEntry = s->payloadPlace.baseVa + US_PAYLOAD_ENTRY_OFFSET;
 
-    usEncodeThunk(thunk, payloadEntry);
-    memcpy(at, thunk, US_THUNK_BYTES);
-    usCacheFlushRange(at, US_THUNK_BYTES);
+    usEncodeVectorStub(stub, payloadEntry, target->syncWord);
+    memcpy(at, stub, US_STUB_BYTES);
+    usCacheFlushRange(at, US_STUB_BYTES);
 
     usConsolePuts("arm: vbar +");
     usConsolePutHex(target->tableRva);
@@ -143,22 +147,18 @@ static bool armSlot(UsSession *s, const UsArmTarget *target) {
     return true;
 }
 
-bool usArmVectorTable(UsSession *s) {
-    UsImage *loader = usRegistryGet(&s->registry, UsImageWinload);
+static bool armImage(UsSession *s, UsImageKind kind, size_t *armed) {
+    UsImage *img = usRegistryGet(&s->registry, kind);
     UsVbarTables tables;
-    size_t armed = 0;
 
-    if (loader == NULL) {
-        usConsolePuts("arm: no loader to draw the exception path through\n");
+    if (img == NULL) {
         return false;
     }
-    if (!s->payloadPlaced) {
-        usConsolePuts("arm: no payload to enter\n");
-        return false;
-    }
+    tables = usFindVbarTables(img);
 
-    tables = usFindVbarTables(loader);
-    usConsolePuts("arm: vbar sites=");
+    usConsolePuts("arm: ");
+    usConsolePuts(usImageKindName(kind));
+    usConsolePuts(" vbar sites=");
     usConsolePutDec(tables.sites);
     usConsolePuts(" unresolved=");
     usConsolePutDec(tables.unresolved);
@@ -168,21 +168,36 @@ bool usArmVectorTable(UsSession *s) {
 
     for (size_t i = 0; i < tables.count; i++) {
         UsArmTarget target = {
-            .image = loader,
+            .image = img,
             .tableRva = tables.rvas[i],
+            .syncWord = tables.syncWord[i],
             .slot = UsVectorSlotEl1hSync,
         };
 
-        if (!tables.syncFree[i]) {
+        if (!tables.syncUsable[i]) {
             usConsolePuts("arm: +");
             usConsolePutHex(tables.rvas[i]);
-            usConsolePuts(" has a synchronous handler already, left alone\n");
+            usConsolePuts(" has a handler written out in full, left alone\n");
             continue;
         }
         if (armSlot(s, &target)) {
-            armed++;
+            (*armed)++;
         }
     }
+
+    return true;
+}
+
+bool usArmVectorTable(UsSession *s) {
+    size_t armed = 0;
+
+    if (!s->payloadPlaced) {
+        usConsolePuts("arm: no payload to enter\n");
+        return false;
+    }
+
+    armImage(s, UsImageWinload, &armed);
+    armImage(s, UsImageNtoskrnl, &armed);
 
     if (armed == 0) {
         usConsolePuts("arm: nothing taken over\n");
