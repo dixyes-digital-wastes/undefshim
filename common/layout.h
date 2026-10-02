@@ -37,6 +37,19 @@
 #define US_MPIDR_AFFINITY_MASK 0x000000FF00FFFFFFULL
 
 /*
+ * The same selection, in the form a logical immediate can hold.
+ *
+ * The two are not the same word and they are not meant to be. AArch64 encodes
+ * the mask of an `and` as a run of ones, so the one above -- chosen because it
+ * says which fields are wanted -- cannot be written as an instruction, while
+ * its complement can. Writing it out by hand in the entry instead is how the
+ * second copy appeared, and the two differ in the bits the registers reserve:
+ * this one keeps them, the one above clears them. Both read as zero on either
+ * side, which is why the difference is invisible until a processor sets one.
+ */
+#define US_MPIDR_AFFINITY_MASK_LOGICAL 0xFFFFFFFF00FFFFFFULL
+
+/*
  * One stack per possible CPU rather than per present CPU. The count is not
  * known when the pool is allocated, and finding out costs more than the
  * reservation does: eight stacks is 128 KiB, and having a slot for a CPU that
