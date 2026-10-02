@@ -91,18 +91,10 @@ static void setFunctionCount(uint8_t *image, size_t count) {
 }
 
 /*
- * Declares a function start. The exception directory is what answers "is this
- * the beginning of a function", which is what separates a real match from a
- * byte sequence that happens to occur inside a function.
+ * The exception directory is part of the image this builds, because a loaded
+ * image has one, but nothing in this test depends on it any more: the
+ * transfer is a branch inside a function and is not looked up there.
  */
-static void addFunction(uint8_t *image, size_t index, uint32_t rva) {
-    put32(image + PDATA_RAW + index * 8, rva);
-    put32(image + PDATA_RAW + index * 8 + 4, 0);
-    if (index + 1 > gFunctionCount) {
-        gFunctionCount = index + 1;
-    }
-    setFunctionCount(image, gFunctionCount);
-}
 
 static void buildImage(uint8_t *image, const char *section, uint16_t subsystem) {
     const uint32_t peOff = 0x80;
@@ -209,17 +201,22 @@ static size_t countLines(const char *text) {
     return n;
 }
 
-/* The transfer leaf body, as the locator looks for it. */
-static void putLeaf(uint8_t *image, uint32_t rva) {
-    putInsn(image, rva + 0x00, 0xA9BF7BFD);
-    putInsn(image, rva + 0x04, 0x910003FD);
-    putInsn(image, rva + 0x08, 0x9100005F);
-    putInsn(image, rva + 0x0C, 0xAA0003E2);
-    putInsn(image, rva + 0x10, 0xAA0103E0);
-    putInsn(image, rva + 0x14, 0xD63F0040);
-    putInsn(image, rva + 0x18, 0x910003BF);
-    putInsn(image, rva + 0x1C, 0xA8C17BFD);
-    putInsn(image, rva + 0x20, 0xD65F03C0);
+/*
+ * The transfer to the kernel, as the locator looks for it: the loader moves
+ * the kernel's stack into SP, keeps the kernel entry point in a register, and
+ * finally branches to it. The call in the middle goes somewhere different in
+ * every version, so its target is not part of the test.
+ *
+ * Returns the offset of the branch, which is what a patch would replace.
+ */
+static uint32_t putLeaf(uint8_t *image, uint32_t rva) {
+    putInsn(image, rva + 0x00, 0x9100005F);  /* mov sp, x2 */
+    putInsn(image, rva + 0x04, 0xAA0003F3);  /* mov x19, x0 */
+    putInsn(image, rva + 0x08, 0xAA0103F4);  /* mov x20, x1 */
+    putInsn(image, rva + 0x0C, 0x94001234);  /* bl  anywhere */
+    putInsn(image, rva + 0x10, 0xAA1303E0);  /* mov x0, x19 */
+    putInsn(image, rva + 0x14, 0xD61F0280);  /* br  x20 */
+    return rva + 0x14;
 }
 
 /* --- the checks --------------------------------------------------------- */
@@ -280,37 +277,62 @@ static void testSiteCollection(void) {
  * directory agrees the match is a function. A byte sequence that happens to
  * occur inside a function is not a place to hook.
  */
-static void testLeafNeedsToBeAFunction(void) {
+/*
+ * The transfer is a branch inside a function, not a function entry, so the
+ * exception directory is not consulted and must not be: an earlier version of
+ * this test asserted the opposite, for a signature that turned out to belong
+ * to a function the handover never calls.
+ *
+ * What the patch point has to be is the branch itself. The four bytes before
+ * it are the last thing the loader does with the kernel's entry point.
+ */
+static void testLeafPatchPointIsTheBranch(void) {
     UsImage img;
     UsSiteList list;
+    uint32_t branch;
 
     buildImage(gWinload, ".text", US_PE_SUBSYSTEM_EFI_APPLICATION);
-    putLeaf(gWinload, TEXT_RVA + 0x1000);
-
-    /* It is inside a function whose entry is elsewhere. */
-    addFunction(gWinload, 0, TEXT_RVA + 0x0F00);
+    branch = putLeaf(gWinload, TEXT_RVA + 0x1000);
     usImageInitMemory(&img, gWinload, sizeof(gWinload));
 
     {
         UsLeafSite leaf = usLocateTransferLeaf(&img);
         ok("the sequence is found", leaf.found);
-        ok("but it is not a function start", !leaf.isFunctionStart);
+        eqSize("and it is unique", leaf.matches, 1);
+        eqSize("the sequence starts where it was written", leaf.rva, TEXT_RVA + 0x1000);
+        eqSize("the patch point is the branch", leaf.patchRva, branch);
     }
 
     usSiteListInit(&list);
     usCollectSites(&list, &img, UsImageWinload);
-    eqSize("and so it is not collected", list.count, 0);
-
-    /* Declare it a function and it becomes a site. */
-    addFunction(gWinload, 0, TEXT_RVA + 0x1000);
-    usImageInitMemory(&img, gWinload, sizeof(gWinload));
-    ok("now it is a function start", usLocateTransferLeaf(&img).isFunctionStart);
-
-    usSiteListInit(&list);
-    usCollectSites(&list, &img, UsImageWinload);
-    eqSize("and so it is collected", list.count, 1);
+    eqSize("it becomes a site", list.count, 1);
     eqSize("as a transfer leaf", list.sites[0].kind, UsSiteTransferLeaf);
-    eqSize("at the sequence start", list.sites[0].rva, TEXT_RVA + 0x1000);
+    eqSize("at the branch", list.sites[0].rva, branch);
+}
+
+/*
+ * A sequence that is almost the same but does not end in the branch is not
+ * the transfer, and must not be taken for it: everything here is checked
+ * because getting it wrong means patching a place that does nothing.
+ */
+static void testLeafRefusesNearMisses(void) {
+    UsImage img;
+
+    buildImage(gWinload, ".text", US_PE_SUBSYSTEM_EFI_APPLICATION);
+    putLeaf(gWinload, TEXT_RVA + 0x1000);
+    /* Change the branch into a return. */
+    putInsn(gWinload, TEXT_RVA + 0x1014, 0xD65F03C0);
+    usImageInitMemory(&img, gWinload, sizeof(gWinload));
+    ok("a return instead of the branch is not the transfer",
+       !usLocateTransferLeaf(&img).found);
+
+    buildImage(gWinload, ".text", US_PE_SUBSYSTEM_EFI_APPLICATION);
+    putLeaf(gWinload, TEXT_RVA + 0x1000);
+    /* Change the register the branch goes through. */
+    putInsn(gWinload, TEXT_RVA + 0x1014, 0xD61F0260);
+    usImageInitMemory(&img, gWinload, sizeof(gWinload));
+    ok("a branch through another register is not the transfer",
+       !usLocateTransferLeaf(&img).found);
 }
 
 static void testPlanDump(void) {
@@ -371,7 +393,6 @@ static void testCompletePlan(void) {
     buildImage(gKernel, ".text", US_PE_SUBSYSTEM_NATIVE);
 
     putLeaf(gWinload, TEXT_RVA + 0x1000);
-    addFunction(gWinload, 0, TEXT_RVA + 0x1000);
 
     putInsn(gWinload, TEXT_RVA + 0x2000, 0xD5182000);  /* msr ttbr0_el1, x0 */
     putInsn(gWinload, TEXT_RVA + 0x2004, 0xD5033FDF);  /* isb */
@@ -387,8 +408,8 @@ static void testCompletePlan(void) {
         UsLeafSite leaf = usLocateTransferLeaf(&winload);
         ok("the leaf is found", leaf.found);
         eqSize("the leaf is unique", leaf.matches, 1);
-        ok("the leaf is a function start", leaf.isFunctionStart);
-        eqSize("the leaf is at its start", leaf.rva, TEXT_RVA + 0x1000);
+        eqSize("the leaf starts at the sequence", leaf.rva, TEXT_RVA + 0x1000);
+        eqSize("and patches the branch", leaf.patchRva, TEXT_RVA + 0x1014);
     }
     {
         UsHandoffSite handoff = usLocateTtbrHandoff(&winload);
@@ -409,7 +430,8 @@ static void testCompletePlan(void) {
 
 int main(void) {
     testSiteCollection();
-    testLeafNeedsToBeAFunction();
+    testLeafPatchPointIsTheBranch();
+    testLeafRefusesNearMisses();
     testPlanDump();
     testCompletePlan();
 
