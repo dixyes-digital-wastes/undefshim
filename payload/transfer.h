@@ -20,12 +20,13 @@
 #include <stdint.h>
 
 /*
- * Called from the handover stub with the kernel's entry point.
+ * Called from the handover stub with the kernel's entry point and the loader's
+ * argument.
  *
  * Returns nothing: the stub continues into the kernel whatever happens here.
  * A failure is reported and recorded rather than returned, because there is
  * no caller to answer to.
  */
-void usTransferEntry(uint64_t kernelEntryVa);
+void usTransferEntry(uint64_t kernelEntryVa, uint64_t loaderBlockVa);
 
 #endif

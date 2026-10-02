@@ -54,6 +54,14 @@ usTransferStub:
 
     /* The payload entry, as placed. */
     ldr     x16, usTransferTarget
+    /*
+     * The loader's argument, which is what the kernel is started with. It is
+     * the `LOADER_PARAMETER_BLOCK`, and the loader's own list of what it
+     * mapped hangs off it -- including where ntoskrnl ended up. It was pushed
+     * first, so it sits above everything else the stub saved: ten pairs down
+     * from the current SP.
+     */
+    ldr     x1, [sp, #144]
     mov     x0, x20                 /* the kernel entry, for the payload */
     blr     x16
 

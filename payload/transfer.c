@@ -15,6 +15,7 @@
  */
 
 #include "common/layout.h"
+#include "core/ldr.h"
 #include "payload/payload.h"
 #include "payload/selfmap.h"
 #include "payload/transfer.h"
@@ -32,6 +33,13 @@ typedef struct UsTransferRecord_t {
     uint32_t mapped;
     uint32_t exhausted;
     uint32_t faulted;
+
+    /* What the loader's own list said about the kernel. */
+    uint32_t foundKernel;
+    uint32_t reserved;
+    uint64_t kernelBase;
+    uint64_t kernelSize;
+    uint64_t loaderBlock;
 } UsTransferRecord;
 
 #define US_TRANSFER_MAGIC 0x5241544e55534555ULL /* "UUSENTAR", readable in a dump */
@@ -44,8 +52,9 @@ typedef struct UsTransferRecord_t {
  */
 UsTransferRecord usTransferRecord;
 
-void usTransferEntry(uint64_t kernelEntryVa) {
+void usTransferEntry(uint64_t kernelEntryVa, uint64_t loaderBlockVa) {
     UsPayloadConfig *cfg = usPayloadConfig();
+    UsLdrModule kernel;
     UsSelfMap self;
     uint64_t here;
 
@@ -55,6 +64,24 @@ void usTransferEntry(uint64_t kernelEntryVa) {
     usTransferRecord.kernelEntry = kernelEntryVa;
     usTransferRecord.poolPa = cfg->selfVa;
     usTransferRecord.poolVaBefore = here;
+    usTransferRecord.loaderBlock = loaderBlockVa;
+
+    /*
+     * Where the kernel is, asked of the loader rather than worked out from
+     * what the memory looks like. The list is the loader's own account of
+     * what it mapped, so the answer is exact and carries the size as well,
+     * and there is no scan to be fooled by a page that merely resembles an
+     * image.
+     */
+    usTransferRecord.foundKernel =
+        usLdrFindModule((const void *)(uintptr_t)loaderBlockVa, "ntoskrnl.exe",
+                        &kernel)
+            ? 1U
+            : 0U;
+    if (usTransferRecord.foundKernel) {
+        usTransferRecord.kernelBase = kernel.base;
+        usTransferRecord.kernelSize = kernel.size;
+    }
 
     /*
      * The question this whole arrangement exists for: the pool's address once
