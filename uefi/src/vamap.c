@@ -1,81 +1,79 @@
 /*
  * Catching the address change, see vamap.h.
+ *
+ * The firmware's SetVirtualAddressMap is what carries the change, and calling
+ * ConvertPointer from inside that call is the only way to be told where the
+ * runtime memory went. Everything here exists to get at that one moment.
  */
 
 #include <uefi.h>
 
+#include "payload/vamap.h"
+#include "payload_blob.h"
 #include "uefi/src/console.h"
+#include "uefi/src/session.h"
 #include "uefi/src/vamap.h"
 
-static UsSession *gSession;
-static efi_event_t gEvent;
-
 /*
- * Translates one pointer, in place, while the firmware still can.
- *
- * ConvertPointer is only usable inside this notification: it is what the
- * firmware offers for exactly this purpose, and it is gone once the switch is
- * complete. A pointer that is not in runtime memory is left alone by it, so
- * calling it on everything we hold is the safe thing to do.
+ * Both the function that is entered and the record it writes live in the
+ * payload, and for the same reason: the change happens after the boot
+ * services are gone, and by then the driver's own memory has been given back
+ * and may be in use for something else. The blob is memory the OS keeps, and
+ * the driver knows where it was placed, so the offset is all it needs.
  */
-static void convert(void **address) {
-    efi_status_t status;
-    void *before = *address;
-
-    if (*address == NULL) {
-        return;
+static UsVaMapRecord *record(UsSession *session) {
+    if (!session->payloadPlaced) {
+        return NULL;
     }
-    status = RT->ConvertPointer(0, address);
-    if (EFI_ERROR(status)) {
-        usConsolePuts("vamap: convert refused ");
-        usConsolePutHex((uint64_t)(uintptr_t)before);
-        usConsolePuts("\n");
-    }
-}
-
-static void EFIAPI onVirtualAddressChange(efi_event_t event, void *context) {
-    (void)event;
-    (void)context;
-
-    usConsolePuts("\nUS-VAMAP-ENTER\n");
-
-    if (gSession != NULL) {
-        usConsolePuts("vamap: pool ");
-        usConsolePutHex((uint64_t)(uintptr_t)gSession->pool);
-        usConsolePuts(" payload ");
-        usConsolePutHex(gSession->payloadPlace.baseVa);
-
-        /*
-         * The pool and the payload are both runtime memory, and both are
-         * reached through addresses the driver stores. The payload's own
-         * configuration block holds addresses of its own, and it cannot be
-         * converted from here: whatever translates it has to be the payload
-         * itself, when it next runs. What this does is make sure the driver
-         * can still find the payload to do that.
-         */
-        convert((void **)&gSession->pool);
-        convert((void **)&gSession->payloadPlace.baseVa);
-        convert((void **)&gSession->payloadPlace.basePa);
-        convert((void **)&gSession->payloadPlace.entryVa);
-        convert((void **)&gSession->payloadPlace.configVa);
-
-        usConsolePuts(" -> ");
-        usConsolePutHex((uint64_t)(uintptr_t)gSession->pool);
-        usConsolePuts(" ");
-        usConsolePutHex(gSession->payloadPlace.baseVa);
-        usConsolePuts("\n");
-    }
-
-    usConsolePuts("US-VAMAP-DONE\n");
+    return (UsVaMapRecord *)(uintptr_t)
+        (session->payloadPlace.baseVa + US_PAYLOAD_VAMAP_OFFSET);
 }
 
 bool usVaMapArm(UsSession *session) {
-    gSession = session;
+    UsVaMapRecord *r = record(session);
+    efi_event_t change;
+    void *hook;
+    void *notify;
 
-    if (EFI_ERROR(BS->CreateEvent(EVT_SIGNAL_VIRTUAL_ADDRESS_CHANGE, TPL_NOTIFY,
-                                  onVirtualAddressChange, NULL, &gEvent))) {
-        gSession = NULL;
+    if (r == NULL) {
+        usConsolePuts("vamap: no payload to write the answer to\n");
         return false;
     }
+
+    r->poolBefore = (uint64_t)(uintptr_t)session->pool;
+    r->payloadBefore = session->payloadPlace.baseVa;
+    r->rt = (uint64_t)(uintptr_t)RT;
+    r->convertPointer = (uint64_t)(uintptr_t)RT->ConvertPointer;
+
+    /*
+     * The notification has to be entered in the middle of the switch and is
+     * therefore in the blob as well, for the same reason as the hook above,
+     * and it is registered here because the services that create it are gone
+     * by the time the switch happens.
+     */
+    notify = (void *)(uintptr_t)(session->payloadPlace.baseVa + US_PAYLOAD_VAMAPNOTIFY_OFFSET);
+    if (EFI_ERROR(BS->CreateEvent(EVT_SIGNAL_VIRTUAL_ADDRESS_CHANGE, TPL_NOTIFY,
+                                  (efi_event_notify_t)notify, NULL, &change))) {
+        usConsolePuts("vamap: no notification\n");
+        return false;
+    }
+
+    /*
+     * A function of the driver's own would be the obvious thing to put here,
+     * and is what the first attempt did. It is also the mistake: this is
+     * entered once the loader owns the machine, and the driver's pages are
+     * free by then. The stub is in the blob for that reason alone.
+     */
+    hook = (void *)(uintptr_t)(session->payloadPlace.baseVa + US_PAYLOAD_VAMAPHOOK_OFFSET);
+    r->svmOriginal = (uint64_t)(uintptr_t)RT->SetVirtualAddressMap;
+    RT->SetVirtualAddressMap = (efi_set_virtual_address_map_t)hook;
+
+    usConsolePuts("vamap: record=");
+    usConsolePutHex((uint64_t)(uintptr_t)r);
+    usConsolePuts(" original=");
+    usConsolePutHex(r->svmOriginal);
+    usConsolePuts(" hook=");
+    usConsolePutHex((uint64_t)(uintptr_t)hook);
+    usConsolePuts("\n");
     return true;
 }

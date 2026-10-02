@@ -97,9 +97,10 @@ int main(int argc, char **argv) {
     }
 
     /* After the session is initialised, which establishes its own defaults.
-     * Whether to take over the loader's handover is a debugging decision like
-     * any other, so it comes from the configuration file. */
+     * The switches that change what the boot does are debugging decisions
+     * like any other, so they come from the configuration file. */
     gSession.armEnabled = usConfigDebugBool(cfg, "arm", false);
+    gSession.vamapEnabled = usConfigDebugBool(cfg, "vamap", false);
 
     /* Handed over rather than freed: the patch table names stages that are
      * loaded long after this function has returned. */
@@ -151,19 +152,16 @@ int main(int argc, char **argv) {
     usConsolePuts("gmm: armed\n");
 
     /*
-     * The address change is not armed here, deliberately.
-     *
-     * Registering for it was measured to change what the boot manager does:
-     * with the event registered the loader stalls in one of its spare branch
-     * slots and the kernel never starts; without it the boot reaches the
-     * kernel. The notification cannot fire this early anyway, so registering
-     * now buys nothing and costs a working boot.
-     *
-     * It will have to be handled: the payload and the pool are both runtime
-     * memory, and the switch moves them. That belongs with the step that
-     * needs the moved addresses, where it can be tested. See vamap.h.
+     * Off by default, and it is worth saying why the default is not the
+     * interesting direction: the record this leaves behind is readable from
+     * physical memory after the fact, but nothing consumes the addresses it
+     * finds yet. See vamap.h and the milestone notes.
      */
-    (void)usVaMapArm;
+    if (gSession.vamapEnabled && !usVaMapArm(&gSession)) {
+        usConsolePuts("vamap: cannot arm\n");
+        usConsolePuts("US-M6-FAIL\n");
+        return 0;
+    }
 
     usConsolePuts("US-M4-SETUP\n");
     return 0;

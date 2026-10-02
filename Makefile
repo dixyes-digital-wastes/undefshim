@@ -30,7 +30,7 @@ PAYLOAD_CFLAGS := --target=aarch64-none-elf -std=gnu23 -ffreestanding \
                   -O2 -Wall -Wextra -I. -I$(PAYLOAD_BUILD)
 
 PAYLOAD_SRCS := $(PAYLOAD_DIR)/payload.c $(PAYLOAD_DIR)/uart.c $(PAYLOAD_DIR)/us_mem.c \
-                $(PAYLOAD_DIR)/selfmap.c $(PAYLOAD_DIR)/transfer.c \
+                $(PAYLOAD_DIR)/selfmap.c $(PAYLOAD_DIR)/transfer.c $(PAYLOAD_DIR)/vamap.c \
                 core/pgtable.c core/par.c
 PAYLOAD_ASM := $(PAYLOAD_DIR)/entry.S $(PAYLOAD_DIR)/end.S
 PAYLOAD_OBJS := $(patsubst %.c,$(PAYLOAD_BUILD)/%.o,$(notdir $(PAYLOAD_SRCS))) \
@@ -132,17 +132,18 @@ $(PAYLOAD_BUILD)/%.o: $(PAYLOAD_DIR)/%.S | $(PAYLOAD_BUILD)
 # Linked at zero with no libraries. --no-relax is not optional: a relaxation
 # that turns a branch into a different one changes the size of the code the
 # entry's PC relative addressing is measured against.
+# Nothing inside the payload refers to these: they are entry points the code
+# outside calls, and records the code outside writes. The link keeps them on
+# purpose, and a missing one would show up as an offset of zero, which is a
+# plausible looking answer rather than an obvious failure, so the header rule
+# refuses zero as well.
+PAYLOAD_KEEP := -Wl,--undefined=usTransferEntry -Wl,--undefined=usVaMapRecord \
+                -Wl,--undefined=usVaMapHook -Wl,--undefined=usVaMapNotify
+
 $(PAYLOAD_ELF): $(PAYLOAD_OBJS) $(PAYLOAD_DIR)/payload.lds
 	$(CC) --target=aarch64-none-elf -nostdlib -fuse-ld=lld \
 	    -Wl,-T,$(PAYLOAD_DIR)/payload.lds -Wl,--no-relax -Wl,--build-id=none \
-	    -Wl,--gc-sections -o $@ $(PAYLOAD_OBJS) \
-	    -Wl,--undefined=usTransferEntry
-
-# Nothing inside the payload calls these; they are entered from outside, so
-# the link keeps them on purpose. A missing one would otherwise surface as an
-# offset of zero, which is a plausible looking answer, so the check below
-# refuses zero rather than leaving it to be noticed later.
-PAYLOAD_ENTRY_SYMS := usTransferEntry usPayloadSelfTest
+	    -Wl,--gc-sections -o $@ $(PAYLOAD_OBJS) $(PAYLOAD_KEEP)
 
 # The contract: nothing in the blob may name an absolute address, because it
 # is copied somewhere the linker never knew about.
@@ -174,7 +175,8 @@ $(PAYLOAD_HDR): $(PAYLOAD_BIN)
 	@printf '/* Generated from %s. */\n' "$<" > $@
 	@printf '#define US_PAYLOAD_BYTES %s\n' "$$(stat -c %s $<)" >> $@
 	@for sym in usSyncEntry:ENTRY usPayloadConfigBlock:CONFIG usPayloadSelfTest:SELFTEST \
-	           usPayloadHandle:HANDLE usTransferEntry:TRANSFER; do \
+	           usPayloadHandle:HANDLE usTransferEntry:TRANSFER usVaMapRecord:VAMAP \
+	           usVaMapHook:VAMAPHOOK usVaMapNotify:VAMAPNOTIFY; do \
 	    name=$${sym%%:*}; tag=$${sym##*:}; \
 	    off=$$(llvm-nm $(PAYLOAD_ELF) | awk -v w="$$name" \
 	        '$$3==w {v=strtonum("0x"$$1)} $$3=="usPayloadStart" {s=strtonum("0x"$$1)} END{print v-s}'); \
@@ -226,27 +228,19 @@ $(TRANSFER_HDR): $(TRANSFER_BIN) $(TRANSFER_ELF)
 
 # Named explicitly because the source can come from outside the tree, and
 # because the generated payload header has to exist before it is compiled.
-$(DRIVER_MAIN_OBJ): $(DRIVER_MAIN) $(PAYLOAD_HDR) | $(BUILD_DIR)/uefi/src
+$(DRIVER_MAIN_OBJ): $(DRIVER_MAIN) $(PAYLOAD_HDR) $(TRANSFER_HDR) | $(BUILD_DIR)/uefi/src
 	$(CC) $(US_DRIVER_CFLAGS) -c $< -o $@
 
 # Every other translation unit.
-$(BUILD_DIR)/%.o: %.c | $(BUILD_DIR)/uefi/src $(BUILD_DIR)/core $(BUILD_DIR)/$(TOML) $(PAYLOAD_HDR)
-	$(CC) $(US_DRIVER_CFLAGS) -c $< -o $@
-
-# The translation units that embed a generated header. They are named one by
-# one because the dependency has to be real for these and order-only for the
-# rest: a generated header whose contents are compiled in must rebuild what
-# compiled it, or the old bytes are embedded again and the change appears to
-# have done nothing.
-GENERATED_HEADER_USERS := $(BUILD_DIR)/uefi/src/payload_place.o \
-                          $(BUILD_DIR)/uefi/src/arm.o
-
-$(BUILD_DIR)/uefi/src/payload_place.o: uefi/src/payload_place.c $(PAYLOAD_HDR) \
-        | $(BUILD_DIR)/uefi/src
-	$(CC) $(US_DRIVER_CFLAGS) -c $< -o $@
-
-$(BUILD_DIR)/uefi/src/arm.o: uefi/src/arm.c $(PAYLOAD_HDR) $(TRANSFER_HDR) \
-        | $(BUILD_DIR)/uefi/src
+#
+# The generated headers are real prerequisites here, not order-only ones. A
+# generated header whose bytes are compiled into an object has to rebuild that
+# object, or the old bytes are embedded again and the change looks like it did
+# nothing at all. Keeping a list of the units that embed one was tried and
+# forgot a unit three times over, so every unit is rebuilt instead: the
+# objects are small, and the failure mode of the list is silent.
+$(BUILD_DIR)/%.o: %.c $(PAYLOAD_HDR) $(TRANSFER_HDR) \
+        | $(BUILD_DIR)/uefi/src $(BUILD_DIR)/core $(BUILD_DIR)/$(TOML)
 	$(CC) $(US_DRIVER_CFLAGS) -c $< -o $@
 
 # Assembly needs no C dialect flags, but does need the target.

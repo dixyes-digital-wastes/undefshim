@@ -11,6 +11,7 @@ bool usSessionInit(UsSession *s) {
     s->patchApplied = 0;
     s->payloadPlaced = false;
     s->armEnabled = false;
+    s->vamapEnabled = false;
 
     if (!usPoolAllocate(&s->poolAlloc)) {
         return false;
