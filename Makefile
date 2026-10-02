@@ -29,9 +29,10 @@ PAYLOAD_CFLAGS := --target=aarch64-none-elf -std=gnu23 -ffreestanding \
                   -mno-outline-atomics -fno-zero-initialized-in-bss \
                   -O2 -Wall -Wextra -I. -I$(PAYLOAD_BUILD)
 
-PAYLOAD_SRCS := $(PAYLOAD_DIR)/payload.c $(PAYLOAD_DIR)/uart.c $(PAYLOAD_DIR)/us_mem.c
+PAYLOAD_SRCS := $(PAYLOAD_DIR)/payload.c $(PAYLOAD_DIR)/uart.c $(PAYLOAD_DIR)/us_mem.c \
+                $(PAYLOAD_DIR)/selfmap.c core/pgtable.c
 PAYLOAD_ASM := $(PAYLOAD_DIR)/entry.S $(PAYLOAD_DIR)/end.S
-PAYLOAD_OBJS := $(patsubst $(PAYLOAD_DIR)/%.c,$(PAYLOAD_BUILD)/%.o,$(PAYLOAD_SRCS)) \
+PAYLOAD_OBJS := $(patsubst %.c,$(PAYLOAD_BUILD)/%.o,$(notdir $(PAYLOAD_SRCS))) \
                 $(patsubst $(PAYLOAD_DIR)/%.S,$(PAYLOAD_BUILD)/%.o,$(PAYLOAD_ASM))
 
 PAYLOAD_ELF := $(PAYLOAD_BUILD)/payload.elf
@@ -96,6 +97,12 @@ $(PAYLOAD_BUILD)/layout_defs.inc: tests/tools/layoutgen.c $(PAYLOAD_DIR)/payload
 	$(PAYLOAD_BUILD)/layoutgen $@
 
 $(PAYLOAD_BUILD)/%.o: $(PAYLOAD_DIR)/%.c | $(PAYLOAD_BUILD)
+	$(CC) $(PAYLOAD_CFLAGS) -c $< -o $@
+
+# A core source in the payload: the same file the driver builds, compiled for
+# the blob's world instead. It is freestanding either way, which is the point
+# of keeping it in core.
+$(PAYLOAD_BUILD)/%.o: core/%.c | $(PAYLOAD_BUILD)
 	$(CC) $(PAYLOAD_CFLAGS) -c $< -o $@
 
 $(PAYLOAD_BUILD)/entry.o: $(PAYLOAD_DIR)/entry.S $(PAYLOAD_BUILD)/layout_defs.inc | $(PAYLOAD_BUILD)
