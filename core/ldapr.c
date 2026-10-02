@@ -47,3 +47,23 @@ UsLdaprInsn usLdaprDecode(uint32_t insn) {
     out.rn = (uint8_t)((insn >> 5) & 0x1FU);
     return out;
 }
+
+/*
+ * The acquire loads, by width.
+ *
+ * The two encodings put the size in the top two bits and the two registers in
+ * the bottom ten, all in the same places, so the substitution carries those
+ * across and replaces only what is between them. Doing it this way rather
+ * than by table means a width cannot be paired with the wrong replacement.
+ */
+#define US_LDAR_FIXED 0x08DFFC00U
+#define US_LDAPR_SIZE_MASK 0xC0000000U
+#define US_LDAPR_REG_MASK 0x3FFU
+
+bool usLdaprToLdar(uint32_t insn, uint32_t *out) {
+    if (usLdaprDecode(insn).kind == UsLdaprNone) {
+        return false;
+    }
+    *out = US_LDAR_FIXED | (insn & US_LDAPR_SIZE_MASK) | (insn & US_LDAPR_REG_MASK);
+    return true;
+}

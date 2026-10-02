@@ -42,7 +42,13 @@ static int emitFrame(FILE *f) {
     fprintf(f, "#define US_CONFIG_FORWARD %zu\n", offsetof(UsPayloadConfig, forwardTarget));
     fprintf(f, "#define US_CONFIG_POOL %zu\n", offsetof(UsPayloadConfig, poolBase));
     fprintf(f, "#define US_CONFIG_QUIET %zu\n", offsetof(UsPayloadConfig, quiet));
+    fprintf(f, "#define US_CONFIG_CPU_COUNT %zu\n", offsetof(UsPayloadConfig, cpuCount));
+    fprintf(f, "#define US_CONFIG_CPUS %zu\n", offsetof(UsPayloadConfig, cpus));
     fprintf(f, "#define US_CONFIG_SIZE %zu\n", sizeof(UsPayloadConfig));
+
+    /* One processor entry, as the entry's lookup walks it. */
+    fprintf(f, "#define US_CPU_STRIDE %zu\n", sizeof(UsPayloadCpu));
+    fprintf(f, "#define US_CPU_INDEX %zu\n", offsetof(UsPayloadCpu, index));
 
     return 0;
 }

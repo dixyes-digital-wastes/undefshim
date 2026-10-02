@@ -234,7 +234,8 @@ UsVectorTable usLocateVectorTable(UsImage *img);
 
 typedef struct UsVbarTables_t {
     uint32_t rvas[US_VBAR_MAX_TABLES];
-    bool     syncFree[US_VBAR_MAX_TABLES];
+    uint32_t syncWord[US_VBAR_MAX_TABLES];
+    bool     syncUsable[US_VBAR_MAX_TABLES];
     size_t   count;       /* distinct tables resolved, in the order found */
     size_t   sites;       /* msr vbar_el1 sites seen */
     size_t   unresolved;  /* sites whose register came from memory */
@@ -268,6 +269,17 @@ typedef enum UsVectorSlot_e {
  * working.
  */
 bool usVectorSlotIsFree(UsImage *img, uint32_t tableRva, UsVectorSlot slot);
+
+/*
+ * Whether a slot holds a branch, and if so where it goes.
+ *
+ * A slot holding a branch can be taken over whatever the branch does, because
+ * the stub that replaces it keeps the branch and only diverts the exceptions
+ * this project exists for. A slot holding anything else cannot: those bytes
+ * are the handler, and there is nothing to keep.
+ */
+bool usVectorSlotBranch(UsImage *img, uint32_t tableRva, UsVectorSlot slot,
+                        int32_t *displacement);
 
 /* Counts of the instructions the shim has to emulate, per image. */
 typedef struct UsLdaprCounts_t {

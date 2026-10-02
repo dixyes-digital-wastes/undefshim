@@ -16,6 +16,11 @@
 
 #include <stdint.h>
 
+/* For the number of processors the pool has room for: the configuration
+ * block and the pool have to agree about it, and the pool's layout is the
+ * one that says. */
+#include "common/layout.h"
+
 /*
  * What an exception left behind, in the order the entry stores it.
  *
@@ -71,6 +76,17 @@ void usPayloadSelfTest(void);
  * boot writes this block into the blob's data area after copying it, and the
  * payload reaches it through a pointer derived from the blob's own address.
  */
+/*
+ * One processor, as the boot found it described.
+ *
+ * The index is carried rather than worked out from the position, because the
+ * code that needs it runs before there is a stack to work anything out on.
+ */
+typedef struct UsPayloadCpu_t {
+    uint64_t mpidr;   /* the affinity fields only */
+    uint64_t index;
+} UsPayloadCpu;
+
 typedef struct UsPayloadConfig_t {
     /* Where to write. A direct MMIO address, since there is no firmware. */
     uint64_t uartBase;
@@ -109,6 +125,24 @@ typedef struct UsPayloadConfig_t {
      * it has to be told not to print rather than finding out.
      */
     uint64_t quiet;
+
+    /*
+     * Which processor is which, as the firmware described it.
+     *
+     * The low byte of MPIDR_EL1 is Aff0, the core within a cluster, so it
+     * repeats across clusters: on a machine of two clusters the first core of
+     * each has the same low byte. Indexing per-CPU state by it gives two
+     * processors one landing pad and one stack. Looking the value up in this
+     * list gives each of them its own place.
+     */
+    uint64_t cpuCount;
+    /*
+     * One entry per processor, and one more holding the terminator. The
+     * terminator is an index that is not a position any processor can have,
+     * which is how the entry's lookup knows it has reached the end without
+     * keeping a counter in a register it does not have to spare.
+     */
+    UsPayloadCpu cpus[US_MAX_CPUS + 1U];
 } UsPayloadConfig;
 
 /*

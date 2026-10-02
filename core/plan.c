@@ -149,7 +149,11 @@ void usPlanEmit(const UsPlan *plan, const UsSink *sink) {
     for (size_t i = 0; i < plan->vbar.count; i++) {
         emitPuts(sink, "plan: vbar winload +");
         emitHex(sink, plan->vbar.rvas[i]);
-        emitPuts(sink, plan->vbar.syncFree[i] ? " sync-free" : " sync-in-use");
+        /* Whether the slot can be taken over, and where it goes now. A slot
+         * that is a branch to somewhere is still usable: the stub keeps the
+         * branch and only diverts what this project exists for. */
+        emitPuts(sink, plan->vbar.syncUsable[i] ? " sync=" : " sync-inline=");
+        emitHex(sink, (uint64_t)((int32_t)(plan->vbar.syncWord[i] << 6) >> 6) * 4);
         emitPuts(sink, "\n");
     }
 

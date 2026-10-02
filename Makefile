@@ -91,10 +91,12 @@ DRIVER_SRCS := uefi/src/config.c uefi/src/registry.c \
                uefi/src/loadimage_hook.c uefi/src/cache.c uefi/src/console.c \
                uefi/src/pool.c uefi/src/service_hook.c uefi/src/gmm_hook.c \
                uefi/src/patch.c uefi/src/work.c uefi/src/payload_place.c uefi/src/arm.c \
+               uefi/src/rewrite.c \
+               uefi/src/acpi.c \
                uefi/src/vamap.c \
                uefi/src/session.c \
                core/cfg.c core/pe.c core/scan.c core/plan.c core/rva_patch.c core/pool.c \
-               core/thunk.c core/ldapr.c \
+               core/thunk.c core/ldapr.c core/acpi.c \
                $(TOML)/toml.c
 DRIVER_ASM := uefi/src/stack.S
 DRIVER_OBJS := $(DRIVER_MAIN_OBJ) \

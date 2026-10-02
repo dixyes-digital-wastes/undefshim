@@ -49,6 +49,31 @@ static void writeConfig(const UsPayloadPlace *place, const UsSession *session) {
     session->pool->entry = (UsPoolEntry){ 0 };
 
     /*
+     * Which processor is which. Without this the payload would have to use
+     * the low byte of MPIDR_EL1, which is not unique across clusters, and two
+     * processors would share a landing pad and a stack.
+     *
+     * A machine the firmware did not describe gets one entry, so there is
+     * always at least the processor this ran on and the lookup never comes
+     * back empty on hardware that works.
+     */
+    {
+        uint64_t count = session->cpus.count;
+
+        if (count == 0 || count > US_MAX_CPUS) {
+            count = 1;
+            cfg->cpus[0] = (UsPayloadCpu){ .mpidr = 0, .index = 0 };
+        } else {
+            for (uint64_t i = 0; i < count; i++) {
+                cfg->cpus[i] = (UsPayloadCpu){ .mpidr = session->cpus.mpidr[i], .index = i };
+            }
+        }
+        /* The end of the list, for the entry's lookup. */
+        cfg->cpus[count] = (UsPayloadCpu){ .mpidr = 0, .index = ~(uint64_t)0 };
+        cfg->cpuCount = count;
+    }
+
+    /*
      * Silence from the moment the kernel is running.
      *
      * The serial port is reachable during boot and is not after the kernel

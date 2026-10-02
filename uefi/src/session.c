@@ -3,6 +3,7 @@
  */
 
 #include "core/pool.h"
+#include "uefi/src/acpi.h"
 #include "uefi/src/session.h"
 
 bool usSessionInit(UsSession *s) {
@@ -12,6 +13,12 @@ bool usSessionInit(UsSession *s) {
     s->payloadPlaced = false;
     s->armEnabled = false;
     s->vamapEnabled = false;
+    /* On unless the configuration says otherwise: this is the mechanism the
+     * kernel depends on, and the driver sets it from the file afterwards. */
+    s->ldaprRewrite = true;
+
+    /* Read once: the tables are the boot's and are gone with it. */
+    s->cpus = usAcpiProbeCpus();
 
     if (!usPoolAllocate(&s->poolAlloc)) {
         return false;

@@ -212,11 +212,84 @@ static void testBranchAlignment(void) {
     ok("an unaligned source is refused", !usEncodeBranch(0x1002, 0x1000, &word));
 }
 
+/* --- the vector slot stub ----------------------------------------------- */
+
+/*
+ * The stub has to do two opposite things depending on the exception class,
+ * and the whole reason it exists is the second one: an exception that is not
+ * an undefined instruction must carry on into whatever the slot used to do.
+ * Both are checked by walking the instructions it produced.
+ */
+static void testVectorStub(void) {
+    /* The kernel's synchronous slot on 26100: `b 0x605c78` from 0x604a00. */
+    const uint32_t origDisp = 0x1278;
+    uint32_t orig = 0x14000000U | ((origDisp / 4) & 0x03FFFFFFU);
+    uint32_t stub[US_STUB_WORDS];
+    const uint64_t target = 0x13bc00bb0ULL;
+
+    usEncodeVectorStub(stub, target, orig);
+
+    /* The exception class is read out of ESR, and only EC zero is ours. */
+    /* Nothing is pushed: at this vector there is no stack, and a write to the
+     * one in SP faults inside the exception it was meant to handle. */
+    for (int i = 0; i < (int)US_STUB_WORDS; i++) {
+        ok("the stub touches no stack", (stub[i] & 0xFFC00000U) != 0xF8000000U);
+    }
+    ok("it reads ESR_EL1", stub[0] == 0xD5385210U);
+    ok("it shifts the class down", stub[1] == 0xD35AFE10U);
+    ok("and branches on it", (stub[2] & 0xFF000000U) == 0xB5000000U);
+    ok("testing x16", (stub[2] & 0x1FU) == 16U);
+
+    /* The branch has to land on the continuation, which is where the slot's
+     * original behaviour is resumed. Landing one instruction earlier would
+     * run the address setup; one later would skip the pop. */
+    {
+        int32_t to = (int32_t)(((stub[2] >> 5) & 0x7FFFFU) << 13) >> 13;
+        eq64("the class branch lands on the continuation",
+             (uint64_t)(2 + to), (uint64_t)US_STUB_CONTINUATION);
+    }
+
+    /* The address is built from four halves, in order. */
+    {
+        uint32_t built[US_THUNK_WORDS];
+
+        /* The same shape the interpreter understands: a push it can see,
+         * then the four immediates and the branch the stub builds. */
+        built[0] = US_STR_PRE;
+        for (int i = 0; i < 5; i++) {
+            built[1 + i] = stub[3 + i];
+        }
+        eq64("the stub reaches the payload", runThunk(built, US_THUNK_WORDS), target);
+    }
+
+    /* The continuation has to arrive where the original branch arrived. The
+     * branch has moved, so its displacement has to shrink by that much;
+     * keeping the original encoding would land past the handler, inside it or
+     * past its end. */
+    {
+        int32_t disp = (int32_t)(stub[US_STUB_CONTINUATION] << 6) >> 6;
+
+        eq64("the continuation still reaches the original handler",
+             (uint64_t)(uint32_t)(disp * 4),
+             (uint64_t)(origDisp - (US_STUB_WORDS - 1U) * 4U));
+    }
+
+    /* A slot that branched to itself keeps doing so: the place it used to
+     * point at now holds this stub. */
+    {
+        uint32_t selfStub[US_STUB_WORDS];
+
+        usEncodeVectorStub(selfStub, target, 0x14000000U);
+        eq64("a self branch is left as one", selfStub[US_STUB_CONTINUATION], 0x14000000U);
+    }
+}
+
 int main(void) {
     testThunkReachesAnyAddress();
     testThunkShape();
     testBranchRange();
     testBranchAlignment();
+    testVectorStub();
 
     printf("%d checks, %d failures\n", checks, failures);
     return failures != 0;
