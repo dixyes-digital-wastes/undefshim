@@ -40,6 +40,8 @@ static int emitFrame(FILE *f) {
             sizeof(((UsPayloadConfig *)0)->stackTop) / sizeof(uint64_t));
     fprintf(f, "#define US_CONFIG_SELF_VA %zu\n", offsetof(UsPayloadConfig, selfVa));
     fprintf(f, "#define US_CONFIG_FORWARD %zu\n", offsetof(UsPayloadConfig, forwardTarget));
+    fprintf(f, "#define US_CONFIG_POOL %zu\n", offsetof(UsPayloadConfig, poolBase));
+    fprintf(f, "#define US_CONFIG_QUIET %zu\n", offsetof(UsPayloadConfig, quiet));
     fprintf(f, "#define US_CONFIG_SIZE %zu\n", sizeof(UsPayloadConfig));
 
     return 0;

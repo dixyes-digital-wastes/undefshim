@@ -369,8 +369,12 @@ static void testPlanDump(void) {
     ok("the kernel site comes first",
        strstr(buf.text, "plan: site vbar-write ntoskrnl +0x1100 x16") != NULL);
     ok("then the loader's", strstr(buf.text, "plan: site vbar-write winload +0x1040") != NULL);
+    ok("the thunk is placed in the kernel",
+       strstr(buf.text, "plan: thunk ntoskrnl +0x") != NULL);
+    ok("the vector tables are reported",
+       strstr(buf.text, "plan: vbar sites=1 unresolved=1 tables=0") != NULL);
     ok("incompleteness is stated", strstr(buf.text, "plan: complete=0") != NULL);
-    eqSize("dump is line based", countLines(buf.text), 7);
+    eqSize("dump is line based", countLines(buf.text), 9);
 
     /* The same plan printed twice has to be identical, byte for byte. */
     {
@@ -428,12 +432,66 @@ static void testCompletePlan(void) {
     eqSize("and covers no images", plan.imageCount, 0);
 }
 
+/*
+ * Finding the vector table the loader installs.
+ *
+ * Shape is not enough, and this is where that is written down: the table here
+ * has its synchronous slot holding a branch to itself, exactly like the one
+ * shape-based search would pick, and a second table is added that looks the
+ * same. What tells them apart is the register the write site loads, which is
+ * what this follows.
+ */
+static void testVbarDiscovery(void) {
+    UsImage kernel;
+    UsVbarTables tables;
+
+    buildImage(gKernel, ".text", US_PE_SUBSYSTEM_NATIVE);
+    usImageInitMemory(&kernel, gKernel, sizeof(gKernel));
+
+    /* A table at 0x2000 with an unused synchronous slot, and one at 0x3000
+     * with the slot taken by something real. */
+    putInsn(gKernel, 0x2000 + 0x200, 0x14000000);
+    putInsn(gKernel, 0x3000 + 0x200, 0xD503201F);
+
+    /* adrp x8, 0x2000 ; add x8, x8, #0 ; msr vbar_el1, x8 */
+    putInsn(gKernel, TEXT_RVA + 0x100, 0xB0000008);
+    putInsn(gKernel, TEXT_RVA + 0x104, 0x91000108);
+    putInsn(gKernel, TEXT_RVA + 0x108, 0xD518C008);
+
+    /* adrp x9, 0x3000 ; add x9, x9, #0 ; msr vbar_el1, x9 */
+    putInsn(gKernel, TEXT_RVA + 0x200, 0xD0000009);
+    putInsn(gKernel, TEXT_RVA + 0x204, 0x91000129);
+    putInsn(gKernel, TEXT_RVA + 0x208, 0xD518C009);
+
+    /* ldr x10, [x0, #8] ; msr vbar_el1, x10 -- a runtime value. */
+    putInsn(gKernel, TEXT_RVA + 0x300, 0xF940040A);
+    putInsn(gKernel, TEXT_RVA + 0x304, 0xD518C00A);
+
+    tables = usFindVbarTables(&kernel);
+    eqSize("three writes are seen", tables.sites, 3);
+    eqSize("two tables are resolved", tables.count, 2);
+    eqSize("and one is not", tables.unresolved, 1);
+    ok("the first is the one adrp points at", tables.rvas[0] == 0x2000);
+    ok("the second is the one the other adrp points at", tables.rvas[1] == 0x3000);
+
+    ok("the first table's synchronous slot is free",
+       usVectorSlotIsFree(&kernel, tables.rvas[0], UsVectorSlotEl1hSync));
+    ok("the second table's is not",
+       !usVectorSlotIsFree(&kernel, tables.rvas[1], UsVectorSlotEl1hSync));
+
+    /* A table that is not there reads as occupied, which is the safe answer:
+     * refusing to write costs a shim, writing into nothing costs the boot. */
+    ok("a missing table is not free",
+       !usVectorSlotIsFree(&kernel, 0x7000, UsVectorSlotEl1hSync));
+}
+
 int main(void) {
     testSiteCollection();
     testLeafPatchPointIsTheBranch();
     testLeafRefusesNearMisses();
     testPlanDump();
     testCompletePlan();
+    testVbarDiscovery();
 
     printf("%d checks, %d failures\n", checks, failures);
     return failures != 0;

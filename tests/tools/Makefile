@@ -13,12 +13,15 @@ CORPUS ?=
 CFLAGS := -std=gnu23 -O2 -Wall -Wextra -Wno-unused-function -I$(ROOT)
 
 .PHONY: all check clean
-all: peprobe planprobe
+all: peprobe planprobe holes
 
 peprobe: peprobe.c $(ROOT)/core/pe.c $(ROOT)/core/scan.c
 	$(CC) $(CFLAGS) $^ -o $@
 
 planprobe: planprobe.c $(ROOT)/core/pe.c $(ROOT)/core/scan.c $(ROOT)/core/plan.c
+	$(CC) $(CFLAGS) $^ -o $@
+
+holes: holes.c $(ROOT)/core/pe.c $(ROOT)/core/scan.c
 	$(CC) $(CFLAGS) $^ -o $@
 
 # Without a corpus there is nothing to probe, which is a skip, not a failure.
@@ -36,4 +39,4 @@ check: all
 	fi
 
 clean:
-	rm -f peprobe planprobe
+	rm -f peprobe planprobe holes

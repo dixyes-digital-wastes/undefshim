@@ -69,16 +69,12 @@ void usWorkCollect(UsSession *session) {
     usConsolePuts(req.complete ? "US-M5-PLAN\n" : "US-M5-INCOMPLETE\n");
 
     /*
-     * Arming is off until the payload can survive the handover.
-     *
-     * It gets there: the branch lands, the stub runs, the payload is called.
-     * What it cannot do there is read the page tables, because they are not
-     * reachable from the address space that is in force by then, and reading
-     * them is the whole point. Until that is answered a different way --
-     * asking the hardware to translate rather than walking itself -- arming
-     * only turns a working boot into one that stops at the handover.
+     * Drawing the exception path is what the whole thing is for, and it is
+     * done from the boot because everything it needs -- the loader's table,
+     * the payload's address -- is known there, and the memory it writes is
+     * writable there. Nothing later has to write anything.
      */
-    if (req.complete && session->armEnabled && usArmTransfer(session)) {
+    if (req.complete && session->armEnabled && usArmVectorTable(session)) {
         usConsolePuts("US-M6.5-ARMED\n");
     }
 }
