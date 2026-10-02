@@ -30,7 +30,7 @@ PAYLOAD_CFLAGS := --target=aarch64-none-elf -std=gnu23 -ffreestanding \
                   -O2 -Wall -Wextra -I. -I$(PAYLOAD_BUILD)
 
 PAYLOAD_SRCS := $(PAYLOAD_DIR)/payload.c $(PAYLOAD_DIR)/uart.c $(PAYLOAD_DIR)/us_mem.c \
-                $(PAYLOAD_DIR)/selfmap.c core/pgtable.c
+                $(PAYLOAD_DIR)/selfmap.c $(PAYLOAD_DIR)/transfer.c core/pgtable.c
 PAYLOAD_ASM := $(PAYLOAD_DIR)/entry.S $(PAYLOAD_DIR)/end.S
 PAYLOAD_OBJS := $(patsubst %.c,$(PAYLOAD_BUILD)/%.o,$(notdir $(PAYLOAD_SRCS))) \
                 $(patsubst $(PAYLOAD_DIR)/%.S,$(PAYLOAD_BUILD)/%.o,$(PAYLOAD_ASM))
@@ -38,6 +38,23 @@ PAYLOAD_OBJS := $(patsubst %.c,$(PAYLOAD_BUILD)/%.o,$(notdir $(PAYLOAD_SRCS))) \
 PAYLOAD_ELF := $(PAYLOAD_BUILD)/payload.elf
 PAYLOAD_BIN := $(PAYLOAD_BUILD)/payload.bin
 PAYLOAD_HDR := $(PAYLOAD_BUILD)/payload_blob.h
+
+# --- the handover stub ---------------------------------------------------
+#
+# Copied into a spare slot in the loader, so it is assembled at zero and
+# carries its one absolute address as a literal the boot fills in. It has to
+# fit in the slot, which is what the size check is for: a stub that overran it
+# would run off into whatever follows and there would be nothing to say so.
+
+TRANSFER_SRC := $(PAYLOAD_DIR)/transfer.S
+TRANSFER_OBJ := $(PAYLOAD_BUILD)/transfer_stub.o
+TRANSFER_ELF := $(PAYLOAD_BUILD)/transfer.elf
+TRANSFER_ELF := $(PAYLOAD_BUILD)/transfer.elf
+TRANSFER_BIN := $(PAYLOAD_BUILD)/transfer.bin
+TRANSFER_HDR := $(PAYLOAD_BUILD)/transfer_blob.h
+
+# The slot the loader leaves for exactly this kind of thing.
+US_TRANSFER_SLOT_BYTES := 128
 
 # The shims come first on purpose: they supply the standard headers the
 # compiler does not have for a freestanding target, and map them onto uefi.h.
@@ -72,7 +89,7 @@ DRIVER_MAIN_OBJ := $(BUILD_DIR)/driver_main.o
 DRIVER_SRCS := uefi/src/config.c uefi/src/registry.c \
                uefi/src/loadimage_hook.c uefi/src/cache.c uefi/src/console.c \
                uefi/src/pool.c uefi/src/service_hook.c uefi/src/gmm_hook.c \
-               uefi/src/patch.c uefi/src/work.c uefi/src/payload_place.c \
+               uefi/src/patch.c uefi/src/work.c uefi/src/payload_place.c uefi/src/arm.c \
                uefi/src/vamap.c \
                uefi/src/session.c \
                core/cfg.c core/pe.c core/scan.c core/plan.c core/rva_patch.c core/pool.c \
@@ -117,7 +134,14 @@ $(PAYLOAD_BUILD)/%.o: $(PAYLOAD_DIR)/%.S | $(PAYLOAD_BUILD)
 $(PAYLOAD_ELF): $(PAYLOAD_OBJS) $(PAYLOAD_DIR)/payload.lds
 	$(CC) --target=aarch64-none-elf -nostdlib -fuse-ld=lld \
 	    -Wl,-T,$(PAYLOAD_DIR)/payload.lds -Wl,--no-relax -Wl,--build-id=none \
-	    -Wl,--gc-sections -o $@ $(PAYLOAD_OBJS)
+	    -Wl,--gc-sections -o $@ $(PAYLOAD_OBJS) \
+	    -Wl,--undefined=usTransferEntry
+
+# Nothing inside the payload calls these; they are entered from outside, so
+# the link keeps them on purpose. A missing one would otherwise surface as an
+# offset of zero, which is a plausible looking answer, so the check below
+# refuses zero rather than leaving it to be noticed later.
+PAYLOAD_ENTRY_SYMS := usTransferEntry usPayloadSelfTest
 
 # The contract: nothing in the blob may name an absolute address, because it
 # is copied somewhere the linker never knew about.
@@ -148,15 +172,56 @@ $(PAYLOAD_BIN): $(PAYLOAD_ELF) $(TOOLS_TESTS)/blobcheck.c | $(PAYLOAD_BUILD)
 $(PAYLOAD_HDR): $(PAYLOAD_BIN)
 	@printf '/* Generated from %s. */\n' "$<" > $@
 	@printf '#define US_PAYLOAD_BYTES %s\n' "$$(stat -c %s $<)" >> $@
-	@for sym in usSyncEntry:ENTRY usPayloadConfigBlock:CONFIG usPayloadSelfTest:SELFTEST usPayloadHandle:HANDLE; do \
+	@for sym in usSyncEntry:ENTRY usPayloadConfigBlock:CONFIG usPayloadSelfTest:SELFTEST \
+	           usPayloadHandle:HANDLE usTransferEntry:TRANSFER; do \
 	    name=$${sym%%:*}; tag=$${sym##*:}; \
 	    off=$$(llvm-nm $(PAYLOAD_ELF) | awk -v w="$$name" \
 	        '$$3==w {v=strtonum("0x"$$1)} $$3=="usPayloadStart" {s=strtonum("0x"$$1)} END{print v-s}'); \
 	    if [ -z "$$off" ]; then echo "ERROR: $${name} is not in the payload"; exit 1; fi; \
+	    if [ "$$off" = "0" ] && [ "$$name" != "usPayloadStart" ]; then \
+	        echo "ERROR: $${name} is at offset zero, which means it was dropped"; \
+	        exit 1; \
+	    fi; \
 	    printf '#define US_PAYLOAD_%s_OFFSET %s\n' "$$tag" "$$off" >> $@; \
 	done
 	@printf 'static const unsigned char kPayloadBlob[US_PAYLOAD_BYTES] = {\n#embed "payload.bin"\n};\n' >> $@
 	@echo "payload header: $$(grep -c '^#define' $@) constants"
+
+# --- the handover stub ---------------------------------------------------
+
+$(TRANSFER_OBJ): $(TRANSFER_SRC) | $(PAYLOAD_BUILD)
+	$(CC) $(PAYLOAD_CFLAGS) -c $< -o $@
+
+# Linked before it is turned into bytes. The literal load is left as a
+# relocation by the assembler, and objcopy on its own would put a zero where
+# the offset belongs, which loads the instruction itself. Linking resolves it.
+$(TRANSFER_ELF): $(TRANSFER_OBJ)
+	$(CC) --target=aarch64-none-elf -nostdlib -fuse-ld=lld -Wl,-Ttext=0 \
+	    -Wl,--image-base=0 -Wl,--no-relax -Wl,--build-id=none -o $@ $<
+	@rel=$$(llvm-readelf -r $@ | grep -c 'R_AARCH64' || true); \
+	if [ "$$rel" != "0" ]; then \
+	    echo "ERROR: the stub still needs $$rel relocations to be placed"; \
+	    exit 1; \
+	fi
+
+$(TRANSFER_BIN): $(TRANSFER_ELF)
+	llvm-objcopy -O binary --only-section=.text $< $@
+	@size=$$(stat -c %s $@); \
+	if [ "$$size" -gt $(US_TRANSFER_SLOT_BYTES) ]; then \
+	    echo "ERROR: the stub is $$size bytes, the slot is $(US_TRANSFER_SLOT_BYTES)"; \
+	    exit 1; \
+	fi
+	@echo "stub: $$(stat -c %s $@) bytes of $(US_TRANSFER_SLOT_BYTES)"
+
+# The offsets the boot needs: where the payload address goes, and where the
+# stub's own code is. Both come from the linked image rather than being
+# assumed, so the assembly stays free to change.
+$(TRANSFER_HDR): $(TRANSFER_BIN) $(TRANSFER_ELF)
+	@printf '/* Generated from %s. */\n' "$<" > $@
+	@printf '#define US_TRANSFER_BYTES %s\n' "$$(stat -c %s $<)" >> $@
+	@printf '#define US_TRANSFER_TARGET_OFFSET %s\n' \
+	    "$$(llvm-nm $(TRANSFER_ELF) | awk '/ usTransferTarget$$/{print strtonum("0x"$$1)}')" >> $@
+	@printf 'static const unsigned char kTransferStub[US_TRANSFER_BYTES] = {\n#embed "transfer.bin"\n};\n' >> $@
 
 # Named explicitly because the source can come from outside the tree, and
 # because the generated payload header has to exist before it is compiled.
@@ -167,12 +232,19 @@ $(DRIVER_MAIN_OBJ): $(DRIVER_MAIN) $(PAYLOAD_HDR) | $(BUILD_DIR)/uefi/src
 $(BUILD_DIR)/%.o: %.c | $(BUILD_DIR)/uefi/src $(BUILD_DIR)/core $(BUILD_DIR)/$(TOML) $(PAYLOAD_HDR)
 	$(CC) $(US_DRIVER_CFLAGS) -c $< -o $@
 
-# The one translation unit that embeds the blob. The generated header is a
-# real prerequisite here, not an order-only one: its contents are what the
-# code is compiled against, so a new payload has to rebuild it. Making it
-# order-only is how a stale blob gets embedded and the driver goes on
-# behaving exactly as it did before the payload was changed.
+# The translation units that embed a generated header. They are named one by
+# one because the dependency has to be real for these and order-only for the
+# rest: a generated header whose contents are compiled in must rebuild what
+# compiled it, or the old bytes are embedded again and the change appears to
+# have done nothing.
+GENERATED_HEADER_USERS := $(BUILD_DIR)/uefi/src/payload_place.o \
+                          $(BUILD_DIR)/uefi/src/arm.o
+
 $(BUILD_DIR)/uefi/src/payload_place.o: uefi/src/payload_place.c $(PAYLOAD_HDR) \
+        | $(BUILD_DIR)/uefi/src
+	$(CC) $(US_DRIVER_CFLAGS) -c $< -o $@
+
+$(BUILD_DIR)/uefi/src/arm.o: uefi/src/arm.c $(PAYLOAD_HDR) $(TRANSFER_HDR) \
         | $(BUILD_DIR)/uefi/src
 	$(CC) $(US_DRIVER_CFLAGS) -c $< -o $@
 

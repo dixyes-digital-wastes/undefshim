@@ -28,6 +28,10 @@ typedef struct UsSession_t {
     UsPayloadPlace payloadPlace;
     bool           payloadPlaced;
 
+    /* Whether to take over the loader's handover to the kernel. Off by
+     * default: see work.c for what still has to be true for it to work. */
+    bool           armEnabled;
+
     /*
      * The parsed configuration, owned here. Its patch table names stages that
      * are not loaded yet when the driver starts, so it has to outlive the

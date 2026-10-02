@@ -387,8 +387,73 @@ UsHandoffSite usLocateTtbrHandoff(UsImage *img) {
     return beforeSctlr;
 }
 
-UsLdaprCounts usCountLdapr(UsImage *img) {
-    UsLdaprCounts c = { 0 };
+/* --- the spare slot ----------------------------------------------------- */
+
+/*
+ * A hole in the loader's code: a run of zero words long enough to hold
+ * something.
+ *
+ * The distinguishing feature has to be the length, not the shape. A vector
+ * table entry is also a branch to itself followed by zeros, and the padding
+ * there is bounded by the entry size, so a run that is longer than one entry
+ * cannot be one. An earlier version matched the branch-and-zeros shape and
+ * picked out the exception vector table, which is not space at all: writing
+ * there replaces handlers the firmware still needs.
+ *
+ * A hole is also taken to be executable, since it is inside a code section,
+ * and unreferenced, which is a judgement about the image rather than
+ * something that can be checked from its bytes.
+ */
+#define US_HOLE_MIN_SLOP 256U
+/* A hole is a hole, not a search for the longest run in the image. */
+#define US_HOLE_MAX_BYTES 65536U
+
+UsSpareSlot usLocateSpareSlot(UsImage *img, uint32_t minBytes) {
+    UsSpareSlot best = { 0 };
+
+    if (img == NULL || !img->valid || minBytes < 4) {
+        return best;
+    }
+
+    for (uint16_t i = 0; i < img->sectionCount; i++) {
+        const UsPeSection *s = &img->sections[i];
+        uint32_t span;
+        uint32_t off;
+
+        if ((s->characteristics & US_PE_SECTION_EXECUTABLE) == 0 || s->virtualSize == 0) {
+            continue;
+        }
+        span = s->virtualSize;
+
+        for (off = 0; off + 4 <= span;) {
+            uint32_t bytes = 0;
+
+            if (readInsn(img, s->virtualAddress + off) != 0) {
+                off += 4;
+                continue;
+            }
+            while (off + bytes + 4 <= span && bytes < US_HOLE_MAX_BYTES
+                   && readInsn(img, s->virtualAddress + off + bytes) == 0) {
+                bytes += 4;
+            }
+            if (bytes >= minBytes && bytes >= US_HOLE_MIN_SLOP) {
+                best.matches++;
+                /* The longest hole wins: a longer run is more likely to be
+                 * padding and less likely to be a buffer something fills. */
+                if (!best.found || bytes > best.bytes) {
+                    best.found = true;
+                    best.rva = s->virtualAddress + off;
+                    best.bytes = bytes;
+                }
+            }
+            off += bytes != 0 ? bytes : 4;
+        }
+    }
+
+    return best;
+}
+
+UsLdaprCounts usCountLdapr(UsImage *img) {    UsLdaprCounts c = { 0 };
 
     c.word = usScanImage(img, &usPatLdaprW).total;
     c.xword = usScanImage(img, &usPatLdaprX).total;

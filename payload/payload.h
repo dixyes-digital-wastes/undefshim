@@ -94,4 +94,10 @@ typedef struct UsPayloadConfig_t {
     uint64_t forwardTarget;
 } UsPayloadConfig;
 
+/*
+ * The configuration block the boot fills in after copying the blob. Reached
+ * through the blob's own address, so nothing has to be linked against it.
+ */
+UsPayloadConfig *usPayloadConfig(void);
+
 #endif
