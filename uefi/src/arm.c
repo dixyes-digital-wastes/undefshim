@@ -137,10 +137,16 @@ static bool armSlot(UsSession *s, const UsArmTarget *target, uint32_t next) {
      * It may where execution was using SP_EL0: that is a stack, the
      * interrupted stack pointer is still in SP, and the stub pushes the
      * registers the entry spends so the entry can give them back. It may not
-     * where SP holds whatever SP_EL1 happened to be, which is not a stack
-     * anything can push on.
+     * where SP holds whatever SP_EL1 happened to be.
+     *
+     * spxStack overrides the second half, and exists to test it rather than
+     * believe it: a recorded probe once said pushing on the EL1h vector faults
+     * until the machine resets, and a frame read since then shows SP holding
+     * an ordinary kernel stack with the frame pointer equal to it. Both cannot
+     * be true, and one run with the flag on settles which is.
      */
-    bool save = target->slot == UsVectorSlotEl1tSync;
+    bool el1t = target->slot == UsVectorSlotEl1tSync;
+    bool save = el1t || s->spxStack;
     uint32_t entryOffset = save ? US_PAYLOAD_ENTRYSP0_OFFSET
                                 : US_PAYLOAD_ENTRY_OFFSET;
 
