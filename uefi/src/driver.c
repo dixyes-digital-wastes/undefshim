@@ -96,6 +96,11 @@ int main(int argc, char **argv) {
         return 0;
     }
 
+    /* After the session is initialised, which establishes its own defaults.
+     * Whether to take over the loader's handover is a debugging decision like
+     * any other, so it comes from the configuration file. */
+    gSession.armEnabled = usConfigDebugBool(cfg, "arm", false);
+
     /* Handed over rather than freed: the patch table names stages that are
      * loaded long after this function has returned. */
     gSession.config = cfg;

@@ -28,9 +28,10 @@ typedef struct UsTransferRecord_t {
     uint64_t poolVaAfter;
     uint64_t kernelEntry;
     uint64_t mappedSize;
-    uint64_t entriesRead;
+    uint64_t probes;
     uint32_t mapped;
     uint32_t exhausted;
+    uint32_t faulted;
 } UsTransferRecord;
 
 #define US_TRANSFER_MAGIC 0x5241544e55534555ULL /* "UUSENTAR", readable in a dump */
@@ -57,14 +58,16 @@ void usTransferEntry(uint64_t kernelEntryVa) {
 
     /*
      * The question this whole arrangement exists for: the pool's address once
-     * the kernel's tables are what translates it. The tables are live now and
-     * the pool is still reachable, so it can be answered.
+     * the kernel's tables are what translates it. The kernel's entry point is
+     * what the search is anchored on, since it is the one address in the new
+     * space that is known here for certain.
      */
-    self = usSelfMapFind(cfg->selfVa, US_POOL_BYTES);
+    self = usSelfMapFind(cfg->selfVa, US_POOL_BYTES, kernelEntryVa);
 
     usTransferRecord.mapped = self.found ? 1U : 0U;
     usTransferRecord.poolVaAfter = self.va;
     usTransferRecord.mappedSize = self.size;
+    usTransferRecord.probes = self.probes;
     usTransferRecord.exhausted = self.exhausted ? 1U : 0U;
-    usTransferRecord.entriesRead = self.entriesRead;
+    usTransferRecord.faulted = self.faulted ? 1U : 0U;
 }

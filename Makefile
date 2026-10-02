@@ -30,7 +30,8 @@ PAYLOAD_CFLAGS := --target=aarch64-none-elf -std=gnu23 -ffreestanding \
                   -O2 -Wall -Wextra -I. -I$(PAYLOAD_BUILD)
 
 PAYLOAD_SRCS := $(PAYLOAD_DIR)/payload.c $(PAYLOAD_DIR)/uart.c $(PAYLOAD_DIR)/us_mem.c \
-                $(PAYLOAD_DIR)/selfmap.c $(PAYLOAD_DIR)/transfer.c core/pgtable.c
+                $(PAYLOAD_DIR)/selfmap.c $(PAYLOAD_DIR)/transfer.c \
+                core/pgtable.c core/par.c
 PAYLOAD_ASM := $(PAYLOAD_DIR)/entry.S $(PAYLOAD_DIR)/end.S
 PAYLOAD_OBJS := $(patsubst %.c,$(PAYLOAD_BUILD)/%.o,$(notdir $(PAYLOAD_SRCS))) \
                 $(patsubst $(PAYLOAD_DIR)/%.S,$(PAYLOAD_BUILD)/%.o,$(PAYLOAD_ASM))

@@ -117,10 +117,11 @@ void usPayloadSelfTest(void) {
      * There are none here. The firmware runs its own regime, and in this one
      * both translation base registers read as zero: an address is its own
      * physical address and no table describes it. So this reports the answer
-     * for that case, and the walk itself gets its exercise at the handover,
-     * where the kernel's tables are live and the question actually matters.
+     * for that case, and the search itself gets its exercise at the handover,
+     * where the kernel's tables are in force and the question actually
+     * matters.
      */
-    self = usSelfMapFind(cfg->selfVa, US_POOL_BYTES);
+    self = usSelfMapFind(cfg->selfVa, US_POOL_BYTES, cfg->selfVa);
     usUartPuts("US-PAYLOAD selfmap ");
     if (self.found) {
         usUartPuts("va=");
@@ -132,8 +133,8 @@ void usPayloadSelfTest(void) {
     } else {
         usUartPuts("none");
     }
-    usUartPuts(" entries=");
-    usUartPutDec(self.entriesRead);
+    usUartPuts(" probes=");
+    usUartPutDec(self.probes);
     usUartPuts(self.exhausted ? " truncated" : " complete");
     usUartPuts("\n");
 }
