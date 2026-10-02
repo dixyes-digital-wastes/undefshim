@@ -15,6 +15,7 @@ tests/unit/test_layout
 tests/unit/test_scan_images
 tests/unit/test_rva_patch
 tests/unit/test_plan
+tests/unit/test_pgtable
 tests/tools/peprobe
 tests/tools/planprobe
 

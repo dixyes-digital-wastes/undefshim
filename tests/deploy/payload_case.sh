@@ -63,12 +63,27 @@ configv=$(( config ))
 [ "$configv" -ge "$basev" ] && [ "$configv" -lt "$limit" ] \
     || fail "the configuration block $config is outside the copy at $base"
 
-# The payload has to have written through the port address it was given.
+# The payload has to have written through the port address it was given, and
+# to have answered the question about its own mapping. In the firmware's
+# regime there are no tables, so the answer is the identity one; what this
+# proves is that the call reached the payload, that it read its configuration,
+# and that it came back.
 alive=$(tr -d '\r' <"$SERIAL_LOG" | grep -a -m1 '^US-PAYLOAD alive ')
 [ -n "$alive" ] || fail "the payload was placed but never ran"
 
 frame=$(printf '%s' "$alive" | sed -n 's/.*frame=\([0-9]*\).*/\1/p')
 [ "$frame" = "288" ] || fail "the payload reports frame=$frame, expected 288"
 
+mapping=$(tr -d '\r' <"$SERIAL_LOG" | grep -a -m1 '^US-PAYLOAD selfmap ')
+[ -n "$mapping" ] || fail "the payload did not report its own mapping"
+case "$mapping" in
+*"va=$base pa=$base"*)
+    ;;
+*)
+    fail "the payload reports its mapping as: $mapping"
+    ;;
+esac
+
 echo "PASS: payload at $base ($bytes bytes), entry $entry, config $config"
 echo "      $alive"
+echo "      $mapping"

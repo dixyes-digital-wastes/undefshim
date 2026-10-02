@@ -7,6 +7,7 @@
 
 #include "common/layout.h"
 #include "payload/payload.h"
+#include "payload/selfmap.h"
 #include "payload/uart.h"
 #include "payload/us_mem.h"
 
@@ -101,11 +102,38 @@ int usPayloadHandle(UsFrame *frame) {
  * depends on it. */
 void usPayloadSelfTest(void) {
     UsPayloadConfig *cfg = usPayloadConfig();
+    UsSelfMap self;
 
     usUartInit(cfg->uartBase);
     usUartPuts("US-PAYLOAD alive cpu=");
     usUartPutDec(currentCpu());
     usUartPuts(" frame=");
     usUartPutDec(sizeof(UsFrame));
+    usUartPuts("\n");
+
+    /*
+     * Where the tables say this very code can be reached from.
+     *
+     * There are none here. The firmware runs its own regime, and in this one
+     * both translation base registers read as zero: an address is its own
+     * physical address and no table describes it. So this reports the answer
+     * for that case, and the walk itself gets its exercise at the handover,
+     * where the kernel's tables are live and the question actually matters.
+     */
+    self = usSelfMapFind(cfg->selfVa, US_POOL_BYTES);
+    usUartPuts("US-PAYLOAD selfmap ");
+    if (self.found) {
+        usUartPuts("va=");
+        usUartPutHex(self.va);
+        usUartPuts(" pa=");
+        usUartPutHex(self.pa);
+        usUartPuts(" size=");
+        usUartPutHex(self.size);
+    } else {
+        usUartPuts("none");
+    }
+    usUartPuts(" entries=");
+    usUartPutDec(self.entriesRead);
+    usUartPuts(self.exhausted ? " truncated" : " complete");
     usUartPuts("\n");
 }
