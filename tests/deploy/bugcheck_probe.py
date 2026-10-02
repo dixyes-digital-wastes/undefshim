@@ -257,13 +257,53 @@ def programCounter(qmp_file):
     return int(m.group(1), 16) if m else None
 
 
+def payloadRecord(qmp_file, serialLog):
+    """What the payload recorded about the exceptions it was given.
+
+    The pool is the payload's only way to say anything: once the kernel is
+    running its page tables do not map the serial port, so a write to it stops
+    the machine. This is that record, read back through the monitor.
+
+    It answers the question a stop otherwise leaves open: whether the payload
+    was entered at all, how many exceptions it was given, how many it claimed,
+    and what the first one it carried out was.
+    """
+    try:
+        text = open(serialLog, "rb").read().decode("latin1")
+    except OSError:
+        return "  (no serial log to read the pool address from)"
+
+    m = re.search(r"pool: pa=0x([0-9a-f]+)", text)
+    if m is None:
+        return "  (the pool's address is not in the log)"
+    pool = int(m.group(1), 16)
+
+    # magic, then the record; the pool's own header is a magic and a slot
+    # count before it, so the record starts eight bytes in.
+    w = readWords(qmp_file, pool + 8, 15)
+    if len(w) < 15:
+        return "  (the pool at 0x%x could not be read)" % pool
+    names = ["entries", "handled", "lastEsr", "lastElr", "lastFar", "lastCpu",
+             "lastSp", "lastInsn", "emuInsn", "emuAddr", "emuValue"]
+    out = ["  payload record at 0x%x: magic %s" %
+           (pool, "ok" if w[0] == 0x5952544E55504355 else "absent (0x%x)" % w[0])]
+    for name, v in zip(names, w[1:]):
+        out.append("    %-9s = 0x%x" % (name, v))
+    return "\n".join(out)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--work", default="build/bugcheck")
     ap.add_argument("--qmp-port", type=int, default=4447)
     ap.add_argument("--gdb-port", type=int, default=1234)
     ap.add_argument("--find-timeout", type=float, default=1200)
-    ap.add_argument("--catch-timeout", type=float, default=1200)
+    # A bugcheck appears within a minute of the driver finishing on this
+    # machine, measured over several runs, so a long wait here is only ever
+    # spent on a machine that is not going to produce one. The default is
+    # generous rather than tight, but it is not the whole twenty minutes a
+    # slow boot would need -- this answers "did it crash", not "did it boot".
+    ap.add_argument("--catch-timeout", type=float, default=180)
     ap.add_argument("--arm", default="true",
                     help="whether to take the synchronous slots over")
     ap.add_argument("--arm-slot0", default="true",
@@ -346,27 +386,30 @@ arm_slot0 = %s
             return 1
         log("the driver is done")
 
-        # The screen says when the bugcheck has happened, and it says so as
-        # soon as Windows draws it -- a bluescreen is on screen well inside
-        # two minutes on this machine, so a fixed watch long enough for the
-        # slowest case wastes minutes on every run.
+        # What happens next is one of three things, and the watcher tells them
+        # apart with two signals, because neither is enough alone: the program
+        # counter says whether the machine is doing anything at all, and the
+        # screen colour says whether it gave up. A frozen PC with a blue
+        # screen is a crash; a frozen PC without one is a halt; a moving PC is
+        # neither yet.
         #
         # Its output goes straight through rather than being collected: this
         # is the longest wait there is, and a caller that sees nothing for a
         # minute cannot tell a slow boot from a hung one. Unbuffered, for the
         # same reason -- a pipe is not a terminal and Python buffers it.
-        log("waiting for the screen to go blue")
-        rc = subprocess.call(
-            [sys.executable, "-u", "tests/deploy/bluescreen_watch.py",
+        log("waiting for the machine to crash, halt, or keep going")
+        verdict = subprocess.call(
+            [sys.executable, "-u", "tests/deploy/machine_watch.py",
              "--qmp-port", str(args.qmp_port),
              "--timeout", str(args.catch_timeout),
              "--shots", os.path.join(work, "shots")])
-        if rc != 0:
-            log("no bluescreen appeared")
+        if verdict == 1:
+            log("the machine was still working when the watch ran out")
+            return 1
+        if verdict == 2:
+            log("the machine went away")
             return 1
 
-        # The colour is necessary and not sufficient: it says a bugcheck was
-        # drawn, not which one. The code and its arguments come from memory.
         qmp = socket.create_connection(("127.0.0.1", args.qmp_port), timeout=20)
         qmpFile = qmp.makefile("rwb")
         qmpFile.readline()
@@ -380,6 +423,16 @@ arm_slot0 = %s
         if base is None:
             log("no vector table found under PC=0x%x" % pc)
             return 1
+
+        if verdict == 3:
+            # Halted. There is no bugcheck record, so what the kernel was
+            # doing has to come from the code it is stopped in and from what
+            # the payload recorded.
+            log("")
+            log("halted at kbase+0x%x (kernel base 0x%x)" % (pc - base, base))
+            log(payloadRecord(qmpFile, serialLog))
+            return 3
+
         log("kernel base = 0x%x" % base)
 
         offset, words = findBugCheckRecord(qmpFile, base)
@@ -398,6 +451,7 @@ arm_slot0 = %s
             if base <= v < base + 0x2000000:
                 extra = "  (kbase+0x%x)" % (v - base)
             log("  parameter %d = 0x%-18x%s" % (i, v, extra))
+        log(payloadRecord(qmpFile, serialLog))
         return 0
     finally:
         if not args.keep:
