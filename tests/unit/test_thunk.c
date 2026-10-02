@@ -310,38 +310,54 @@ static void testSlotStub(void) {
 static void testSlotStubKeepingRegisters(void) {
     uint32_t stub[US_SLOT_STUB_WORDS];
     uint64_t target = 0x13bc00bb0ULL;
-    const uint32_t PUSH = 0xA9BF47F0U;   /* stp x16, x17, [sp, #-16]! */
-    const uint32_t POP = 0xA8C147F0U;    /* ldp x16, x17, [sp], #16   */
+    const uint32_t PUSH_PAIR = 0xA9BF47F0U;  /* stp x16, x17, [sp, #-16]! */
+    const uint32_t PUSH_X18 = 0xF81F0FF2U;   /* str x18, [sp, #-16]!      */
+    const uint32_t POP_X18 = 0xF84107F2U;    /* ldr x18, [sp], #16        */
+    const uint32_t POP_PAIR = 0xA8C147F0U;   /* ldp x16, x17, [sp], #16   */
     uint32_t tailIndex = usSlotStubTailIndex(true);
-    uint32_t pops = 0;
+    uint32_t pairPops = 0;
+    uint32_t x18Pops = 0;
+    uint32_t enter;
 
     usEncodeSlotStub(stub, target, 0xD5384112U, 0x14000010U, true);
 
-    eq64("the saving form saves the registers", stub[0], PUSH);
+    /* All three of the registers the entry spends, not just two of them: the
+     * entry destroys x18 as well, and a register the entry destroys has to
+     * come back. */
+    eq64("the saving form saves the pair", stub[0], PUSH_PAIR);
+    eq64("and the third register", stub[1], PUSH_X18);
 
-    /* One restore before each way out, and there are two. */
     for (uint32_t i = 0; i < US_SLOT_STUB_WORDS; i++) {
-        if (stub[i] == POP) {
-            pops++;
+        if (stub[i] == POP_PAIR) {
+            pairPops++;
+        }
+        if (stub[i] == POP_X18) {
+            x18Pops++;
         }
     }
-    eq64("and gives them back twice", pops, 2U);
+    eq64("and gives the pair back twice", pairPops, 2U);
+    eq64("and the third register twice", x18Pops, 2U);
 
-    /* Specifically: one after the second branch and before the payload's
-     * address, and one immediately before the tail's own words. */
-    eq64("the first restore follows the second branch", stub[11], POP);
-    eq64("the second restore precedes the tail", stub[tailIndex - 1], POP);
+    /*
+     * Both ways out restore, and they restore in the reverse order of the
+     * save, because a stack does. Only one of the two was written in an
+     * earlier version, and the tail then ran with the stub's values -- which
+     * is invisible in the words.
+     */
+    eq64("the first way out restores the third", stub[12], POP_X18);
+    eq64("and then the pair", stub[13], POP_PAIR);
+    enter = tailIndex - 2U;
+    eq64("the second way out restores the third", stub[enter], POP_X18);
+    eq64("and then the pair", stub[enter + 1U], POP_PAIR);
 
-    /* Both branches land on that second restore, not past it, so the slot's
-     * own words run with the registers as they were. */
+    /* Both branches land on the second restore, not past it. */
     {
-        int32_t a = (int32_t)(((stub[3] >> 5) & 0x7FFFFU) << 13) >> 13;
-        int32_t b = (int32_t)(((stub[10] >> 5) & 0x7FFFFU) << 13) >> 13;
+        int32_t a = (int32_t)(((stub[4] >> 5) & 0x7FFFFU) << 13) >> 13;
+        int32_t b = (int32_t)(((stub[11] >> 5) & 0x7FFFFU) << 13) >> 13;
 
-        eq64("the class branch lands on the restore",
-             (uint64_t)(3 + a), (uint64_t)(tailIndex - 1));
-        eq64("the instruction branch lands there too",
-             (uint64_t)(10 + b), (uint64_t)(tailIndex - 1));
+        eq64("the class branch lands on it", (uint64_t)(4 + a), (uint64_t)enter);
+        eq64("the instruction branch lands on it", (uint64_t)(11 + b),
+             (uint64_t)enter);
     }
     eq64("the tail is the slot's own words", stub[tailIndex], 0xD5384112U);
     eq64("and the word after it", stub[tailIndex + 1], 0x14000010U);
@@ -358,6 +374,17 @@ static void testSlotStubKeepingRegisters(void) {
         }
         eq64("and it still reaches the payload", runThunk(built, US_THUNK_WORDS), target);
     }
+
+    /*
+     * The layout the entry reads these back through. The two pushes leave
+     * x18 lowest, then x16 and x17, and the constants published beside the
+     * stub have to say so: an entry reading the wrong slot gets another
+     * register's value with nothing to indicate it.
+     */
+    eq64("the save area is the two pushes", US_STUB_SAVE_BYTES, 32U);
+    eq64("x18 is at the bottom", US_STUB_SAVE_X18, 0U);
+    eq64("then x16", US_STUB_SAVE_X16, 16U);
+    eq64("then x17", US_STUB_SAVE_X17, 24U);
 
     /* The longer form is the one the array has to fit. */
     ok("the array is sized for the longer form",

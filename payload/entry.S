@@ -44,15 +44,29 @@
  * are per CPU because the exception can arrive on any of them.
  *
  * Everything is addressed PC relatively, which is all a position independent
- * blob may use. Registers have to be spent on that address before there is
- * anywhere to store them, so thirty two bytes of the interrupted stack are
- * borrowed and given straight back. That is the smallest use of someone
- * else's stack that works.
+ * blob may use.
+ *
+ * There are two of these, one per synchronous vector, because the vectors
+ * differ in the one thing that decides whether the registers this code spends
+ * can be given back: whether there is a stack.
+ *
+ *   SP0  execution was using SP_EL0, so the exception left that stack in SP,
+ *        and the stub that reached here has already pushed x16, x17 and x18
+ *        onto it. This form reads them back and returns them.
+ *   SPx  SP holds whatever SP_EL1 did, which is not a stack to push on. The
+ *        stub pushed nothing, so there is nothing to read and the frame
+ *        records zeros for those three.
+ *
+ * The three are the ones this code spends, and on the SP0 vector they are the
+ * kernel's: its breakpoint services carry their number in x16 and the handler
+ * this hands to reads it from there. Spending them without giving them back
+ * turns every one of those into a service that does not exist.
  */
-    .globl usSyncEntry
-    .type usSyncEntry, %function
+    .macro UsSyncEntry name, save
+    .globl \name
+    .type \name, %function
     .balign 16
-usSyncEntry:
+\name:
     msr     daifset, #0xF
 
     /*
@@ -99,17 +113,17 @@ usSyncEntry:
      */
     mrs     x17, mpidr_el1
     and     x17, x17, #US_MPIDR_MASK
-usSyncCpu:
+\name\()Cpu:
     ldr     x18, [x16, #US_CPU_INDEX]
     cmn     x18, #1
-    b.eq    usSyncNoStack
+    b.eq    \name\()NoStack
     ldr     x18, [x16]
     cmp     x18, x17
-    b.eq    usSyncFound
+    b.eq    \name\()Found
     add     x16, x16, #US_CPU_STRIDE
-    b       usSyncCpu
+    b       \name\()Cpu
 
-usSyncFound:
+\name\()Found:
     /* x18 is this processor's index, and x16 is where it was found. */
     ldr     x18, [x16, #US_CPU_INDEX]
     adrp    x16, usPayloadLanding
@@ -138,9 +152,26 @@ usSyncFound:
     stp     x27, x28, [x16, #US_FRAME_X27]
     str     x29, [x16, #US_FRAME_X29]
     str     x30, [x16, #US_FRAME_X30]
+
+    /*
+     * The three this code spends. Where the stub pushed them they are read
+     * back out of its area, which is still where it left them because nothing
+     * since has touched that memory. Where it did not, there is nothing to
+     * read and the frame records zeros, so that the omission is visible rather
+     * than accidental.
+     */
+    .if \save
+    ldr     x17, [sp, #US_STUB_SAVE_X18]
+    str     x17, [x16, #US_FRAME_X18]
+    ldr     x17, [sp, #US_STUB_SAVE_X16]
+    str     x17, [x16, #US_FRAME_X16]
+    ldr     x17, [sp, #US_STUB_SAVE_X17]
+    str     x17, [x16, #US_FRAME_X17]
+    .else
     str     xzr, [x16, #US_FRAME_X16]
     str     xzr, [x16, #US_FRAME_X17]
     str     xzr, [x16, #US_FRAME_X18]
+    .endif
 
     mrs     x17, elr_el1
     str     x17, [x16, #US_FRAME_ELR]
@@ -159,7 +190,11 @@ usSyncFound:
      * discards it, but that is the kernel's business and not something to
      * assume on its behalf.
      */
+    .if \save
+    add     x17, sp, #US_STUB_SAVE_BYTES
+    .else
     mov     x17, sp
+    .endif
     str     x17, [x16, #US_FRAME_SP]
 
     /* Now a stack of our own, chosen by this processor's index. */
@@ -167,12 +202,12 @@ usSyncFound:
     add     x17, x17, #:lo12:usPayloadConfigBlock
     add     x17, x17, #US_CONFIG_STACK_TOP
     ldr     x17, [x17, x18, lsl #3]
-    cbz     x17, usSyncNoStack
+    cbz     x17, \name\()NoStack
     mov     sp, x17
 
     mov     x0, x16
     bl      usPayloadHandle
-    cbnz    x0, usSyncResume
+    cbnz    x0, \name\()Resume
 
     /*
      * Not ours. Handing it back is what keeps the payload out of the way when
@@ -183,11 +218,11 @@ usSyncFound:
     adrp    x10, usPayloadConfigBlock
     add     x10, x10, #:lo12:usPayloadConfigBlock
     ldr     x11, [x10, #US_CONFIG_FORWARD]
-    cbz     x11, usSyncNoForward
+    cbz     x11, \name\()NoForward
     mov     x0, x16
     br      x11
 
-usSyncResume:
+\name\()Resume:
     /* The call is free to have used every register, so the pad is found
      * again rather than assumed, by the same register-only lookup. */
     adrp    x16, usPayloadConfigBlock
@@ -195,17 +230,17 @@ usSyncResume:
     add     x16, x16, #US_CONFIG_CPUS
     mrs     x17, mpidr_el1
     and     x17, x17, #US_MPIDR_MASK
-usSyncResumeCpu:
+\name\()ResumeCpu:
     ldr     x18, [x16, #US_CPU_INDEX]
     cmn     x18, #1
-    b.eq    usSyncNoStack
+    b.eq    \name\()NoStack
     ldr     x18, [x16]
     cmp     x18, x17
-    b.eq    usSyncResumeFound
+    b.eq    \name\()ResumeFound
     add     x16, x16, #US_CPU_STRIDE
-    b       usSyncResumeCpu
+    b       \name\()ResumeCpu
 
-usSyncResumeFound:
+\name\()ResumeFound:
     ldr     x9, [x16, #US_CPU_INDEX]
     adrp    x16, usPayloadLanding
     add     x16, x16, #:lo12:usPayloadLanding
@@ -237,10 +272,17 @@ usSyncResumeFound:
     ldr     x8, [x9, #US_FRAME_X8]
     ldp     x12, x13, [x9, #US_FRAME_X12]
     ldp     x14, x15, [x9, #US_FRAME_X14]
-    /* x16, x17 and x18 are not restored: they hold the bootstrap's values by
-     * the time the frame is written, and the platform does not preserve them
-     * across this vector. The frame records zeros for them so that the
-     * omission is visible rather than accidental. */
+    /*
+     * The three the entry spends come back where there was anywhere to keep
+     * them, which is the vector whose stub pushed them. On the other one the
+     * frame holds zeros and nothing is restored, because there was no stack to
+     * have put them on.
+     */
+    .if \save
+    ldr     x16, [x9, #US_FRAME_X16]
+    ldr     x17, [x9, #US_FRAME_X17]
+    ldr     x18, [x9, #US_FRAME_X18]
+    .endif
     ldp     x19, x20, [x9, #US_FRAME_X19]
     ldp     x21, x22, [x9, #US_FRAME_X21]
     ldp     x23, x24, [x9, #US_FRAME_X23]
@@ -267,7 +309,7 @@ usSyncResumeFound:
  * That is a loud failure turning into a silent one, which is the opposite of
  * what the mark is for.
  */
-usSyncNoStack:
+\name\()NoStack:
     /*
      * A mark goes into the pool before stopping. Without it this path is
      * indistinguishable from the machine simply dying, and "no stack for this
@@ -278,26 +320,34 @@ usSyncNoStack:
     adrp    x10, usPayloadConfigBlock
     add     x10, x10, #:lo12:usPayloadConfigBlock
     ldr     x11, [x10, #US_CONFIG_POOL]
-    cbz     x11, usSyncMarked
+    cbz     x11, \name\()Marked
     movz    x12, #0x5354
     movk    x12, #0x4143, lsl #16
     movk    x12, #0x4f4e, lsl #32
     movk    x12, #0x4f4e, lsl #48
     str     x12, [x11, #8]
-usSyncMarked:
+\name\()Marked:
     ldr     x11, [x10, #US_CONFIG_QUIET]
-    cbnz    x11, usSyncHalt
+    cbnz    x11, \name\()Halt
     ldr     x11, [x10, #US_CONFIG_UART]
-    cbz     x11, usSyncHalt
+    cbz     x11, \name\()Halt
     mov     w12, #'!'
     str     w12, [x11]
-    b       usSyncHalt
+    b       \name\()Halt
 
-usSyncNoForward:
+\name\()NoForward:
     /* Nothing to forward to. Stopping here is deliberate: returning would
      * re-run the instruction that faulted. */
-usSyncHalt:
+\name\()Halt:
     wfi
-    b       usSyncHalt
+    b       \name\()Halt
 
-    .size usSyncEntry, . - usSyncEntry
+    .size \name, . - \name
+    .endm
+
+    /*
+     * The SPx one keeps the name the rest of the payload refers to it by, and
+     * the SP0 one is the second instantiation of the same code.
+     */
+    UsSyncEntry usSyncEntry, 0
+    UsSyncEntry usSyncEntrySp0, 1

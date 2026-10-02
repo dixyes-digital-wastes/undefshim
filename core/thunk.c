@@ -83,9 +83,11 @@ bool usEncodeBranch(uint32_t from, uint32_t to, uint32_t *out) {
 #define US_STUB_COMPARE 0x6B10023FU     /* cmp  w17, w16                  */
 #define US_STUB_JUMP_X16 0xD61F0200U    /* br   x16                       */
 
-/* sp is register 31 in these, and x16/x17 are the two saved. */
+/* The saving form's pair, and the third register, which comes before them. */
 #define US_STUB_PUSH_X16_X17 0xA9BF47F0U /* stp x16, x17, [sp, #-16]!     */
+#define US_STUB_PUSH_X18 0xF81F0FF2U     /* str x18, [sp, #-16]!          */
 #define US_STUB_POP_X16_X17 0xA8C147F0U  /* ldp x16, x17, [sp], #16       */
+#define US_STUB_POP_X18 0xF84107F2U      /* ldr x18, [sp], #16            */
 
 #define US_STUB_BRANCH_EC 0xB5000000U   /* cbnz x16, <tail>               */
 /*
@@ -105,37 +107,39 @@ static uint32_t branchTo(uint32_t fromIndex, uint32_t toIndex, uint32_t opcode,
     return opcode | (((uint32_t)d & 0x7FFFFU) << 5) | extra;
 }
 
-uint32_t usSlotStubTailIndex(bool keep) {
+uint32_t usSlotStubTailIndex(bool save) {
     /*
-     * Everything before the tail: the push, three to reach the class test,
-     * seven for the instruction test, a pop, five for the address and the
-     * branch, and a pop again -- because there are two ways out and both have
-     * to give the registers back. Leaving the second one out is invisible in
-     * the words: the tail simply runs with the stub's values in x16 and x17,
-     * and those are the registers the kernel's own breakpoint services carry
-     * their number in.
+     * Everything before the first tail word: the save, three to reach the
+     * class test, seven for the instruction test, the first restore, five for
+     * the address and the branch, and the restore the tail begins with.
+     *
+     * Both restores are counted because there are two ways out and the
+     * registers belong to the kernel on both. Writing only the first leaves
+     * the tail running with the stub's values, which is invisible in the
+     * words -- that was an earlier version of this.
      */
-    return (keep ? 2U : 0U) + 3U + 7U + (keep ? 1U : 0U) + 5U;
+    return (save ? 2U : 0U) + 3U + 7U + (save ? 2U : 0U) + 5U + (save ? 2U : 0U);
 }
 
 void usEncodeSlotStub(uint32_t *out, uint64_t target, uint32_t tail0,
-                      uint32_t tail1, bool keep) {
+                      uint32_t tail1, bool save) {
     uint32_t n = 0;
     uint32_t classBranch;
     uint32_t instructionBranch;
-    uint32_t tail;
+    uint32_t enter;
 
-    if (keep) {
-        /* On the interrupted stack, which this vector guarantees is a stack.
-         * Both of these are the kernel's to use on its way through, so they
-         * go back exactly as they came, on both exits. */
+    if (save) {
+        /* On the interrupted stack, which the vector this form is used on
+         * guarantees is a stack. The layout is published in the header,
+         * because the entry reads these back and the two have to agree. */
         out[n++] = US_STUB_PUSH_X16_X17;
+        out[n++] = US_STUB_PUSH_X18;
     }
 
     out[n++] = US_STUB_READ_ESR;
     out[n++] = US_STUB_EC_SHIFT;
     classBranch = n;
-    out[n++] = 0; /* filled in once the tail's position is known */
+    out[n++] = 0;   /* filled in once the tail's position is known */
 
     out[n++] = US_STUB_READ_ELR;
     out[n++] = US_STUB_LOAD_INS;
@@ -146,11 +150,12 @@ void usEncodeSlotStub(uint32_t *out, uint64_t target, uint32_t tail0,
     instructionBranch = n;
     out[n++] = 0;
 
-    if (keep) {
-        /* The first of the two ways out: into the payload. Done before the
-         * branch so the payload is entered with the interrupted stack pointer
-         * rather than one sixteen bytes below it -- the entry records that
-         * value and returns through it. */
+    if (save) {
+        /* The first way out: into the payload. Done before the branch so the
+         * payload is entered with the interrupted stack pointer rather than
+         * one save area below it -- the entry records that value and returns
+         * through it. */
+        out[n++] = US_STUB_POP_X18;
         out[n++] = US_STUB_POP_X16_X17;
     }
 
@@ -160,32 +165,27 @@ void usEncodeSlotStub(uint32_t *out, uint64_t target, uint32_t tail0,
     out[n++] = movk((uint32_t)((target >> 48) & 0xFFFFU), 48, US_THUNK_REG);
     out[n++] = US_STUB_JUMP_X16;
 
-    if (keep) {
+    enter = n;
+    if (save) {
         /* The second way out: into the slot's own behaviour, which is the
          * kernel's code and is entitled to what was in these registers. It
-         * has to run before the slot's own words, so it is written before
-         * them, and where it goes is what the branches aim at. */
+         * runs before the slot's own words, so it is written before them, and
+         * this is where the branches land. */
+        out[n++] = US_STUB_POP_X18;
         out[n++] = US_STUB_POP_X16_X17;
     }
 
-    tail = n;   /* the first of the two tail words, which is what the index is */
+    /*
+     * The two tail words, at the index usSlotStubTailIndex reports. That
+     * function counts the same instructions this emits, and what keeps the two
+     * in step is the unit check: it finds the tail words where the index says
+     * they are, so a count that drifts fails there rather than in a slot.
+     */
     out[n++] = tail0;
     out[n++] = tail1;
 
-    /* The branches land on the restore when there is one, so the slot's own
-     * words run with the registers as they were; without one there is nothing
-     * to land on and they come straight here. Aiming past the restore would
-     * be the same mistake as not writing it. */
-    {
-        uint32_t enter = keep ? tail - 1U : tail;
-
-        out[classBranch] = branchTo(classBranch, enter, US_STUB_BRANCH_EC,
-                                    US_THUNK_REG);
-        out[instructionBranch] = branchTo(instructionBranch, enter,
-                                          US_STUB_BRANCH_NE, US_STUB_COND_NE);
-    }
-
-    /* The count is not checked here because the array has no length; the
-     * generated size and the emitter are kept in step by the unit test, which
-     * knows how many words the encoder wrote. */
+    out[classBranch] = branchTo(classBranch, enter, US_STUB_BRANCH_EC,
+                                US_THUNK_REG);
+    out[instructionBranch] = branchTo(instructionBranch, enter,
+                                      US_STUB_BRANCH_NE, US_STUB_COND_NE);
 }

@@ -15,6 +15,7 @@
 #include <stdio.h>
 #include <stddef.h>
 
+#include "core/thunk.h"
 #include "payload/payload.h"
 
 static int emitFrame(FILE *f) {
@@ -59,6 +60,16 @@ static int emitFrame(FILE *f) {
      */
     fprintf(f, "#define US_MPIDR_MASK 0x%llx\n",
             (unsigned long long)US_MPIDR_AFFINITY_MASK_LOGICAL);
+
+    /*
+     * Where the slot stub leaves the registers the entry spends. A property
+     * of the stub, so it comes from the same header the stub is written
+     * against rather than being written out again in the assembly.
+     */
+    fprintf(f, "#define US_STUB_SAVE_BYTES %u\n", US_STUB_SAVE_BYTES);
+    fprintf(f, "#define US_STUB_SAVE_X18 %u\n", US_STUB_SAVE_X18);
+    fprintf(f, "#define US_STUB_SAVE_X16 %u\n", US_STUB_SAVE_X16);
+    fprintf(f, "#define US_STUB_SAVE_X17 %u\n", US_STUB_SAVE_X17);
 
     return 0;
 }
