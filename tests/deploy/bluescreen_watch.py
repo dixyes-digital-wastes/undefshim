@@ -112,7 +112,9 @@ def blueFraction(path, stride=7):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--qmp-port", type=int, default=4447)
-    ap.add_argument("--interval", type=float, default=3.0)
+    ap.add_argument("--interval", type=float, default=2.0)
+    ap.add_argument("--report", type=int, default=5,
+                    help="report every this many frames")
     ap.add_argument("--timeout", type=float, default=1800)
     ap.add_argument("--shots", help="directory to keep the frames in")
     ap.add_argument("--keep", action="store_true",
@@ -130,9 +132,11 @@ def main():
     shot = os.path.abspath(shot)
 
     deadline = time.monotonic() + args.timeout
+    started = time.monotonic()
     n = 0
     while time.monotonic() < deadline:
         n += 1
+        elapsed = time.monotonic() - started
         try:
             cmd(f, {"execute": "screendump", "arguments": {"filename": shot}})
         except (SystemExit, OSError):
@@ -144,8 +148,8 @@ def main():
         if frac is None:
             print("frame %d: unreadable" % n, file=sys.stderr)
         elif frac >= THRESHOLD:
-            print("frame %d: rgb%s covers %.1f%% -- bluescreen"
-                  % (n, BLUE, 100 * frac))
+            print("frame %d (%.0fs): rgb%s covers %.1f%% -- bluescreen"
+                  % (n, elapsed, BLUE, 100 * frac))
             if args.shots:
                 keep = os.path.join(args.shots, "bluescreen.ppm")
                 os.replace(shot, keep)
@@ -153,8 +157,12 @@ def main():
             return 0
         elif args.shots and args.keep:
             os.replace(shot, os.path.join(args.shots, "frame-%04d.ppm" % n))
-        elif frac is not None and n % 20 == 0:
-            print("frame %d: blue %.1f%%, black %.1f%%" % (n, 100 * frac, 100 * black))
+        elif frac is not None and (n <= 1 or n % args.report == 0):
+            # Often enough to tell a slow boot from a hung one. The first
+            # frame is always reported: a watch that says nothing at all
+            # looks like it never started.
+            print("frame %d (%.0fs): blue %.1f%%, black %.1f%%"
+                  % (n, elapsed, 100 * frac, 100 * black))
         time.sleep(args.interval)
 
     print("no bluescreen within %g seconds" % args.timeout, file=sys.stderr)

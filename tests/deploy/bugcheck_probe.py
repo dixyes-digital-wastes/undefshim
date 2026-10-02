@@ -79,18 +79,36 @@ class Serial:
                 time.sleep(0.05)
 
     def waitFor(self, pattern, timeout):
-        """Read until the pattern appears. Returns the text seen so far."""
+        """Read until the pattern appears. Returns the text seen so far.
+
+        Reports what it is seeing while it waits. This is a boot that takes
+        minutes, and a wait that says nothing is indistinguishable from one
+        that is not running -- which is exactly the confusion that had a
+        fixed sleep wrapped around this.
+        """
         rx = re.compile(pattern.encode())
         deadline = time.monotonic() + timeout
+        started = time.monotonic()
+        seen = 0
+        lastReport = 0.0
         while True:
             try:
                 chunk = self.sock.recv(4096)
             except socket.timeout:
                 if time.monotonic() > deadline:
                     return None
+                # A line every ten seconds, with the last thing the guest
+                # said, so the wait is visibly a wait.
+                now = time.monotonic()
+                if now - lastReport >= 10.0:
+                    lastReport = now
+                    tail = self.buf.decode("latin1")[-72:].replace("\r", " ").replace("\n", " ")
+                    print("  %4.0fs, %d bytes so far, last: %s"
+                          % (now - started, seen, tail), flush=True)
                 continue
             if not chunk:
                 return None
+            seen += len(chunk)
             self.buf += chunk
             with open(self.logfile, "ab") as f:
                 f.write(chunk)
@@ -126,10 +144,22 @@ def findKernelBase(qmp_file, pc):
     """
 
     def word(addr):
+        """One instruction, from the first four bytes at an address.
+
+        Read as eight bytes and masked, because that is what the monitor's
+        own unit is: an unmasked value is two instructions glued together and
+        compares equal to nothing.
+        """
         out = cmd(qmp_file, {"execute": "human-monitor-command",
                              "arguments": {"command-line": "x /1gx 0x%x" % addr}})
         m = re.search(r":\s*0x([0-9a-f]+)", out.get("return", ""))
-        return int(m.group(1), 16) if m else None
+        return (int(m.group(1), 16) & 0xFFFFFFFF) if m else None
+
+    # What identifies the table is the three slots after the first: they hold
+    # the handler prologue whether or not the exception path is armed. Slot 0
+    # is a branch when it is armed and the same prologue when it is not, so
+    # requiring the branch found nothing on the runs with the arming off.
+    PROLOGUE = 0xD5384112   # mrs x18, sp_el0
 
     top = pc - (pc % 0x200000)
     for i in range(16):
@@ -138,9 +168,9 @@ def findKernelBase(qmp_file, pc):
         heads = [word(table + slot * 0x80) for slot in range(4)]
         if any(h is None for h in heads):
             continue
-        if (heads[0] & 0xFC000000) != 0x14000000:
+        if heads[1] != PROLOGUE or heads[2] != PROLOGUE or heads[3] != PROLOGUE:
             continue
-        if heads[1] != heads[2] or heads[2] != heads[3]:
+        if heads[0] != PROLOGUE and (heads[0] & 0xFC000000) != 0x14000000:
             continue
         return base
     return None
@@ -234,8 +264,12 @@ def main():
     ap.add_argument("--gdb-port", type=int, default=1234)
     ap.add_argument("--find-timeout", type=float, default=1200)
     ap.add_argument("--catch-timeout", type=float, default=1200)
+    ap.add_argument("--arm", default="true",
+                    help="whether to take the synchronous slots over")
     ap.add_argument("--arm-slot0", default="true",
                     help="whether to take over the SP0 synchronous slot too")
+    ap.add_argument("--rewrite", default="true",
+                    help="whether to replace the RCpc loads in the images")
     ap.add_argument("--keep", action="store_true",
                     help="leave the machine running, to be looked at afterwards")
     args = ap.parse_args()
@@ -252,13 +286,13 @@ def main():
 level = "info"
 
 [scan]
-ldapr_rewrite = true
+ldapr_rewrite = %s
 
 [debug]
 enabled = true
-arm = true
+arm = %s
 arm_slot0 = %s
-""" % args.arm_slot0)
+""" % (args.rewrite, args.arm, args.arm_slot0))
 
     esp = os.path.join(work, "run.img")
     serialLog = os.path.join(work, "serial.log")
@@ -300,28 +334,35 @@ arm_slot0 = %s
         ser = Serial(serialSock, serialLog)
         ser.connect(args.find_timeout)
 
-        log("waiting for the driver to arm")
-        if ser.waitFor(r"US-M6\.5-ARMED", args.find_timeout) is None:
-            log("the driver never armed; last serial output:")
+        # What says the driver is done depends on what it was asked to do: the
+        # arming marker does not appear when the arming is switched off, and
+        # waiting for it then waits out the whole timeout on a machine that is
+        # already running.
+        log("waiting for the driver to finish")
+        if ser.waitFor(r"US-M6\.5-ARMED|US-M7-REWRITTEN", args.find_timeout) is None:
+            log("the driver never reported; last serial output:")
             tail = open(serialLog, "rb").read().decode("latin1")[-800:]
             log(tail)
             return 1
-        log("armed")
+        log("the driver is done")
 
         # The screen says when the bugcheck has happened, and it says so as
         # soon as Windows draws it -- a bluescreen is on screen well inside
         # two minutes on this machine, so a fixed watch long enough for the
         # slowest case wastes minutes on every run.
+        #
+        # Its output goes straight through rather than being collected: this
+        # is the longest wait there is, and a caller that sees nothing for a
+        # minute cannot tell a slow boot from a hung one. Unbuffered, for the
+        # same reason -- a pipe is not a terminal and Python buffers it.
         log("waiting for the screen to go blue")
-        watch = subprocess.run(
-            [sys.executable, "tests/deploy/bluescreen_watch.py",
+        rc = subprocess.call(
+            [sys.executable, "-u", "tests/deploy/bluescreen_watch.py",
              "--qmp-port", str(args.qmp_port),
              "--timeout", str(args.catch_timeout),
-             "--shots", os.path.join(work, "shots")],
-            capture_output=True, text=True)
-        log(watch.stdout.strip())
-        if watch.returncode != 0:
-            log("no bluescreen appeared: %s" % watch.stderr.strip())
+             "--shots", os.path.join(work, "shots")])
+        if rc != 0:
+            log("no bluescreen appeared")
             return 1
 
         # The colour is necessary and not sufficient: it says a bugcheck was
