@@ -312,6 +312,11 @@ def main():
                     help="whether to replace the RCpc loads in the images")
     ap.add_argument("--keep", action="store_true",
                     help="leave the machine running, to be looked at afterwards")
+    # QEMU's own logging is the only record of the exceptions a run took: the
+    # guest cannot print once the kernel is running, and a fault delivered to
+    # the wrong place leaves nothing else behind.
+    ap.add_argument("--qemu-extra", default="",
+                    help="extra arguments for QEMU, split on spaces")
     args = ap.parse_args()
 
     os.chdir(ROOT)
@@ -351,6 +356,7 @@ arm_slot0 = %s
     time.sleep(1)
 
     log("starting the machine")
+    extra = [a.replace("%WORK%", work) for a in args.qemu_extra.split() if a]
     qemu = subprocess.Popen([
         QEMU,
         "-no-reboot", "-accel", "tcg,thread=multi,tb-size=2048",
@@ -367,7 +373,7 @@ arm_slot0 = %s
         "-device", "virtio-blk-pci,drive=win,bootindex=2",
         "-drive", "file=%s,if=none,format=qcow2,id=win,readonly=on" % WIN_DISK,
         "-serial", "unix:%s,server=on,wait=off,logfile=%s" % (serialSock, serialLog),
-    ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    ] + extra, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         start_new_session=True)
 
     try:
