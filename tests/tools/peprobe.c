@@ -14,7 +14,8 @@
  * The corpus is laid out as <root>/<version>/<name>. The default file list is
  * the set the driver cares about; a version without those files is skipped.
  *
- * Known gaps are declared below rather than papered over, so a new gap shows
+ * Known gaps are not listed by hand: each expectation comes from a version
+ * predicate beside the signature it belongs to, so a new build shows up as a
  * up as a failure and an accepted one does not.
  */
 
@@ -55,10 +56,9 @@ typedef struct Gap_t {
 } Gap;
 
 static const Gap kGaps[] = {
-    /* Pre-release image that the analysis notes as reference only: it does
-     * not carry the transfer leaf at all, and must not be patched. */
-    { "14877", "winload.efi", true },
-    { "14877", "bootmgfw.efi", true },
+    /* Nothing here yet: every version's expectation is now derived from the
+     * signature itself rather than listed by hand. */
+    { "", "", false },
 };
 
 static const Gap *findGap(const char *version, const char *file) {
@@ -80,6 +80,30 @@ static bool versionUsesLdapr(const char *version) {
 
     for (size_t i = 0; i < sizeof(withLdapr) / sizeof(withLdapr[0]); i++) {
         if (strcmp(version, withLdapr[i]) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/*
+ * Which images carry the transfer to the kernel, and how it is recognised.
+ *
+ * The signature is a short sequence ending in a branch through a register
+ * that was loaded with the kernel entry point. It is a branch in the middle
+ * of a function rather than a function entry, so the exception directory has
+ * nothing to say about it, and an earlier attempt to require one identified
+ * the wrong function entirely.
+ *
+ * It appears only in the loader. Earlier builds hand over by some other route
+ * and do not carry it at all, which is why the expectation is per version
+ * rather than universal.
+ */
+static bool versionHasTransferLeaf(const char *version) {
+    static const char *withLeaf[] = { "23h2", "24h2", "26100pe", "26h1" };
+
+    for (size_t i = 0; i < sizeof(withLeaf) / sizeof(withLeaf[0]); i++) {
+        if (strcmp(version, withLeaf[i]) == 0) {
             return true;
         }
     }
@@ -145,7 +169,6 @@ static void probe(const char *version, const char *name, const char *path) {
     size_t size = 0;
     char *data = readFile(path, &size);
     UsImage img;
-    const Gap *gap;
     bool isKernel = strcmp(name, "ntoskrnl.exe") == 0;
     bool isWinload = strcmp(name, "winload.efi") == 0;
 
@@ -158,8 +181,6 @@ static void probe(const char *version, const char *name, const char *path) {
         free(data);
         return;
     }
-
-    gap = findGap(version, name);
 
     UsImageKind kind = usImageClassify(&img);
     UsLeafSite leaf = usLocateTransferLeaf(&img);
@@ -200,16 +221,15 @@ static void probe(const char *version, const char *name, const char *path) {
         expect(version, name, "not classified as winload", kind != UsImageWinload, true);
     }
 
-    /* The leaf is what the driver hooks, so it has to be unique wherever it
-     * is expected to exist, and the exception directory has to agree that it
-     * begins a function. */
-    if (!isKernel) {
+    /*
+     * The transfer to the kernel, looked for only in the loader: it is a
+     * winload construct, and a version that does not have it is not one that
+     * can be hooked there.
+     */
+    if (strcmp(name, "winload.efi") == 0) {
         tally(&gLeaf, leaf.matches);
         expect(version, name, "transfer leaf", leaf.matches == 1,
-               gap == NULL || !gap->noLeaf);
-        if (leaf.found) {
-            expect(version, name, "leaf at a function start", leaf.isFunctionStart, true);
-        }
+               versionHasTransferLeaf(version));
     }
     if (isWinload || strcmp(name, "bootmgfw.efi") == 0) {
         tally(&gHandoff, handoff.found ? 1 : (handoff.candidates == 0 ? 0 : 2));

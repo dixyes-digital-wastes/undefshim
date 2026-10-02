@@ -41,15 +41,44 @@ const UsPattern usPatMsrVbarEl1 = {
  * they can be replaced by a branch to a trampoline without cutting an
  * instruction in half.
  */
+/*
+ * The transfer to the kernel.
+ *
+ * This is the sequence that switches SP to the kernel's own stack and then
+ * branches to the kernel's entry point. It is the point at which everything
+ * before it is finished and nothing of the kernel has run yet, which is the
+ * only moment the kernel image can be edited without disturbing it.
+ *
+ * The signature was derived from the register state at the kernel entry
+ * rather than from a description of the function: the link register there
+ * still held the address after the call that precedes the branch, which
+ * identified the instruction. An earlier signature, taken from an analysis
+ * note, matched a different function entirely -- one this path does not use,
+ * which is why patching it changed nothing.
+ *
+ *   mov sp, x2          the kernel's stack, loaded two instructions earlier
+ *   mov x19, x0         whatever the kernel entry wants
+ *   mov x20, x1         the kernel entry point
+ *   bl  <anywhere>      one more call before handing over
+ *   mov x0, x19
+ *   br  x20             the handover itself
+ *
+ * The call in the middle has a different target in every version, so it is
+ * masked out. The rest is fixed, and the last instruction is what carries the
+ * meaning: a branch through a register that was loaded with the entry point.
+ */
 static const uint8_t kTransferLeaf[] = {
-    US_LE32(0xA9BF7BFD), US_LE32(0x910003FD), US_LE32(0x9100005F), US_LE32(0xAA0003E2),
-    US_LE32(0xAA0103E0), US_LE32(0xD63F0040), US_LE32(0x910003BF), US_LE32(0xA8C17BFD),
-    US_LE32(0xD65F03C0),
+    US_LE32(0x9100005F), US_LE32(0xAA0003F3), US_LE32(0xAA0103F4), US_LE32(0x94000000),
+    US_LE32(0xAA1303E0), US_LE32(0xD61F0280),
+};
+static const uint8_t kTransferLeafMask[] = {
+    US_LE32(0xFFFFFFFF), US_LE32(0xFFFFFFFF), US_LE32(0xFFFFFFFF), US_LE32(0xFC000000),
+    US_LE32(0xFFFFFFFF), US_LE32(0xFFFFFFFF),
 };
 
 const UsPattern usPatTransferLeaf = {
     .bytes = kTransferLeaf,
-    .mask = NULL,
+    .mask = kTransferLeafMask,
     .len = sizeof(kTransferLeaf),
 };
 
@@ -203,10 +232,18 @@ UsLeafSite usLocateTransferLeaf(UsImage *img) {
 
     site.found = true;
     site.rva = m.matches[0].rva;
-    /* The prologue is the patch point; a branch written there lands before
-     * the function has touched anything but its own frame. */
-    site.patchRva = m.matches[0].rva;
-    site.isFunctionStart = usImageIsFunctionStart(img, site.rva);
+    /*
+     * The branch is the last instruction of the sequence, and it is what has
+     * to be replaced: the four bytes before it are the last thing the loader
+     * does with the kernel's entry point before using it.
+     */
+    site.patchRva = m.matches[0].rva + (uint32_t)(sizeof(kTransferLeaf) - sizeof(uint32_t));
+    /*
+     * This is a branch inside a function, not a function entry, so the
+     * exception directory has nothing to say about it. The check that used to
+     * be made here was for the signature that matched a different function.
+     */
+    site.isFunctionStart = false;
     return site;
 }
 
@@ -457,7 +494,7 @@ size_t usCollectSites(UsSiteList *list, UsImage *img, UsImageKind kind) {
         UsLeafSite leaf = usLocateTransferLeaf(img);
         UsHandoffSite handoff = usLocateTtbrHandoff(img);
 
-        if (leaf.found && leaf.isFunctionStart) {
+        if (leaf.found) {
             usSiteAdd(list, UsSiteTransferLeaf, kind, leaf.patchRva, 0);
         }
         if (handoff.found) {
