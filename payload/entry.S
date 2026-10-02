@@ -98,7 +98,7 @@ usSyncEntry:
      * position any processor can have.
      */
     mrs     x17, mpidr_el1
-    and     x17, x17, #0xFFFFFFFF00FFFFFF
+    and     x17, x17, #US_MPIDR_MASK
 usSyncCpu:
     ldr     x18, [x16, #US_CPU_INDEX]
     cmn     x18, #1
@@ -194,7 +194,7 @@ usSyncResume:
     add     x16, x16, #:lo12:usPayloadConfigBlock
     add     x16, x16, #US_CONFIG_CPUS
     mrs     x17, mpidr_el1
-    and     x17, x17, #0xFFFFFFFF00FFFFFF
+    and     x17, x17, #US_MPIDR_MASK
 usSyncResumeCpu:
     ldr     x18, [x16, #US_CPU_INDEX]
     cmn     x18, #1

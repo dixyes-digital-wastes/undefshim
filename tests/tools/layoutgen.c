@@ -50,6 +50,16 @@ static int emitFrame(FILE *f) {
     fprintf(f, "#define US_CPU_STRIDE %zu\n", sizeof(UsPayloadCpu));
     fprintf(f, "#define US_CPU_INDEX %zu\n", offsetof(UsPayloadCpu, index));
 
+    /*
+     * The mask the entry applies to MPIDR_EL1. Taken from the header rather
+     * than written into the assembly, where it was a second copy: the one in
+     * C is a list of wanted fields, and that word is not a logical immediate
+     * the instruction can carry, so the assembly had a different one that
+     * happened to work.
+     */
+    fprintf(f, "#define US_MPIDR_MASK 0x%llx\n",
+            (unsigned long long)US_MPIDR_AFFINITY_MASK_LOGICAL);
+
     return 0;
 }
 

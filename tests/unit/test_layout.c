@@ -136,10 +136,63 @@ static void testValidation(void) {
     ok("rejects a null pool", !usPoolIsValid(NULL));
 }
 
+/*
+ * The two spellings of the processor mask.
+ *
+ * They are different words, deliberately: the one that says which fields are
+ * wanted is not a logical immediate an `and` can carry, so the entry takes a
+ * generated one that is. What has to hold is that the two agree on every
+ * value the registers can produce, and that is a statement about the bits
+ * where they differ rather than about the words.
+ */
+static void testMpidrMask(void) {
+    static const uint64_t registers[] = {
+        0x0000000080000000ULL,  /* RES1, as the register reads */
+        0x0000000080000001ULL,
+        0x0000000080000101ULL,
+        0x0000000081000203ULL,
+        0x00000000C0000000ULL,  /* and with the single processor bit set */
+        0x00000000FFFFFFFFULL,
+    };
+
+    eqU64("they differ only where the registers are reserved",
+          US_MPIDR_AFFINITY_MASK ^ US_MPIDR_AFFINITY_MASK_LOGICAL,
+          0xFFFFFF0000000000ULL);
+
+    /*
+     * The fields that are not part of a processor's identity have to be gone
+     * from both, or two names for one processor compare unequal. That is the
+     * whole reason the mask exists.
+     */
+    for (int bit = 24; bit <= 31; bit++) {
+        ok("neither keeps a non identity bit",
+           ((US_MPIDR_AFFINITY_MASK >> bit) & 1U) == 0
+               && ((US_MPIDR_AFFINITY_MASK_LOGICAL >> bit) & 1U) == 0);
+    }
+    /* And the affinity fields have to survive in both. */
+    for (int bit = 0; bit < 24; bit++) {
+        ok("both keep the low affinity fields",
+           ((US_MPIDR_AFFINITY_MASK >> bit) & 1U) == 1
+               && ((US_MPIDR_AFFINITY_MASK_LOGICAL >> bit) & 1U) == 1);
+    }
+    for (int bit = 32; bit <= 39; bit++) {
+        ok("both keep the fourth one",
+           ((US_MPIDR_AFFINITY_MASK >> bit) & 1U) == 1
+               && ((US_MPIDR_AFFINITY_MASK_LOGICAL >> bit) & 1U) == 1);
+    }
+
+    for (size_t i = 0; i < sizeof(registers) / sizeof(registers[0]); i++) {
+        eqU64("and they agree on what a register holds",
+              registers[i] & US_MPIDR_AFFINITY_MASK,
+              registers[i] & US_MPIDR_AFFINITY_MASK_LOGICAL);
+    }
+}
+
 int main(void) {
     testShape();
     testInit();
     testValidation();
+    testMpidrMask();
 
     printf("%d checks, %d failures\n", checks, failures);
     return failures != 0;
