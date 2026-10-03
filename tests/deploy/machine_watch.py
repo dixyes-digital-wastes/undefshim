@@ -98,6 +98,8 @@ def main():
     ap.add_argument("--frozen", type=int, default=8,
                     help="consecutive unchanged samples that mean halted")
     ap.add_argument("--shots", help="directory to keep a frame in")
+    ap.add_argument("--no-screen", action="store_true",
+                    help="sample registers only, without inspecting screen pixels")
     ap.add_argument("--report", type=int, default=5,
                     help="report every this many samples")
     args = ap.parse_args()
@@ -123,15 +125,19 @@ def main():
 
         try:
             pc = processors(f)
-            cmd(f, {"execute": "screendump", "arguments": {"filename": shot}})
+            if not args.no_screen:
+                cmd(f, {"execute": "screendump", "arguments": {"filename": shot}})
         except (SystemExit, OSError):
             print("the machine went away after %.0fs" % elapsed, flush=True)
             return 2
         time.sleep(0.2)
 
-        frac, black = blueFraction(shot)
-        if frac is None:
+        if args.no_screen:
             frac, black = 0.0, 0.0
+        else:
+            frac, black = blueFraction(shot)
+            if frac is None:
+                frac, black = 0.0, 0.0
 
         if frac >= THRESHOLD:
             print("%4.0fs: frame %d, rgb%s covers %.1f%% -- crashed"
@@ -150,18 +156,20 @@ def main():
         last = pc
 
         if unchanged >= args.frozen:
-            print("%4.0fs: frame %d, no bugcheck, and every processor has been "
+            screen = "screen not inspected" if args.no_screen else "no bugcheck drawn"
+            print("%4.0fs: frame %d, %s, and every processor has been "
                   "at the same place for %d samples -- halted"
-                  % (elapsed, n, unchanged), flush=True)
+                  % (elapsed, n, screen, unchanged), flush=True)
             for i, p in enumerate(pc):
                 print("  cpu%d pc = 0x%x" % (i, p), flush=True)
-            if args.shots:
+            if args.shots and not args.no_screen:
                 os.replace(shot, os.path.join(args.shots, "halted.ppm"))
             return 3
 
         if n <= 1 or n % args.report == 0:
-            print("%4.0fs: frame %d, blue %.1f%%, pc %s%s"
-                  % (elapsed, n, 100 * frac,
+            screen = "screen not inspected" if args.no_screen else "blue %.1f%%" % (100 * frac)
+            print("%4.0fs: frame %d, %s, pc %s%s"
+                  % (elapsed, n, screen,
                      " ".join("0x%x" % p for p in pc[:2]),
                      (" (+%d more)" % (len(pc) - 2)) if len(pc) > 2 else ""),
                   flush=True)

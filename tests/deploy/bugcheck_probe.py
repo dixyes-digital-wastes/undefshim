@@ -38,11 +38,13 @@ import signal
 import socket
 import subprocess
 import sys
+import threading
 import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 VECTOR_TABLE_RVA = 0x604800       # where the kernel puts its vector table
+KI_BUGCHECK_DATA_RVA = 0xdba5e0   # verified against the 26100PE PDB
 
 KEBUGCHECK_RVA = 0x25ba40         # KeBugCheck, if a breakpoint is ever wanted
 
@@ -115,6 +117,19 @@ class Serial:
             if rx.search(self.buf):
                 return self.buf.decode("latin1")
 
+    def read(self, timeout):
+        """Read one serial chunk, returning None when the socket times out."""
+        self.sock.settimeout(timeout)
+        try:
+            chunk = self.sock.recv(4096)
+        except socket.timeout:
+            return None
+        if chunk:
+            self.buf += chunk
+            with open(self.logfile, "ab") as f:
+                f.write(chunk)
+        return chunk
+
 
 def cmd(sock_file, obj):
     sock_file.write((json.dumps(obj) + "\n").encode())
@@ -176,24 +191,20 @@ def findKernelBase(qmp_file, pc):
     return None
 
 
-def readWords(qmp_file, addr, count):
-    """Read `count` doublewords of virtual memory.
+def readWords(qmp_file, addr, count, physical=False):
+    """Read doublewords in blocks, using the address's actual domain.
 
-    `x`, not `xp`: the kernel exists only at its KASLR'd virtual address, so a
-    physical read of the same number answers "cannot access memory", which
-    reads the same as "nothing is there".
-
-    Asked for in blocks, because the monitor's own limit on one command is
-    well below what scanning a data section needs, and one command per word
-    turns a scan into a long wait.
+    Kernel addresses are virtual; the pool PA printed at boot is physical
+    and remains readable even after the guest drops its identity mapping
     """
+    unit = "xp" if physical else "x"
     values = []
     done = 0
     while done < count:
         want = min(count - done, 256)
         out = cmd(qmp_file, {"execute": "human-monitor-command",
                              "arguments": {"command-line":
-                                           "x /%dgx 0x%x" % (want, addr + done * 8)}})
+                                           "%s /%dgx 0x%x" % (unit, want, addr + done * 8)}})
         got = 0
         for line in out.get("return", "").splitlines():
             if ":" not in line:
@@ -208,46 +219,15 @@ def readWords(qmp_file, addr, count):
 
 
 def findBugCheckRecord(qmp_file, base):
-    """The bugcheck code and its four arguments, found rather than assumed.
+    """Read the 26100PE symbol, including records with only one pointer.
 
-    They live in the data section as a code followed by four parameters, and
-    the symbol that names them resolves to zeros -- so the record is found by
-    shape instead: a small number, then four values that are either zero or a
-    kernel address. A run of small numbers with small numbers after them, of
-    which a data section has many, does not match.
-
-    Returns (offset, words) or (None, None).
+    A halted PC does not imply the absence of a bugcheck: Windows also spins
+    after publishing KiBugCheckData without ever drawing a stop screen
     """
-    WINDOW_START, WINDOW_LEN = 0xdb0000, 0x20000
-    words = readWords(qmp_file, base + WINDOW_START, WINDOW_LEN // 8)
-    if not words:
+    words = readWords(qmp_file, base + KI_BUGCHECK_DATA_RVA, 5)
+    if len(words) != 5 or words[0] == 0:
         return None, None
-
-    def plausible(v):
-        # An address, a small number, or zero. The small ones are real and not
-        # an accident of the search: PAGE_FAULT_IN_NONPAGED_AREA passes a flag
-        # of 1, and a filter that only accepted addresses skipped the whole
-        # record and reported that there was none.
-        return v == 0 or v < 0x10000 or v >= 0xFFFF000000000000
-
-    best = None
-    for i in range(len(words) - 4):
-        code = words[i]
-        # A bugcheck code is a small number. The exceptions that are not
-        # (0xc0000005 and friends) are exception codes, not bugcheck codes.
-        if not (0 < code < 0x1000):
-            continue
-        params = words[i + 1:i + 5]
-        score = sum(1 for p in params if p >= 0xFFFF000000000000)
-        if any(not plausible(p) for p in params):
-            continue
-        if score < 2:
-            continue
-        if best is None or score > best[0]:
-            best = (score, WINDOW_START + i * 8, [code] + params)
-    if best is None:
-        return None, None
-    return best[1], best[2]
+    return KI_BUGCHECK_DATA_RVA, words
 
 
 def programCounter(qmp_file):
@@ -280,7 +260,7 @@ def payloadRecord(qmp_file, serialLog):
 
     # magic, then the record; the pool's own header is a magic and a slot
     # count before it, so the record starts eight bytes in.
-    w = readWords(qmp_file, pool + 8, 15)
+    w = readWords(qmp_file, pool + 8, 15, physical=True)
     if len(w) < 15:
         return "  (the pool at 0x%x could not be read)" % pool
     names = ["entries", "handled", "lastEsr", "lastElr", "lastFar", "lastCpu",
@@ -310,8 +290,16 @@ def main():
                     help="whether to take over the SP0 synchronous slot too")
     ap.add_argument("--rewrite", default="true",
                     help="whether to replace the RCpc loads in the images")
+    ap.add_argument("--vamap", default="true",
+                    help="whether to register the runtime VA notification")
     ap.add_argument("--spx-stack", default="false",
                     help="whether the stub may push on the SPx vector too")
+    ap.add_argument("--spin-rva", type=lambda value: int(value, 0),
+                    help="replace this ntoskrnl RVA with b . before boot; useful for capturing registers at an ASLR-independent point")
+    ap.add_argument("--watch-abort", action="store_true",
+                    help="pause QEMU on the first EL1 Data Abort and print the live registers")
+    ap.add_argument("--no-screen", action="store_true",
+                    help="sample registers only; do not inspect screen pixels")
     ap.add_argument("--keep", action="store_true",
                     help="leave the machine running, to be looked at afterwards")
     # QEMU's own logging is the only record of the exceptions a run took: the
@@ -320,6 +308,10 @@ def main():
     ap.add_argument("--qemu-extra", default="",
                     help="extra arguments for QEMU, split on spaces")
     args = ap.parse_args()
+
+    if args.spin_rva is not None and (args.spin_rva < 0 or args.spin_rva > 0xFFFFFFFF
+                                      or args.spin_rva & 3):
+        ap.error("--spin-rva must be a 4-byte-aligned 32-bit RVA")
 
     os.chdir(ROOT)
     work = os.path.join(ROOT, args.work)
@@ -340,7 +332,17 @@ enabled = true
 arm = %s
 arm_slot0 = %s
 spx_stack = %s
-""" % (args.rewrite, args.arm, args.arm_slot0, args.spx_stack))
+vamap = %s
+""" % (args.rewrite, args.arm, args.arm_slot0, args.spx_stack, args.vamap))
+        if args.spin_rva is not None:
+            f.write("""
+[[debug.patch]]
+target = "ntoskrnl"
+rva = 0x%x
+value = 0x14000000
+width = 4
+tag = "spin probe"
+""" % args.spin_rva)
 
     esp = os.path.join(work, "run.img")
     serialLog = os.path.join(work, "serial.log")
@@ -354,7 +356,7 @@ spx_stack = %s
     subprocess.run(["tests/deploy/build_esp.sh"], env=env, check=True,
                    stdout=subprocess.DEVNULL)
 
-    subprocess.run(["pkill", "-9", "-f", "qemu-system-aarch64"],
+    subprocess.run(["killall", "qemu-system-aarch64"],
                    stderr=subprocess.DEVNULL)
     time.sleep(1)
 
@@ -367,7 +369,8 @@ spx_stack = %s
         "-m", "4096", "-smp", "8,sockets=1,clusters=2,cores=4,threads=1",
         "-cpu", os.environ.get("QEMU_CPU", "cortex-a76-nolrcpc"),
         "-kernel", FIRMWARE,
-        "-device", "ramfb", "-vnc", "0.0.0.0:0", "-display", "none",
+        "-device", "ramfb", "-vnc", "none" if args.no_screen else "0.0.0.0:0",
+        "-display", "none",
         "-gdb", "tcp::%d" % args.gdb_port,
         "-qmp", "tcp:127.0.0.1:%d,server=on,wait=off" % args.qmp_port,
         "-device", "qemu-xhci,id=xhci",
@@ -376,7 +379,8 @@ spx_stack = %s
         "-device", "virtio-blk-pci,drive=win,bootindex=2",
         "-drive", "file=%s,if=none,format=qcow2,id=win,readonly=on" % WIN_DISK,
         "-serial", "unix:%s,server=on,wait=off,logfile=%s" % (serialSock, serialLog),
-    ] + extra, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    ] + extra, stdout=subprocess.DEVNULL,
+        stderr=open(os.path.join(work, "qemu.log"), "wb"),
         start_new_session=True)
 
     try:
@@ -395,6 +399,44 @@ spx_stack = %s
             return 1
         log("the driver is done")
 
+        if args.watch_abort:
+            qmp = socket.create_connection(("127.0.0.1", args.qmp_port), timeout=20)
+            qmpFile = qmp.makefile("rwb")
+            qmpFile.readline()
+            cmd(qmpFile, {"execute": "qmp_capabilities"})
+            paused = threading.Event()
+
+            def stopOnAbort():
+                try:
+                    while True:
+                        chunk = ser.read(0.5)
+                        if chunk is None:
+                            continue
+                        if not chunk:
+                            return
+                        if re.search(rb"Taking exception 4 \[Data Abort\]", chunk):
+                            result = cmd(qmpFile, {"execute": "stop"})
+                            if "error" in result:
+                                log("QMP stop failed: %s" % result["error"])
+                            paused.set()
+                            return
+                except (OSError, SystemExit) as exc:
+                    log("abort watcher stopped: %s" % exc)
+                    paused.set()
+
+            watcher = threading.Thread(target=stopOnAbort, daemon=True)
+            watcher.start()
+            log("waiting for the first Data Abort (QMP will stop the guest on delivery)")
+            paused.wait(args.catch_timeout)
+            if not paused.is_set():
+                log("no Data Abort observed before timeout")
+                return 1
+            log("QEMU paused after a Data Abort")
+            regs = cmd(qmpFile, {"execute": "human-monitor-command",
+                                 "arguments": {"command-line": "info registers"}})
+            log(regs.get("return", "register read failed"))
+            return 0
+
         # What happens next is one of three things, and the watcher tells them
         # apart with two signals, because neither is enough alone: the program
         # counter says whether the machine is doing anything at all, and the
@@ -411,7 +453,8 @@ spx_stack = %s
             [sys.executable, "-u", "tests/deploy/machine_watch.py",
              "--qmp-port", str(args.qmp_port),
              "--timeout", str(args.catch_timeout),
-             "--shots", os.path.join(work, "shots")])
+             "--shots", os.path.join(work, "shots")]
+            + (["--no-screen"] if args.no_screen else []))
         if verdict == 1:
             log("the machine was still working when the watch ran out")
             return 1
@@ -440,19 +483,13 @@ spx_stack = %s
             log("no vector table found under PC=0x%x" % pc)
             return 1
 
-        if verdict == 3:
-            # Halted. There is no bugcheck record, so what the kernel was
-            # doing has to come from the code it is stopped in and from what
-            # the payload recorded.
-            log("")
-            log("halted at kbase+0x%x (kernel base 0x%x)" % (pc - base, base))
-            log(payloadRecord(qmpFile, serialLog))
-            return 3
-
         log("kernel base = 0x%x" % base)
-
         offset, words = findBugCheckRecord(qmpFile, base)
         if words is None:
+            if verdict == 3:
+                log("halted at kbase+0x%x; no published bugcheck" % (pc - base))
+                log(payloadRecord(qmpFile, serialLog))
+                return 3
             log("no bugcheck record found in the data section")
             return 1
 
