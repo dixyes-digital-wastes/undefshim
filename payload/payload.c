@@ -200,6 +200,36 @@ static bool emulateLdapr(UsFrame *frame) {
     return true;
 }
 
+/*
+ * The frame on the way out, at the same index the way in used.
+ *
+ * Called from every path that has a frame, including the ones that claim
+ * nothing, because those hand the registers back too -- to the kernel's own
+ * handler rather than to the code that was interrupted, but from the same
+ * copy of them.
+ */
+static void recordHandback(UsFrame *frame) {
+    UsPayloadConfig *cfg = usPayloadConfig();
+    UsPoolEntry *e;
+    UsPoolTrace *t;
+    const uint64_t *src;
+    uint64_t at;
+
+    if (cfg->poolBase == 0 || frame == NULL) {
+        return;
+    }
+    e = &((UsPool *)(uintptr_t)cfg->poolBase)->entry;
+    at = e->entries - 1;
+    t = &e->handback[at % US_POOL_TRACE_SLOTS];
+
+    src = (const uint64_t *)(const void *)frame;
+    t->cpu = (uint64_t)(int64_t)currentCpu();
+    t->mpidr = currentMpidr();
+    for (uint32_t i = 0; i < US_POOL_TRACE_WORDS; i++) {
+        t->words[i] = src[i];
+    }
+}
+
 int usPayloadHandle(UsFrame *frame) {
     UsPayloadConfig *cfg = usPayloadConfig();
     uint32_t ec;
@@ -280,6 +310,7 @@ int usPayloadHandle(UsFrame *frame) {
         if (cfg->quiet == 0) {
             usUartPuts("US-PAYLOAD not-mine\n");
         }
+        recordHandback(frame);
         return 0;
     }
 
@@ -291,6 +322,7 @@ int usPayloadHandle(UsFrame *frame) {
             usUartPuts("US-PAYLOAD emulated\n");
         }
         /* Claimed: the entry resumes at the instruction after this one. */
+        recordHandback(frame);
         return 1;
     }
 
@@ -302,6 +334,7 @@ int usPayloadHandle(UsFrame *frame) {
     if (cfg->quiet == 0) {
         usUartPuts("US-PAYLOAD reached\n");
     }
+    recordHandback(frame);
     return 0;
 }
 
