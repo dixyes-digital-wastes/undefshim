@@ -27,8 +27,11 @@
 #define US_INDEX_MASK 0x1FFULL
 
 /* A block descriptor at L1 covers 1GB, at L2 2MB, in 4KB granule. */
-#define US_L1_BLOCK_MASK 0x0000FFFFFFC00000ULL
+#define US_L1_BLOCK_MASK 0x0000FFFFC0000000ULL
 #define US_L2_BLOCK_MASK 0x0000FFFFFFE00000ULL
+
+#define US_DESC_PXN (1ULL << 53)
+#define US_DESC_PXN_TABLE (1ULL << 59)
 
 typedef struct Walk_t {
     UsPhysRead read;
@@ -45,7 +48,8 @@ typedef struct Walk_t {
  * should stop. A block is reported at its own base, with the offset into it
  * left to the caller: the payload only needs the block's address to reach it,
  * since the pool is contiguous inside whatever covers it. */
-static bool consider(Walk *w, uint64_t va, uint64_t pa, uint64_t size) {
+static bool consider(Walk *w, uint64_t va, uint64_t pa, uint64_t size,
+                     uint64_t descriptor, bool tablePxn) {
     uint64_t end = pa + size;
 
     if (end <= w->targetPa || pa >= w->targetEnd) {
@@ -55,6 +59,8 @@ static bool consider(Walk *w, uint64_t va, uint64_t pa, uint64_t size) {
     w->result.va = va;
     w->result.mappedPa = pa;
     w->result.size = size;
+    w->result.descriptor = descriptor;
+    w->result.pxn = tablePxn || (descriptor & US_DESC_PXN) != 0;
     return true;
 }
 
@@ -83,22 +89,12 @@ static bool isBlock(uint64_t entry) {
     return (entry & US_DESC_TABLE_OR_PAGE) == US_DESC_BLOCK;
 }
 
-/*
- * The address bits a four level walk actually indexes, and the prefix above
- * them.
- *
- * A translation base register describes a half of the address space, and the
- * bits above bit 47 are not part of any index: they are either all zero or
- * all one, and which it is decides which register the walk belongs to. So the
- * indices are taken from the low 48 bits, and the prefix is put back when a
- * virtual address is reported.
- */
-#define US_VA_LOW_BITS 0x0000FFFFFFFFFFFFULL
-#define US_VA_PREFIX_MASK (~US_VA_LOW_BITS)
-
-UsPageWalk usPageWalkFind(UsPhysRead read, void *ctx, uint64_t tableBase,
-                          uint64_t vaFirst, uint64_t vaLast,
-                          uint64_t targetPa, uint64_t targetBytes) {
+/* The TTBR half supplies the all-zero/all-one prefix above vaBits. The
+ * remaining bits index a shortened L0 root followed by three full tables. */
+UsPageWalk usPageWalkFindBits(UsPhysRead read, void *ctx, uint64_t tableBase,
+                              uint64_t vaFirst, uint64_t vaLast,
+                              uint64_t targetPa, uint64_t targetBytes,
+                              unsigned vaBits) {
     Walk w = {
         .read = read,
         .ctx = ctx,
@@ -117,23 +113,31 @@ UsPageWalk usPageWalkFind(UsPhysRead read, void *ctx, uint64_t tableBase,
     uint64_t hi;
     uint64_t i0First;
     uint64_t i0Last;
+    uint64_t lowMask;
+    uint64_t prefixMask;
+    uint64_t rootAlignment;
 
-    if (read == NULL || targetBytes == 0 || vaLast < vaFirst) {
+    if (read == NULL || targetBytes == 0 || vaLast < vaFirst
+        || vaBits < 40 || vaBits > 48 || targetBytes > UINT64_MAX - targetPa) {
         return w.result;
     }
-    /*
-     * The range has to sit in one half of the address space, because a walk
-     * follows one base register and cannot cross between them.
-     */
-    if ((vaFirst & US_VA_PREFIX_MASK) != (vaLast & US_VA_PREFIX_MASK)) {
+    lowMask = (1ULL << vaBits) - 1;
+    prefixMask = ~lowMask;
+    prefix = vaFirst & prefixMask;
+    /* Reject noncanonical prefixes and ranges crossing TTBR halves. The
+     * high half is not a signed extension of bit vaBits-1: that bit indexes
+     * the root too, so only bits above it must all be one. */
+    if ((prefix != 0 && prefix != prefixMask)
+        || (vaLast & prefixMask) != prefix) {
         return w.result;
     }
 
-    prefix = vaFirst & US_VA_PREFIX_MASK;
-    lo = vaFirst & US_VA_LOW_BITS;
-    hi = vaLast & US_VA_LOW_BITS;
+    lo = vaFirst & lowMask;
+    hi = vaLast & lowMask;
 
-    l0 = tableBase & US_PAGE_ADDR_MASK;
+    /* Strip ASID and low flags, but retain bit 11 for a 2KB (47-bit) root. */
+    rootAlignment = 1ULL << (3 + (vaBits - US_L0_SHIFT));
+    l0 = tableBase & 0x0000FFFFFFFFFFFFULL & ~(rootAlignment - 1);
     w.result.tablesRead = 1;
 
     i0First = lo >> US_L0_SHIFT;
@@ -184,7 +188,8 @@ UsPageWalk usPageWalkFind(UsPhysRead read, void *ctx, uint64_t tableBase,
                 continue;
             }
             if (isBlock(e1)) {
-                if (consider(&w, va1, e1 & US_L1_BLOCK_MASK, US_GRANULE_1G)) {
+                if (consider(&w, va1, e1 & US_L1_BLOCK_MASK, US_GRANULE_1G,
+                             e1, (e0 & US_DESC_PXN_TABLE) != 0)) {
                     return w.result;
                 }
                 continue;
@@ -219,7 +224,8 @@ UsPageWalk usPageWalkFind(UsPhysRead read, void *ctx, uint64_t tableBase,
                     continue;
                 }
                 if (isBlock(e2)) {
-                    if (consider(&w, va2, e2 & US_L2_BLOCK_MASK, US_GRANULE_2M)) {
+                    if (consider(&w, va2, e2 & US_L2_BLOCK_MASK, US_GRANULE_2M,
+                                 e2, ((e0 | e1) & US_DESC_PXN_TABLE) != 0)) {
                         return w.result;
                     }
                     continue;
@@ -249,7 +255,8 @@ UsPageWalk usPageWalkFind(UsPhysRead read, void *ctx, uint64_t tableBase,
                     if ((e3 & US_DESC_TABLE_OR_PAGE) != US_DESC_TABLE_OR_PAGE) {
                         continue;
                     }
-                    if (consider(&w, va3, e3 & US_PAGE_ADDR_MASK, US_GRANULE_4K)) {
+                    if (consider(&w, va3, e3 & US_PAGE_ADDR_MASK, US_GRANULE_4K,
+                                 e3, ((e0 | e1 | e2) & US_DESC_PXN_TABLE) != 0)) {
                         return w.result;
                     }
                 }
@@ -258,4 +265,11 @@ UsPageWalk usPageWalkFind(UsPhysRead read, void *ctx, uint64_t tableBase,
     }
 
     return w.result;
+}
+
+UsPageWalk usPageWalkFind(UsPhysRead read, void *ctx, uint64_t tableBase,
+                          uint64_t vaFirst, uint64_t vaLast,
+                          uint64_t targetPa, uint64_t targetBytes) {
+    return usPageWalkFindBits(read, ctx, tableBase, vaFirst, vaLast,
+                             targetPa, targetBytes, 48);
 }

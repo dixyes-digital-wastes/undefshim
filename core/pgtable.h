@@ -28,9 +28,11 @@
 /*
  * Reads a 64-bit word from a physical address.
  *
- * In the payload this is a plain dereference, because physical memory is
- * identity mapped at the time. It is a function here so that the walk can be
- * tested on a host, where a table is just an array.
+ * The caller must establish that the address is identity mapped and readable
+ * before dereferencing it (for example, using AT at EL1). On failure it may
+ * return zero and record the failure in ctx; the caller must check that flag
+ * before trusting the result. The walker itself never dereferences an address.
+ * On a host the callback can instead read a table represented by an array.
  */
 typedef uint64_t (*UsPhysRead)(void *ctx, uint64_t address);
 
@@ -52,21 +54,39 @@ typedef struct UsPageWalk_t {
     uint64_t tablesRead;
     uint64_t entriesRead;
     bool     budgetExhausted;
+
+    /* Raw leaf descriptor and effective privileged execute-never: leaf PXN
+     * (bit 53) or PXNTable (bit 59) on any ancestor table. */
+    uint64_t descriptor;
+    bool     pxn;
 } UsPageWalk;
 
 /*
  * Finds the first mapping, at or above vaFirst and at or below vaLast, whose
  * physical range overlaps [targetPa, targetPa + targetBytes).
  *
- * tableBase is the translation table base for the regime being searched, as
- * it appears in a TTBR: the low bits are flags and are masked off here, so a
- * value read straight from the register can be passed in.
+ * tableBase is the translation table base as it appears in a TTBR. ASID and
+ * bits below the root's alignment are masked off. The root has 2^(vaBits-39)
+ * entries and is aligned to its size in bytes (47 bits: 2KB, 48 bits: 4KB).
+ * Child tables are still 4KB aligned. vaBits must be in [40, 48], with an
+ * untagged, canonical VA range wholly in one TTBR half. Invalid arguments,
+ * including overflow of targetPa + targetBytes, return an empty result.
+ *
+ * A match means overlap, not validation of the entire target range. The caller
+ * must search/check every page when validating a full range, and must also
+ * check any read-failure flag maintained in ctx.
  *
  * Terminates early on a match. Returns found = false when there is no such
  * mapping, or when the budget ran out first, which the budgetExhausted flag
  * distinguishes: an exhausted budget means the answer is unknown rather than
  * negative, and a caller that acts on it would be guessing.
  */
+UsPageWalk usPageWalkFindBits(UsPhysRead read, void *ctx, uint64_t tableBase,
+                              uint64_t vaFirst, uint64_t vaLast,
+                              uint64_t targetPa, uint64_t targetBytes,
+                              unsigned vaBits);
+
+/* Compatibility entry point: a 48-bit VA regime. */
 UsPageWalk usPageWalkFind(UsPhysRead read, void *ctx, uint64_t tableBase,
                           uint64_t vaFirst, uint64_t vaLast,
                           uint64_t targetPa, uint64_t targetBytes);
@@ -79,7 +99,7 @@ UsPageWalk usPageWalkFind(UsPhysRead read, void *ctx, uint64_t tableBase,
  */
 #define US_PAGE_WALK_BUDGET 20000ULL
 
-/* The mask applied to a table base or a page descriptor to get its address. */
+/* Address mask for child table/page descriptors, not shortened TTBR roots. */
 #define US_PAGE_ADDR_MASK 0x0000FFFFFFFFF000ULL
 
 #endif
