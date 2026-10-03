@@ -19,7 +19,11 @@ CFG_CFLAGS := -std=gnu23 -O2 -Wall -Wextra -I$(ROOT) -I$(TOML) $(TOML_DEFS)
 
 .PHONY: all check clean
 all: test_cfg test_layout test_scan_images test_rva_patch test_plan test_pgtable test_par \
-     test_thunk test_ldapr test_acpi test_ldr
+     test_thunk test_stackgen test_payload_place test_early test_ldapr test_acpi test_ldr
+
+test_early: test_early.c $(ROOT)/payload/early.c $(ROOT)/payload/vamap.c \
+            $(ROOT)/core/thunk.c
+	$(CC) -std=gnu23 -O2 -Wall -Wextra -I$(ROOT) $^ -o $@
 
 test_ldr: test_ldr.c $(ROOT)/core/ldr.c
 	$(CC) -std=gnu23 -O2 -Wall -Wextra -I$(ROOT) $^ -o $@
@@ -32,6 +36,32 @@ test_ldapr: test_ldapr.c $(ROOT)/core/ldapr.c
 
 test_thunk: test_thunk.c $(ROOT)/core/thunk.c
 	$(CC) -std=gnu23 -O2 -Wall -Wextra -I$(ROOT) $^ -o $@
+
+test_stackgen: test_stackgen.c $(ROOT)/core/stackgen.c
+	$(CC) -std=gnu23 -O2 -Wall -Wextra -I$(ROOT) $^ -o $@
+
+# BUILD_DIR is relative to the repository root, as in the top-level Makefile.
+# Build only the blob; no firmware or AArch64 code runs in this host test.
+BUILD_DIR ?= build
+PLACEMENT_PAYLOAD_DIR := $(ROOT)/$(BUILD_DIR)/payload
+PLACEMENT_SRCS := test_payload_place.c $(ROOT)/uefi/src/payload_place.c \
+                  $(ROOT)/core/stackgen.c
+PLACEMENT_HEADERS := payload_place_host/stdio.h \
+                     $(ROOT)/common/layout.h $(ROOT)/core/stackgen.h \
+                     $(ROOT)/payload/payload.h $(ROOT)/uefi/src/session.h \
+                     $(ROOT)/uefi/src/payload_place.h
+
+.PHONY: placement-payload
+placement-payload:
+	$(MAKE) --no-print-directory -C $(ROOT) BUILD_DIR=$(BUILD_DIR) \
+	    $(BUILD_DIR)/payload/payload_blob.h
+
+test_payload_place: placement-payload $(PLACEMENT_SRCS) $(PLACEMENT_HEADERS)
+	$(CC) -std=gnu23 -O2 -Wall -Wextra -fshort-wchar -fno-builtin \
+	    -Ipayload_place_host -I$(ROOT) -I$(TOML) \
+	    -I$(ROOT)/third_party/posix-uefi/uefi \
+	    -I$(PLACEMENT_PAYLOAD_DIR) $(TOML_DEFS) -DUS_UART_BASE=0x09000000 \
+	    $(PLACEMENT_SRCS) -o $@
 
 test_cfg: test_cfg.c $(ROOT)/core/cfg.c $(TOML)/toml.c
 	$(CC) $(CFG_CFLAGS) $^ -o $@
@@ -63,7 +93,11 @@ check: all
 	./test_pgtable
 	./test_par
 	./test_thunk
+	./test_stackgen
+	./test_payload_place
+	./test_early
 	./test_ldapr
 	./test_acpi
 	./test_ldr
 	python3 check_entry_frame.py $(ROOT)/payload/entry.S
+	python3 check_machine_watch.py

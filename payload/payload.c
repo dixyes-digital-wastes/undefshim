@@ -8,6 +8,7 @@
 #include "common/layout.h"
 #include "core/ldapr.h"
 #include "payload/payload.h"
+#include "payload/early.h"
 #include "payload/selfmap.h"
 #include "payload/uart.h"
 #include "payload/us_mem.h"
@@ -18,17 +19,6 @@
  * halves of the payload have to agree on where it is.
  */
 UsPayloadConfig usPayloadConfigBlock;
-
-/*
- * One frame per CPU, filled by the entry before it switches stacks.
- *
- * The entry cannot use a stack it has not switched to yet, so the frame goes
- * here first. Interrupts are masked at entry and the handler does not
- * recurse, so one pad per CPU is enough, and the index comes from the CPU
- * affinity field rather than an assumption that this is running on the first
- * CPU.
- */
-UsFrame usPayloadLanding[US_MAX_CPUS];
 
 /*
  * Where the handler stores the frame it was given, so a nested report can
@@ -141,13 +131,8 @@ static bool emulateLdapr(UsFrame *frame) {
         return false;
     }
 
-    /* A base of 31 would be the zero register, which is not an address this
-     * instruction can be given; the encoding is reserved and not decoded. */
-    if (decoded.rn == 31) {
-        return false;
-    }
-
-    address = frame->x[decoded.rn];
+    /* Rn=31 selects the interrupted stack pointer, not the zero register */
+    address = decoded.rn == 31 ? frame->sp : frame->x[decoded.rn];
     value = loadAcquire(decoded.kind, address);
 
     if (decoded.rt < 31) {
@@ -256,7 +241,6 @@ int usPayloadHandle(UsFrame *frame) {
             pool->entry.lastEsr = frame->esr;
             pool->entry.lastElr = frame->elr;
             pool->entry.lastFar = frame->far;
-            pool->entry.lastInsn = *(const volatile uint32_t *)(uintptr_t)frame->elr;
         }
 
         /* Kept apart from the summary so that two exceptions arriving at once
@@ -291,6 +275,14 @@ int usPayloadHandle(UsFrame *frame) {
             usUartPuts("US-PAYLOAD no-frame\n");
         }
         return 0;
+    }
+
+    uint64_t vbar;
+    __asm__ volatile("mrs %0, vbar_el1" : "=r"(vbar));
+    usPayloadPublish(vbar);
+    if (cfg->poolBase != 0) {
+        ((UsPool *)(uintptr_t)cfg->poolBase)->entry.lastInsn =
+            *(const volatile uint32_t *)(uintptr_t)frame->elr;
     }
 
     ec = (uint32_t)US_ESR_EC(frame->esr);

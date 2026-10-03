@@ -4,7 +4,10 @@
 
 #include <uefi.h>
 
+#include <stddef.h>
+
 #include "common/layout.h"
+#include "core/stackgen.h"
 #include "payload/payload.h"
 #include "payload_blob.h"
 #include "uefi/src/cache.h"
@@ -36,6 +39,10 @@ static void writeConfig(const UsPayloadPlace *place, const UsSession *session) {
         cfg->stackTop[i] = session->pool->stackTop[i];
     }
     cfg->selfVa = place->baseVa;
+    cfg->selfPa = place->basePa;
+    cfg->selfBytes = place->bytes;
+    cfg->poolPa = session->pool->selfPa;
+    cfg->entryOffset = US_PAYLOAD_ENTRY_OFFSET;
     /*
      * Nothing to forward to yet. A zero here means an exception the payload
      * will not claim stops rather than being handed on, which is the right
@@ -60,13 +67,8 @@ static void writeConfig(const UsPayloadPlace *place, const UsSession *session) {
     {
         uint64_t count = session->cpus.count;
 
-        if (count == 0 || count > US_MAX_CPUS) {
-            count = 1;
-            cfg->cpus[0] = (UsPayloadCpu){ .mpidr = 0, .index = 0 };
-        } else {
-            for (uint64_t i = 0; i < count; i++) {
-                cfg->cpus[i] = (UsPayloadCpu){ .mpidr = session->cpus.mpidr[i], .index = i };
-            }
+        for (uint64_t i = 0; i < count; i++) {
+            cfg->cpus[i] = (UsPayloadCpu){ .mpidr = session->cpus.mpidr[i], .index = i };
         }
         /* The end of the list, for the entry's lookup. */
         cfg->cpus[count] = (UsPayloadCpu){ .mpidr = 0, .index = ~(uint64_t)0 };
@@ -88,12 +90,26 @@ bool usPayloadPlace(UsSession *session, UsPayloadPlace *out) {
     efi_physical_address_t pa = 0;
     uint8_t *dst;
     efi_status_t status;
+    uint32_t lookup[US_STACK_LOOKUP_WORDS];
 
     /* A second call leaves the first placement alone: the addresses in it may
      * already have been handed out. */
     if (session->payloadPlaced) {
         *out = session->payloadPlace;
         return true;
+    }
+
+    /* Validate the same CPU table used by writeConfig before allocating */
+    if (usGenerateStackLookup(session->cpus.mpidr,
+                              (uint32_t)session->cpus.count,
+                              US_PAYLOAD_STACKLOOKUP_OFFSET,
+                              US_PAYLOAD_CONFIG_OFFSET
+                                  + offsetof(UsPayloadConfig, stackTop),
+                              US_PAYLOAD_READY_OFFSET,
+                              US_PAYLOAD_NOSTACK_OFFSET,
+                              lookup)
+        == 0) {
+        return false;
     }
 
     status = BS->AllocatePages(AllocateAnyPages, US_PAYLOAD_MEMORY_TYPE,
@@ -105,6 +121,14 @@ bool usPayloadPlace(UsSession *session, UsPayloadPlace *out) {
 
     dst = (uint8_t *)(uintptr_t)pa;
     memcpy(dst, kPayloadBlob, US_PAYLOAD_BYTES);
+
+    /*
+     * The entry's bootstrap finds its own stack through generated code: one
+     * match branch per processor the firmware described, keyed on the full
+     * normalized affinity. Writing it here means the cpu list only has to be
+     * right once, at boot, instead of the blob carrying a fixed mapping.
+     */
+    memcpy(dst + US_PAYLOAD_STACKLOOKUP_OFFSET, lookup, sizeof(lookup));
 
     /*
      * The copy just became instructions, and on AArch64 a store does not

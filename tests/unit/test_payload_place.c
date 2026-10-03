@@ -1,0 +1,166 @@
+/* Real placement and generator, with only firmware allocation/cache/IO mocked.
+ * The AArch64 blob is copied and inspected, never executed on the host.
+ * Keep host libc headers out: posix-uefi supplies its own libc declarations.
+ */
+#include <uefi.h>
+
+#include <assert.h>
+#include <stddef.h>
+
+#include "core/stackgen.h"
+#include "payload/payload.h"
+#include "payload_blob.h"
+#include "uefi/src/cache.h"
+#include "uefi/src/console.h"
+#include "uefi/src/session.h"
+
+#define PAYLOAD_PAGES ((US_PAYLOAD_BYTES + US_PAGE_SIZE - 1) / US_PAGE_SIZE)
+
+static _Alignas(US_PAGE_SIZE) uint8_t pages[PAYLOAD_PAGES * US_PAGE_SIZE];
+static unsigned allocations;
+static unsigned flushes;
+static efi_status_t allocationStatus;
+static bool zeroAddress;
+
+static efi_status_t EFIAPI allocatePages(efi_allocate_type_t type,
+                                        efi_memory_type_t memoryType,
+                                        uintn_t count,
+                                        efi_physical_address_t *address) {
+    assert(type == AllocateAnyPages);
+    assert(memoryType == EfiRuntimeServicesCode);
+    assert(count == PAYLOAD_PAGES);
+    assert(*address == 0);
+    allocations++;
+    *address = zeroAddress ? 0 : (efi_physical_address_t)(uintptr_t)pages;
+    return allocationStatus;
+}
+
+static efi_boot_services_t bootServices = { .AllocatePages = allocatePages };
+efi_boot_services_t *BS = &bootServices;
+
+void usCacheFlushRange(const void *address, size_t bytes) {
+    assert(address == pages);
+    assert(bytes == US_PAYLOAD_BYTES);
+    assert(allocations == 1);
+    flushes++;
+}
+
+/* Report is linked but not called: its self-test is AArch64 code. */
+void usConsolePuts(const char *text) { (void)text; }
+void usConsolePutHex(uint64_t value) { (void)value; }
+void usConsolePutDec(uint64_t value) { (void)value; }
+
+static void rejected(const UsAcpiCpus *cpus) {
+    UsSession session = { .cpus = *cpus };
+    /* No pool is intentional: rejection must not reach config writes either. */
+    UsPayloadPlace out;
+    UsPayloadPlace before;
+    memset(&out, 0xA5, sizeof(out));
+    before = out;
+    memset(pages, 0xA5, sizeof(pages));
+    allocations = flushes = 0;
+    assert(!usPayloadPlace(&session, &out));
+    assert(allocations == 0 && flushes == 0);
+    assert(!session.payloadPlaced);
+    assert(memcmp(&out, &before, sizeof(out)) == 0);
+    for (size_t i = 0; i < sizeof(pages); i++) {
+        assert(pages[i] == 0xA5);
+    }
+}
+
+static void placed(const UsAcpiCpus *cpus) {
+    UsPool pool = {0};
+    UsSession session = { .pool = &pool, .cpus = *cpus };
+    UsPayloadPlace out;
+    uint32_t expected[US_STACK_LOOKUP_WORDS];
+    uint8_t snapshot[sizeof(pages)];
+    for (unsigned i = 0; i < US_MAX_CPUS; i++) {
+        pool.stackTop[i] = UINT64_C(0xFFFFF00040000000) + i * US_STACK_SIZE;
+    }
+    allocations = flushes = 0;
+    allocationStatus = EFI_SUCCESS;
+    zeroAddress = false;
+    memset(pages, 0xA5, sizeof(pages));
+    assert(usPayloadPlace(&session, &out));
+    assert(allocations == 1 && flushes == 1);
+    assert(session.payloadPlaced);
+    assert(memcmp(&out, &session.payloadPlace, sizeof(out)) == 0);
+    assert(out.basePa == (uint64_t)(uintptr_t)pages);
+    assert(out.baseVa == out.basePa && out.bytes == US_PAYLOAD_BYTES);
+    assert(out.entryVa == out.baseVa + US_PAYLOAD_ENTRY_OFFSET);
+    assert(out.configVa == out.baseVa + US_PAYLOAD_CONFIG_OFFSET);
+
+    const UsPayloadConfig *cfg = (const UsPayloadConfig *)(uintptr_t)out.configVa;
+    assert(cfg->cpuCount == cpus->count);
+    for (size_t i = 0; i < cpus->count; i++) {
+        assert(cfg->cpus[i].mpidr == cpus->mpidr[i]);
+        assert(cfg->cpus[i].index == i);
+    }
+    assert(cfg->cpus[cpus->count].mpidr == 0);
+    assert(cfg->cpus[cpus->count].index == UINT64_MAX);
+    assert(memcmp(cfg->stackTop, pool.stackTop, sizeof(cfg->stackTop)) == 0);
+    assert(cfg->selfVa == out.baseVa);
+    assert(cfg->poolBase == (uint64_t)(uintptr_t)&pool);
+    assert(cfg->uartBase == US_UART_BASE && cfg->quiet == 1);
+    assert(cfg->forwardTarget == 0);
+
+    /* Generator semantics have their own interpreter test. Here the complete
+     * published lookup must be generated from exactly the cfg/session table,
+     * including its count, order and actual blob-relative stack addresses.
+     */
+    assert(usGenerateStackLookup(cpus->mpidr, (uint32_t)cpus->count,
+                                US_PAYLOAD_STACKLOOKUP_OFFSET,
+                                US_PAYLOAD_CONFIG_OFFSET
+                                    + offsetof(UsPayloadConfig, stackTop),
+                                US_PAYLOAD_READY_OFFSET,
+                                US_PAYLOAD_NOSTACK_OFFSET, expected) != 0);
+    assert(memcmp(pages + US_PAYLOAD_STACKLOOKUP_OFFSET,
+                  expected, sizeof(expected)) == 0);
+    /* Outside those two patched regions, placement must copy the real blob. */
+    for (size_t i = 0; i < US_PAYLOAD_BYTES; i++) {
+        bool lookup = i >= US_PAYLOAD_STACKLOOKUP_OFFSET
+                      && i < US_PAYLOAD_STACKLOOKUP_OFFSET + sizeof(expected);
+        bool config = i >= US_PAYLOAD_CONFIG_OFFSET
+                      && i < US_PAYLOAD_CONFIG_OFFSET + sizeof(*cfg);
+        if (!lookup && !config) {
+            assert(pages[i] == kPayloadBlob[i]);
+        }
+    }
+    memcpy(snapshot, pages, sizeof(pages));
+    /* Even a now-invalid session table cannot replace an existing placement. */
+    session.cpus.count = 0;
+    pool.stackTop[0]++;
+    UsPayloadPlace again = {0};
+    assert(usPayloadPlace(&session, &again));
+    assert(allocations == 1 && flushes == 1);
+    assert(memcmp(&out, &again, sizeof(out)) == 0);
+    assert(memcmp(snapshot, pages, sizeof(pages)) == 0);
+}
+
+int main(void) {
+    rejected(&(UsAcpiCpus){ .count = 0 });
+    rejected(&(UsAcpiCpus){ .count = US_MAX_CPUS + 1 });
+    rejected(&(UsAcpiCpus){ .count = 1, .mpidr = { UINT64_C(1) << 24 } });
+    rejected(&(UsAcpiCpus){ .count = 2, .mpidr = { 0, UINT64_C(1) << 63 } });
+    rejected(&(UsAcpiCpus){ .count = 3, .mpidr = { 0x100, 0, 0x100 } });
+    placed(&(UsAcpiCpus){ .count = 1, .mpidr = { 0 } });
+    placed(&(UsAcpiCpus){ .count = 3,
+                         .mpidr = { UINT64_C(0x8000010000), 0, 0x100 } });
+    placed(&(UsAcpiCpus){ .count = 8,
+                         .mpidr = { 0x103, 2, 0x101, 0, 0x102, 1, 0x100, 3 } });
+
+    /* Allocation failure is still reported cleanly after table preflight. */
+    for (unsigned zero = 0; zero < 2; zero++) {
+        UsSession session = { .cpus = { .count = 1 } };
+        UsPayloadPlace out = {0};
+        allocations = flushes = 0;
+        zeroAddress = zero != 0;
+        allocationStatus = zero ? EFI_SUCCESS : EFI_OUT_OF_RESOURCES;
+        assert(!usPayloadPlace(&session, &out));
+        assert(allocations == 1 && flushes == 0);
+        assert(!session.payloadPlaced);
+        assert(out.basePa == 0 && out.baseVa == 0);
+    }
+    printf("payload_place: preflight, session cfg/lookup and idempotence passed\n");
+    return 0;
+}

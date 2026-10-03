@@ -46,6 +46,18 @@ static int emitFrame(FILE *f) {
     fprintf(f, "#define US_CONFIG_CPU_COUNT %zu\n", offsetof(UsPayloadConfig, cpuCount));
     fprintf(f, "#define US_CONFIG_CPUS %zu\n", offsetof(UsPayloadConfig, cpus));
     fprintf(f, "#define US_CONFIG_SIZE %zu\n", sizeof(UsPayloadConfig));
+    fprintf(f, "#define US_CONFIG_HIGH_VA %zu\n", offsetof(UsPayloadConfig, highVa));
+    fprintf(f, "#define US_CONFIG_HIGH_POOL_VA %zu\n", offsetof(UsPayloadConfig, highPoolVa));
+    fprintf(f, "#define US_CONFIG_STUB_COUNT %zu\n", offsetof(UsPayloadConfig, stubCount));
+    fprintf(f, "#define US_CONFIG_STUBS %zu\n", offsetof(UsPayloadConfig, stubs));
+    fprintf(f, "#define US_STUB_STRIDE %zu\n", sizeof(UsPayloadStub));
+    fprintf(f, "#define US_STUB_ADDRESS %zu\n", offsetof(UsPayloadStub, address));
+    fprintf(f, "#define US_STUB_TABLE %zu\n", offsetof(UsPayloadStub, tableAddress));
+    fprintf(f, "#define US_STUB_IMAGE %zu\n", offsetof(UsPayloadStub, imageAddress));
+    fprintf(f, "#define US_STUB_TABLE_PA %zu\n", offsetof(UsPayloadStub, tablePa));
+    fprintf(f, "#define US_STUB_ADDRESS_PA %zu\n", offsetof(UsPayloadStub, addressPa));
+    fprintf(f, "#define US_STUB_TARGET %zu\n", offsetof(UsPayloadStub, targetIndex));
+    fprintf(f, "#define US_STUB_PUBLISHED %zu\n", offsetof(UsPayloadStub, published));
 
     /* One processor entry, as the entry's lookup walks it. */
     fprintf(f, "#define US_CPU_STRIDE %zu\n", sizeof(UsPayloadCpu));
@@ -68,8 +80,6 @@ static int emitFrame(FILE *f) {
      */
     fprintf(f, "#define US_STUB_SAVE_BYTES %u\n", US_STUB_SAVE_BYTES);
     fprintf(f, "#define US_STUB_SAVE_X18 %u\n", US_STUB_SAVE_X18);
-    fprintf(f, "#define US_STUB_SAVE_X16 %u\n", US_STUB_SAVE_X16);
-    fprintf(f, "#define US_STUB_SAVE_X17 %u\n", US_STUB_SAVE_X17);
 
     return 0;
 }

@@ -11,6 +11,7 @@
  */
 
 #include "payload/vamap.h"
+#include "payload/early.h"
 
 UsVaMapRecord usVaMapRecord;
 
@@ -87,4 +88,5 @@ void usVaMapNotify(void *event, void *context) {
             *targets[i].after = (uint64_t)(uintptr_t)address;
         }
     }
+    usPayloadEarly();
 }

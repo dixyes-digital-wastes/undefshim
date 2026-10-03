@@ -32,7 +32,6 @@ static UsVaMapRecord *record(UsSession *session) {
 bool usVaMapArm(UsSession *session) {
     UsVaMapRecord *r = record(session);
     efi_event_t change;
-    void *hook;
     void *notify;
 
     if (r == NULL) {
@@ -58,22 +57,10 @@ bool usVaMapArm(UsSession *session) {
         return false;
     }
 
-    /*
-     * A function of the driver's own would be the obvious thing to put here,
-     * and is what the first attempt did. It is also the mistake: this is
-     * entered once the loader owns the machine, and the driver's pages are
-     * free by then. The stub is in the blob for that reason alone.
-     */
-    hook = (void *)(uintptr_t)(session->payloadPlace.baseVa + US_PAYLOAD_VAMAPHOOK_OFFSET);
-    r->svmOriginal = (uint64_t)(uintptr_t)RT->SetVirtualAddressMap;
-    RT->SetVirtualAddressMap = (efi_set_virtual_address_map_t)hook;
-
     usConsolePuts("vamap: record=");
     usConsolePutHex((uint64_t)(uintptr_t)r);
-    usConsolePuts(" original=");
-    usConsolePutHex(r->svmOriginal);
-    usConsolePuts(" hook=");
-    usConsolePutHex((uint64_t)(uintptr_t)hook);
+    usConsolePuts(" notify=");
+    usConsolePutHex((uint64_t)(uintptr_t)notify);
     usConsolePuts("\n");
     return true;
 }

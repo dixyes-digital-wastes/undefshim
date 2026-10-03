@@ -35,75 +35,40 @@
 void usEncodeThunk(uint32_t out[US_THUNK_WORDS], uint64_t target);
 
 /*
- * The stub that goes in a vector slot, or in a hole the slot branches to.
+ * The vector-slot stub filters the exception class and instruction before
+ * entering the payload. Only the four RCpc load widths leave the stub;
+ * other exceptions restore x18 and run the slot's original two-word tail
  *
- *   mrs  x16, esr_el1            the exception class
- *   lsr  x16, x16, #26
- *   cbnz x16, tail               not an undefined instruction: not ours
- *   mrs  x16, elr_el1            the instruction that faulted
- *   ldr  w17, [x16]
- *   and  w17, w17, #0x3ffffc00   everything about an RCpc load but its width
- *   movz w16, #0xc000
- *   movk w16, #0x38bf, lsl #16
- *   cmp  w17, w16
- *   b.ne tail                    an undefined instruction, but not one of ours
- *   movz x16, ...                four halves of the payload's address
- *   br   x16
- * tail:
- *   the two saves given back, then the slot's own behaviour, two instructions
- *
- * The instruction is examined rather than only the class, and that is what
- * makes the tail safe to reach. Windows uses `udf` as a trap of its own, and
- * an undefined instruction that is not an RCpc load has to go to the kernel's
- * handler; sending it to the payload instead means the payload has to find its
- * way back with the interrupted registers restored, which is a second exit
- * from the entry and a lot of places to get it wrong. Four instructions of
- * masking avoid all of it: only the four loads ever leave this stub.
- *
- * The width is not tested. The four loads differ only in the two bits the
- * mask clears, so one comparison covers all of them.
- *
- * x16, x17 and x18 are spent here, and on one vector that matters. `save`
- * selects a form that pushes all three first and leaves them there on the way
- * into the payload, giving them back to the entry through the stack; the way
- * into the tail, where the kernel's own code is waiting for them, pops them
- * first. It is used wherever there is a stack to push on. The two vectors
- * differ in exactly that:
- *
- *   EL1t  SP is the interrupted stack, because execution was using SP_EL0 and
- *         an exception taken with SP_EL0 selected leaves it in place. The
- *         kernel's own handler for this vector uses it as a stack.
- *   EL1h  SP is whatever SP_EL1 happened to hold, which after the address
- *         space is rebuilt is not necessarily mapped. A push there is a fault
- *         taken inside the exception it was meant to handle.
- *
- * It has to be done on the first of those because the kernel uses x16 on its
- * own path through that vector: its breakpoint services are `mov x16, #n;
- * brk`, with the number carried in x16 and read by the handler this stub hands
- * to. Clobbering it turns every one of those into a service that does not
- * exist.
- *
- * x18 is spent by the entry as well as by this, so it is saved with them: a
- * register the entry destroys has to come back, and the set of registers the
- * entry destroys is what says which ones to save.
+ * x18 is the only register the stub spends, and it is the one register whose
+ * value every vector can have back: on EL0 and EL1h there is a stack, and the
+ * `save` form pushes it into the ABI red zone first; on EL1t the kernel
+ * rebuilds it from TPIDR_EL1, which is what its own handler does. Nothing is
+ * pushed on EL1t, because there the SP the CPU left is not a stack the
+ * interrupted code was using.
  */
-#define US_SLOT_STUB_WORDS 21U
+#define US_SLOT_STUB_WORDS 18U
 #define US_SLOT_STUB_BYTES (US_SLOT_STUB_WORDS * 4U)
+#define US_SLOT_TARGET_WORDS 5U
+#define US_SLOT_TARGET_BYTES (US_SLOT_TARGET_WORDS * 4U)
+#define US_SLOT_RUNTIME_WORDS (US_SLOT_STUB_WORDS + US_SLOT_TARGET_WORDS)
+#define US_SLOT_RUNTIME_BYTES (US_SLOT_RUNTIME_WORDS * 4U)
+
+/* Stage this sequence after the stub before publishing a branch to it. */
+void usEncodeSlotTarget(uint32_t out[US_SLOT_TARGET_WORDS], uint64_t target);
+
+/* Atomically replace this first MOVZ with B after staging/cache maintenance. */
+uint32_t usSlotStubTargetIndex(bool save);
 
 void usEncodeSlotStub(uint32_t *out, uint64_t target, uint32_t tail0,
                       uint32_t tail1, bool save);
 
 /*
- * Where the saving form leaves them, and how much it took. The two saves are
- * the whole of it and they stay put, so the top of the area is the interrupted
- * stack pointer as the entry receives it. These are a property of the stub, so
- * they live beside it and reach the entry through the generated header rather
- * than being written out a second time in assembly.
+ * Where the saving form leaves x18, and how much it took. The save is the
+ * whole of it and it stays put, so the top of the area is the interrupted
+ * stack pointer as the entry receives it.
  */
-#define US_STUB_SAVE_BYTES 32U
+#define US_STUB_SAVE_BYTES 16U
 #define US_STUB_SAVE_X18 0U
-#define US_STUB_SAVE_X16 16U
-#define US_STUB_SAVE_X17 24U
 
 /*
  * The index of the first of the two tail words. A caller that has to encode a

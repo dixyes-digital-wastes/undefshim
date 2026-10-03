@@ -9,6 +9,7 @@
  * encoding happens to be.
  */
 
+#include <stdatomic.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -215,22 +216,90 @@ static void testBranchAlignment(void) {
 /* --- the vector slot stub ----------------------------------------------- */
 
 /*
- * The stub has to do two opposite things depending on the exception class,
- * and the whole reason it exists is the second one: an exception that is not
- * an undefined instruction must carry on into whatever the slot used to do.
+ * The stub decides between two exits using x18 alone. Everything it can be
+ * handed is run through a small interpreter, because the decision -- payload
+ * or the slot's own tail -- is the behaviour, and the behaviour is what has
+ * to be checked rather than the words that encode it.
  */
-/*
- * The index of the `br x16` that leaves for the payload. Found rather than
- * counted, because the form changes how many instructions come before it and
- * a number that has to be adjusted by hand is a number that will not be.
- */
-static uint32_t brIndex(const uint32_t *stub) {
-    for (uint32_t i = 0; i < US_SLOT_STUB_WORDS; i++) {
-        if (stub[i] == 0xD61F0200U) {   /* br x16 */
-            return i;
+#define STUB_MRS_ESR   0xD5385212U  /* mrs x18, esr_el1            */
+#define STUB_LSR_EC    0xD35AFE52U  /* lsr x18, x18, #26           */
+#define STUB_MRS_ELR   0xD5384032U  /* mrs x18, elr_el1            */
+#define STUB_LDR_W18   0xB9400252U  /* ldr w18, [x18]              */
+#define STUB_UBFX      0xD34A7652U  /* ubfx x18, x18, #10, #20     */
+#define STUB_SUB_HI    0xD1438A52U  /* sub x18, x18, #0xe2, lsl 12 */
+#define STUB_SUB_LO    0xD13FC252U  /* sub x18, x18, #0xff0        */
+#define STUB_PUSH_X18  0xF81F0FF2U  /* str x18, [sp, #-16]!        */
+#define STUB_POP_X18   0xF84107F2U  /* ldr x18, [sp], #16          */
+#define STUB_MRS_TPIDR 0xD538D092U  /* mrs x18, tpidr_el1          */
+#define STUB_AND_TPIDR 0x9274CE52U  /* and x18, x18, #~0xfff       */
+
+#define IS_CBNZ_X18(insn) (((insn) & 0xFF00001FU) == 0xB5000012U)
+
+static int32_t branch19(uint32_t insn) {
+    return (int32_t)(((insn >> 5) & 0x7FFFFU) << 13) >> 13;
+}
+
+/* What the stub did with one exception, as the next code would see it. */
+typedef struct StubRun_t {
+    bool     reachedPayload;
+    uint64_t payloadTarget;
+    bool     reachedTail;
+    bool     pushed;
+} StubRun;
+
+static void runStub(const uint32_t *stub, uint64_t esr, uint32_t insn,
+                    StubRun *out) {
+    uint64_t x18 = 0xDEAD'0000'BEEFULL;
+    size_t pc = 0;
+
+    out->reachedPayload = false;
+    out->reachedTail = false;
+    out->pushed = false;
+
+    for (;;) {
+        uint32_t w = stub[pc];
+        unsigned shift = HW(w) * 16U;
+
+        if (w == STUB_PUSH_X18) {
+            out->pushed = true;
+        } else if (w == STUB_MRS_ESR) {
+            x18 = esr;
+        } else if (w == STUB_LSR_EC) {
+            x18 >>= 26;
+        } else if (w == STUB_MRS_ELR) {
+            x18 = insn;
+        } else if (w == STUB_LDR_W18) {
+            x18 &= 0xFFFFFFFFULL;
+        } else if (w == STUB_UBFX) {
+            x18 = (insn >> 10) & 0xFFFFFULL;
+        } else if (w == STUB_SUB_HI) {
+            x18 -= 0xE2ULL << 12;
+        } else if (w == STUB_SUB_LO) {
+            x18 -= 0xFF0ULL;
+        } else if (IS_CBNZ_X18(w)) {
+            if (x18 != 0) {
+                pc = (size_t)((int32_t)pc + branch19(w));
+                continue;
+            }
+        } else if ((w & 0xFC000000U) == US_BRANCH_OPCODE) {
+            pc = (size_t)((int64_t)pc + branchOffset(w) / 4);
+            continue;
+        } else if ((w & MASK_MOVZ) == OP_MOVZ && RD(w) == 18U) {
+            x18 = (uint64_t)IMM16(w) << shift;
+        } else if ((w & MASK_MOVK) == OP_MOVK && RD(w) == 18U) {
+            x18 = (x18 & ~((uint64_t)0xFFFFU << shift))
+                  | ((uint64_t)IMM16(w) << shift);
+        } else if ((w & MASK_BR) == OP_BR && RN(w) == 18U) {
+            out->reachedPayload = true;
+            out->payloadTarget = x18;
+            return;
+        } else {
+            /* The first word the interpreter does not know is the tail. */
+            out->reachedTail = true;
+            return;
         }
+        pc++;
     }
-    return US_SLOT_STUB_WORDS;
 }
 
 static void testSlotStub(void) {
@@ -239,158 +308,211 @@ static void testSlotStub(void) {
     uint32_t tail0 = 0xD5384112U;   /* mrs x18, sp_el0 */
     uint32_t tail1 = 0x14000010U;
     uint32_t tailIndex = usSlotStubTailIndex(false);
+    StubRun run;
 
+    memset(stub, 0xA5, sizeof(stub));
     usEncodeSlotStub(stub, target, tail0, tail1, false);
 
-    /* Nothing is pushed: at this vector there may be no stack, and a write to
-     * the one in SP faults inside the exception it was meant to handle. */
-    for (int i = 0; i < (int)US_SLOT_STUB_WORDS; i++) {
-        ok("the stub touches no stack", (stub[i] & 0xFFC00000U) != 0xF8000000U);
+    /* No stack word anywhere: at this vector the SP the CPU left is not a
+     * stack the interrupted code was using. */
+    for (uint32_t i = 0; i < US_SLOT_STUB_WORDS; i++) {
+        ok("the stub never pushes but the saving form",
+           stub[i] != STUB_PUSH_X18);
     }
-    ok("it reads ESR_EL1", stub[0] == 0xD5385210U);
-    ok("it shifts the class down", stub[1] == 0xD35AFE10U);
-    ok("and branches on it", (stub[2] & 0xFF000000U) == 0xB5000000U);
+    ok("it reads ESR_EL1", stub[0] == STUB_MRS_ESR);
+    ok("it shifts the class down", stub[1] == STUB_LSR_EC);
+    ok("and branches on it", IS_CBNZ_X18(stub[2]));
 
-    /* The branch has to land on the tail, and the tail has to be the two
-     * words it was given, in order: one before the other means an exception
-     * that is not ours runs the branch and then the instruction. */
-    {
-        int32_t to = (int32_t)(((stub[2] >> 5) & 0x7FFFFU) << 13) >> 13;
+    /* Both decisions land on the restore that precedes the tail, and the
+     * tail is the two words it was given, in order. */
+    eq64("the tail is where the index says", (uint64_t)tailIndex, 16U);
+    eq64("the class branch lands on the restore",
+         (uint64_t)(2 + branch19(stub[2])), (uint64_t)(tailIndex - 2U));
+    ok("the instruction branch is conditional", IS_CBNZ_X18(stub[8]));
+    eq64("and it lands on the restore too",
+         (uint64_t)(8 + branch19(stub[8])), (uint64_t)(tailIndex - 2U));
+    eq64("the tail's first word is the slot's own", stub[tailIndex], tail0);
+    eq64("and the second follows it", stub[tailIndex + 1], tail1);
 
-        eq64("the class branch lands on the tail", (uint64_t)(2 + to), (uint64_t)tailIndex);
-        eq64("the tail's first word is the slot's own", stub[tailIndex], tail0);
-        eq64("and the second follows it", stub[tailIndex + 1], tail1);
-    }
+    /* x18 is rebuilt from TPIDR on the way to the tail, never popped. */
+    eq64("the tail path rebuilds x18", stub[tailIndex - 2U], STUB_MRS_TPIDR);
+    eq64("masked to its page", stub[tailIndex - 1U], STUB_AND_TPIDR);
 
-    /*
-     * What the instruction is decides which way the second branch goes, and
-     * that makes its condition the whole meaning of the stub. A branch whose
-     * condition field is left at zero is `b.eq`: it would send every
-     * exception that is ours to the tail, and every one that is not to the
-     * payload. That is the inverse, and it looks like nothing in the words.
-     */
-    ok("the instruction branch is conditional", (stub[9] & 0xFF000010U) == 0x54000000U);
-    eq64("and its condition is not-equal", (uint64_t)(stub[9] & 0xFU), 1U);
-    {
-        int32_t to = (int32_t)(((stub[9] >> 5) & 0x7FFFFU) << 13) >> 13;
+    /* The behaviour: an RCpc load leaves for the payload, anything else --
+     * another undefined instruction, or another class entirely -- goes to
+     * the tail. */
+    runStub(stub, 0, 0xF8BFC22AU /* ldapr x10, [x17] */, &run);
+    ok("an RCpc load reaches the payload", run.reachedPayload);
+    eq64("at the address it was given", run.payloadTarget, target);
 
-        eq64("and it lands on the tail too", (uint64_t)(9 + to), (uint64_t)tailIndex);
-    }
-    /* The first branch is not conditional at all, so it cannot be confused
-     * with the second. */
-    ok("the class branch has no condition", (stub[2] & 0xFF000000U) == 0xB5000000U);
+    runStub(stub, 0, 0x00000000U /* an undefined word that is not ours */, &run);
+    ok("another undefined instruction reaches the tail", run.reachedTail);
+    ok("without a push", !run.pushed);
 
-    /* The address is built from four halves, in order. */
-    {
-        uint32_t built[US_THUNK_WORDS];
-        uint32_t at = brIndex(stub) - 4;   /* the four halves before the br */
-
-        built[0] = US_STR_PRE;
-        for (int i = 0; i < 5; i++) {
-            built[1 + i] = stub[at + i];
-        }
-        eq64("the stub reaches the payload", runThunk(built, US_THUNK_WORDS), target);
-    }
+    runStub(stub, 0x3CULL << 26, 0, &run);
+    ok("a breakpoint reaches the tail too", run.reachedTail);
 }
 
 /*
- * The form that saves the registers, for the vector where a stack is
- * available.
- *
- * What it has to do that the other does not is keep all three of the registers
- * it spends, and hand them back on the way that needs them handed back. Both
- * branches to the tail reach the kernel's own code, which is entitled to what
- * was in them -- its own breakpoint services are `mov x16, #n; brk`, with the
- * number carried in x16 and read by the handler the tail reaches -- so that
- * way restores all three. The fall-through into the payload leaves the saves
- * where they are, because the entry reads them out of the save area and takes
- * the interrupted SP from the top of it.
- *
- * An earlier version restored on the fall-through as well. That is the one
- * arrangement the entry cannot read: two of the three then come from above the
- * stack, and the SP is taken sixteen bytes above where it was.
+ * The saving form, for the one vector with a stack to spend a word on: EL1h.
+ * Its single job the other form cannot do is carry x18 through the filter,
+ * which destroys it, and give it back on the way to the tail.
  */
 static void testSlotStubKeepingRegisters(void) {
     uint32_t stub[US_SLOT_STUB_WORDS];
     uint64_t target = 0x13bc00bb0ULL;
-    const uint32_t PUSH_PAIR = 0xA9BF47F0U;  /* stp x16, x17, [sp, #-16]! */
-    const uint32_t PUSH_X18 = 0xF81F0FF2U;   /* str x18, [sp, #-16]!      */
-    const uint32_t POP_X18 = 0xF84107F2U;    /* ldr x18, [sp], #16        */
-    const uint32_t POP_PAIR = 0xA8C147F0U;   /* ldp x16, x17, [sp], #16   */
     uint32_t tailIndex = usSlotStubTailIndex(true);
-    uint32_t pairPops = 0;
-    uint32_t x18Pops = 0;
-    uint32_t enter;
+    StubRun run;
 
+    memset(stub, 0xA5, sizeof(stub));
     usEncodeSlotStub(stub, target, 0xD5384112U, 0x14000010U, true);
 
-    /* All three of the registers the entry spends, not just two of them: the
-     * entry destroys x18 as well, and a register the entry destroys has to
-     * come back. */
-    eq64("the saving form saves the pair", stub[0], PUSH_PAIR);
-    eq64("and the third register", stub[1], PUSH_X18);
+    eq64("the saving form pushes x18 first", stub[0], STUB_PUSH_X18);
+    eq64("gives it back before the tail", stub[tailIndex - 1U], STUB_POP_X18);
+    eq64("and the tail is where the index says", (uint64_t)tailIndex, 16U);
+    eq64("the save area is the one push", US_STUB_SAVE_BYTES, 16U);
+    eq64("at its top", US_STUB_SAVE_X18, 0U);
 
-    for (uint32_t i = 0; i < US_SLOT_STUB_WORDS; i++) {
-        if (stub[i] == POP_PAIR) {
-            pairPops++;
-        }
-        if (stub[i] == POP_X18) {
-            x18Pops++;
-        }
-    }
-    eq64("and gives the pair back once", pairPops, 1U);
-    eq64("and the third register once", x18Pops, 1U);
+    /* Both branches land on the pop. */
+    eq64("the class branch lands on it",
+         (uint64_t)(3 + branch19(stub[3])), (uint64_t)(tailIndex - 1U));
+    eq64("so does the instruction branch",
+         (uint64_t)(9 + branch19(stub[9])), (uint64_t)(tailIndex - 1U));
 
-    /*
-     * The one restore is the tail's, and it restores in the reverse order of
-     * the save, because a stack does. The fall-through has none: the entry
-     * reads the saves where they are.
-     */
-    enter = tailIndex - 2U;
-    eq64("the way out restores the third", stub[enter], POP_X18);
-    eq64("and then the pair", stub[enter + 1U], POP_PAIR);
-    eq64("and the fall-through is the address build",
-         stub[enter - 5U] & 0xFFE00000U, 0xD2800000U);
+    /* The way in still reaches the payload, with x18 spent on the way. */
+    runStub(stub, 0, 0xF8BFC22AU, &run);
+    ok("an RCpc load still reaches the payload", run.reachedPayload);
+    eq64("at the address it was given", run.payloadTarget, target);
+    ok("and the save happened", run.pushed);
 
-    /* Both branches land on the second restore, not past it. */
-    {
-        int32_t a = (int32_t)(((stub[4] >> 5) & 0x7FFFFU) << 13) >> 13;
-        int32_t b = (int32_t)(((stub[11] >> 5) & 0x7FFFFU) << 13) >> 13;
-
-        eq64("the class branch lands on it", (uint64_t)(4 + a), (uint64_t)enter);
-        eq64("the instruction branch lands on it", (uint64_t)(11 + b),
-             (uint64_t)enter);
-    }
-    eq64("the tail is the slot's own words", stub[tailIndex], 0xD5384112U);
-    eq64("and the word after it", stub[tailIndex + 1], 0x14000010U);
-
-    /* The address still reaches the payload, which is what the fall-through
-     * is for. */
-    {
-        uint32_t built[US_THUNK_WORDS];
-        uint32_t at = brIndex(stub) - 4;
-
-        built[0] = US_STR_PRE;
-        for (int i = 0; i < 5; i++) {
-            built[1 + i] = stub[at + i];
-        }
-        eq64("and it still reaches the payload", runThunk(built, US_THUNK_WORDS), target);
-    }
-
-    /*
-     * The layout the entry reads these back through. The two pushes leave
-     * x18 lowest, then x16 and x17, and the constants published beside the
-     * stub have to say so: an entry reading the wrong slot gets another
-     * register's value with nothing to indicate it.
-     */
-    eq64("the save area is the two pushes", US_STUB_SAVE_BYTES, 32U);
-    eq64("x18 is at the bottom", US_STUB_SAVE_X18, 0U);
-    eq64("then x16", US_STUB_SAVE_X16, 16U);
-    eq64("then x17", US_STUB_SAVE_X17, 24U);
+    runStub(stub, 0, 0x00000000U, &run);
+    ok("another undefined instruction reaches the tail", run.reachedTail);
+    ok("after the pop", run.pushed);
 
     /* The longer form is the one the array has to fit. */
     ok("the array is sized for the longer form",
        usSlotStubTailIndex(true) + 2U <= US_SLOT_STUB_WORDS);
+}
+
+static void testSlotTargetEncoding(void) {
+    static const uint64_t targets[] = {
+        0, 1, 0x13bc00bb0ULL, 0xfffff8027ae81000ULL,
+        0x0123456789ABCDEFULL, 0xFFFFFFFFFFFFFFFFULL,
+    };
+
+    eq64("the legacy stub remains eighteen words", US_SLOT_STUB_WORDS, 18U);
+    eq64("the off-path target is five words", US_SLOT_TARGET_WORDS, 5U);
+    eq64("the runtime reserves twenty-three words", US_SLOT_RUNTIME_WORDS, 23U);
+    eq64("the runtime size is ninety-two bytes", US_SLOT_RUNTIME_BYTES, 92U);
+
+    for (size_t t = 0; t < sizeof(targets) / sizeof(targets[0]); t++) {
+        uint32_t target[US_SLOT_TARGET_WORDS + 1U];
+        StubRun run;
+
+        target[US_SLOT_TARGET_WORDS] = 0xA5A5A5A5U;
+        usEncodeSlotTarget(target, targets[t]);
+        eq64("target encoding stays within five words",
+             target[US_SLOT_TARGET_WORDS], 0xA5A5A5A5U);
+        eq64("the target byte size matches", US_SLOT_TARGET_BYTES,
+             US_SLOT_TARGET_WORDS * sizeof(uint32_t));
+        for (unsigned i = 0; i < 4U; i++) {
+            eq64("target immediate and shift encode x18", target[i],
+                 (i == 0 ? OP_MOVZ : OP_MOVK) | (i << 21)
+                 | ((uint32_t)((targets[t] >> (16U * i)) & 0xFFFFU) << 5)
+                 | 18U);
+        }
+        eq64("the target ends with BR x18", target[4], OP_BR | (18U << 5));
+        runStub(target, 0, 0, &run);
+        ok("the standalone target reaches its destination", run.reachedPayload);
+        eq64("including every high-VA half", run.payloadTarget, targets[t]);
+
+        for (unsigned saving = 0; saving < 2U; saving++) {
+            bool save = saving != 0;
+            uint32_t stub[US_SLOT_RUNTIME_WORDS];
+            uint32_t index = usSlotStubTargetIndex(save);
+
+            memset(stub, 0xA5, sizeof(stub));
+            usEncodeSlotStub(stub, targets[t], 0xD5384112U, 0x14000010U, save);
+            eq64("the target starts after the filter", index, 9U + saving);
+            ok("the legacy stub uses the shared target encoding",
+               memcmp(stub + index, target, US_SLOT_TARGET_BYTES) == 0);
+            for (unsigned i = US_SLOT_STUB_WORDS; i < US_SLOT_RUNTIME_WORDS; i++) {
+                eq64("legacy encoding leaves off-path space untouched",
+                     stub[i], 0xA5A5A5A5U);
+            }
+            runStub(stub, 0, 0xF8BFC22AU, &run);
+            ok("the legacy stub still reaches the payload", run.reachedPayload);
+            eq64("the legacy stub also encodes high VA", run.payloadTarget, targets[t]);
+            ok("legacy save behaviour is unchanged", run.pushed == save);
+        }
+    }
+}
+
+/* Host model only: runtime cache maintenance is outside the encoder. */
+static void runPublishedStub(const _Atomic uint32_t *runtime, uint64_t esr,
+                             uint32_t insn, StubRun *run) {
+    uint32_t snapshot[US_SLOT_RUNTIME_WORDS];
+
+    for (unsigned i = 0; i < US_SLOT_RUNTIME_WORDS; i++) {
+        snapshot[i] = atomic_load_explicit(runtime + i, memory_order_acquire);
+    }
+    runStub(snapshot, esr, insn, run);
+}
+
+static void testSlotTargetPublication(void) {
+    const uint64_t lowTarget = 0x13bc00bb0ULL;
+    const uint64_t highTarget = 0xfffff8027ae81000ULL;
+
+    for (unsigned saving = 0; saving < 2U; saving++) {
+        bool save = saving != 0;
+        uint32_t original[US_SLOT_STUB_WORDS];
+        uint32_t target[US_SLOT_TARGET_WORDS];
+        _Atomic uint32_t runtime[US_SLOT_RUNTIME_WORDS];
+        uint32_t index = usSlotStubTargetIndex(save);
+        uint32_t branch = 0;
+        StubRun run;
+
+        usEncodeSlotStub(original, lowTarget, 0xD5384112U, 0x14000010U, save);
+        usEncodeSlotTarget(target, highTarget);
+        for (unsigned i = 0; i < US_SLOT_RUNTIME_WORDS; i++) {
+            atomic_init(runtime + i, i < US_SLOT_STUB_WORDS ? original[i] : US_NOP);
+        }
+        ok("the publication branch can reach the off-path sequence",
+           usEncodeBranch(index * 4U, US_SLOT_STUB_BYTES, &branch));
+        eq64("the branch lands exactly after the old tail",
+             index * 4U + branchOffset(branch), US_SLOT_STUB_BYTES);
+
+        /* No prefix of the staged sequence is reachable before publication. */
+        for (unsigned staged = 0; staged <= US_SLOT_TARGET_WORDS; staged++) {
+            if (staged != 0) {
+                atomic_store_explicit(runtime + US_SLOT_STUB_WORDS + staged - 1U,
+                                      target[staged - 1U], memory_order_relaxed);
+            }
+            runPublishedStub(runtime, 0, 0xF8BFC22AU, &run);
+            ok("staging still enters the low-VA payload", run.reachedPayload);
+            eq64("staging cannot expose a partial target", run.payloadTarget, lowTarget);
+            ok("staging retains the original save behaviour", run.pushed == save);
+        }
+
+        atomic_store_explicit(runtime + index, branch, memory_order_release);
+        runPublishedStub(runtime, 0, 0xF8BFC22AU, &run);
+        ok("atomic publication enters the high-VA payload", run.reachedPayload);
+        eq64("publication reaches the complete high VA", run.payloadTarget, highTarget);
+        ok("publication retains the original save behaviour", run.pushed == save);
+        for (unsigned i = 0; i < US_SLOT_STUB_WORDS; i++) {
+            if (i != index) {
+                eq64("publication preserves filter, MOVK, restore and tail",
+                     atomic_load_explicit(runtime + i, memory_order_relaxed), original[i]);
+            }
+        }
+
+        runPublishedStub(runtime, 0, 0, &run);
+        ok("published stub still rejects unrelated undefined instructions", run.reachedTail);
+        ok("the rejected instruction keeps save behaviour", run.pushed == save);
+        runPublishedStub(runtime, 0x3CULL << 26, 0xF8BFC22AU, &run);
+        ok("published stub still rejects unrelated exception classes", run.reachedTail);
+        ok("the rejected class keeps save behaviour", run.pushed == save);
+    }
 }
 
 int main(void) {
@@ -400,6 +522,8 @@ int main(void) {
     testBranchAlignment();
     testSlotStub();
     testSlotStubKeepingRegisters();
+    testSlotTargetEncoding();
+    testSlotTargetPublication();
 
     printf("%d checks, %d failures\n", checks, failures);
     return failures != 0;
