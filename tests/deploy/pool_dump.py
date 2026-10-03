@@ -102,7 +102,8 @@ def main():
     f.readline()
     cmd(f, {"execute": "qmp_capabilities"})
 
-    total = PUBLIC_WORDS + TRACE_SLOTS * TRACE_WORDS + 1 + EMU_SLOTS * EMU_WORDS
+    total = (PUBLIC_WORDS + TRACE_SLOTS * TRACE_WORDS + 1 + EMU_SLOTS * EMU_WORDS
+             + TRACE_SLOTS * TRACE_WORDS)
     words = readAll(f, pool + 8, total)
     if len(words) < total:
         print("only %d of %d words could be read at 0x%x"
@@ -123,6 +124,8 @@ def main():
     emuCount = words[at]
     at += 1
     emu = words[at:at + EMU_SLOTS * EMU_WORDS]
+    at += EMU_SLOTS * EMU_WORDS
+    handback = words[at:at + TRACE_SLOTS * TRACE_WORDS]
 
     print("")
     print("the last up to %d exceptions, oldest first" % TRACE_SLOTS)
@@ -134,12 +137,23 @@ def main():
             index = entries - 1 - back
             slot = index % TRACE_SLOTS
             t = trace[slot * TRACE_WORDS:(slot + 1) * TRACE_WORDS]
+            h = handback[slot * TRACE_WORDS:(slot + 1) * TRACE_WORDS]
             print("  entry %d (slot %d): cpu=%d mpidr=0x%x"
                   % (index, slot, t[0], t[1]))
             frame = t[2:2 + 36]
-            for name, v in zip(FRAME, frame):
-                if v:
+            after = h[2:2 + 36]
+            for name, v, w in zip(FRAME, frame, after):
+                if v != w:
+                    print("      %-5s = 0x%-16x -> 0x%x   (changed)" % (name, v, w))
+                elif v:
                     print("      %-5s = 0x%x" % (name, v))
+            changed = [(n, a, b) for n, a, b in zip(FRAME, frame, after) if a != b]
+            if changed:
+                print("      *** %d registers changed between receiving and "
+                      "handing back: %s"
+                      % (len(changed), ", ".join(n for n, _, _ in changed)))
+            else:
+                print("      nothing changed between receiving and handing back")
 
     print("")
     print("%d loads carried out, the last up to %d:"

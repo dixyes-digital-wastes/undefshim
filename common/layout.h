@@ -166,6 +166,20 @@ typedef struct UsPoolEntry_t {
     /* The last few loads carried out, newest last once the ring has filled. */
     uint64_t emuCount;
     UsPoolEmu emu[US_POOL_EMU_SLOTS];
+
+    /*
+     * The same frames again, on the way out.
+     *
+     * What the handler received is not the same question as what it hands
+     * back, and only the first was being recorded. The second is the one that
+     * can be wrong: every register the interrupted code continues with came
+     * from here, so a register that is right on the way in and wrong in the
+     * code that ran next is wrong in between -- and between is this side.
+     *
+     * A pair per exception, at the same index, so the two can be compared
+     * without having to match them up by hand.
+     */
+    UsPoolTrace handback[US_POOL_TRACE_SLOTS];
 } UsPoolEntry;
 
 typedef struct UsPool_t {
