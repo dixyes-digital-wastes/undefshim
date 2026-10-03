@@ -102,7 +102,7 @@ int main(int argc, char **argv) {
     gSession.armEnabled = usConfigDebugBool(cfg, "arm", false);
     gSession.armSlot0 = usConfigDebugBool(cfg, "arm_slot0", true);
     gSession.spxStack = usConfigDebugBool(cfg, "spx_stack", false);
-    gSession.vamapEnabled = usConfigDebugBool(cfg, "vamap", false);
+    gSession.vamapEnabled = usConfigDebugBool(cfg, "vamap", gSession.armEnabled);
     /*
      * Not from the debug section: this one is a scanning decision and is
      * parsed into the configuration proper, under [scan]. Reading it here as
@@ -161,12 +161,7 @@ int main(int argc, char **argv) {
     }
     usConsolePuts("gmm: armed\n");
 
-    /*
-     * Off by default, and it is worth saying why the default is not the
-     * interesting direction: the record this leaves behind is readable from
-     * physical memory after the fact, but nothing consumes the addresses it
-     * finds yet. See vamap.h and the milestone notes.
-     */
+    /* The notification publishes high-VA exception targets before low VAs retire */
     if (gSession.vamapEnabled && !usVaMapArm(&gSession)) {
         usConsolePuts("vamap: cannot arm\n");
         usConsolePuts("US-M6-FAIL\n");

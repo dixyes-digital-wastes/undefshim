@@ -1,71 +1,177 @@
 #!/usr/bin/env python3
-"""Check that every register slot the entry writes into the frame is read back.
+"""Execute the entry's save/restore instructions with distinct register values.
 
-The entry's frame is written field by field and read back the same way, and
-the two lists are not in one place: the stores are in the middle of the file
-and the loads near the end, with the stack switch and the call to the handler
-between them. A slot written and never read is therefore invisible in both
-lists, and it is the worst kind of invisible: the interrupted code continues
-with a live register holding an address from this handler's own code, and the
-first instruction that treats it as a pointer writes wherever it points. That
-is what `ldr x11, [x9, #US_FRAME_X11]` was missing, and it cost several runs
-to find.
-
-The slots are counted from the field name rather than from the register the
-instruction names, because the two are not always the same: the three the
-bootstrap spends are stored out of a register that is not the one they belong
-to (`str x17, [x16, #US_FRAME_X16]`), and counting registers would leave those
-three out of the check entirely. A pair covers the slot it names and the one
-after it, which is what `stp` does.
-
-This is a text scan rather than a test of the generated code because the
-mistake is a missing line, and a line that is not there cannot be assembled
-to be examined.
-
-Usage: check_entry_frame.py [path to entry.S]
-Exit is non-zero when a slot is written and not read back.
+The generated stack lookup is tested separately. Start at its ready label and
+check each SPSR branch, both SP banks, and every possible emulation destination.
 """
 
+from pathlib import Path
 import re
 import sys
 
-STORE = re.compile(r"^\s*(str|stp)\s+[^[]*\[\s*x16,\s*#US_FRAME_X([0-9]+)\]")
-LOAD = re.compile(r"^\s*(ldr|ldp)\s+[^[]*\[\s*x9,\s*#US_FRAME_X([0-9]+)\]")
+MASK = (1 << 64) - 1
 
 
-def slots(match):
-    """The frame slots one instruction covers.
+def frameOffsets():
+    header = Path(__file__).resolve().parents[2] / "payload/payload.h"
+    text = re.sub(r"/\*.*?\*/", "", header.read_text(), flags=re.S)
+    body = re.search(r"typedef struct UsFrame_t\s*\{(.*?)\}", text, re.S).group(1)
+    offsets = {}
+    size = 0
+    for name, count in re.findall(r"uint64_t\s+(\w+)(?:\[(\d+)\])?\s*;", body):
+        if count:
+            assert name == "x"
+            for i in range(int(count)):
+                offsets["US_FRAME_X%d" % i] = size
+                size += 8
+        else:
+            offsets["US_FRAME_" + name.upper()] = size
+            size += 8
+    offsets["US_FRAME_STRIDE"] = size
+    return offsets
 
-    A pair covers two: it is written to the slot it names and the slot after
-    it, which is the layout the C structure has and the reason `stp` can be
-    used at all.
-    """
-    first = int(match.group(2))
-    return {first, first + 1} if match.group(1) in ("stp", "ldp") else {first}
+
+def instructions(text):
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.S)
+    code, labels = [], {}
+    for raw in text.splitlines():
+        line = raw.split("//", 1)[0].strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith((".macro", ".if", ".else", ".endif")):
+            raise AssertionError("expand conditional assembly before checking")
+        if line.startswith("."):
+            continue
+        if line.endswith(":"):
+            labels[line[:-1]] = len(code)
+            continue
+        op, _, operands = line.partition(" ")
+        args = re.split(r",\s*(?![^\[]*\])", operands.strip())
+        code.append((op, args))
+    return code, labels
+
+
+def roundTrip(code, labels, offsets, mode, destination, claimed=True):
+    original = {"x%d" % i: 0x10000000 + i * 0x100 for i in range(31)}
+    system = {"sp_el0": 0x400000, "tpidr_el1": 0x120123,
+              "spsr_el1": 0xA00003C0 | mode, "elr_el1": 0x20000000,
+              "esr_el1": 0x02000000, "far_el1": 0x500000}
+    entrySp, stackTop = 0x300000, 0x800000
+    if mode == 4:
+        original["x18"] = system["tpidr_el1"] & ~0xFFF
+    regs = dict(original, sp=entrySp, x18=stackTop)
+    memory = {}
+    if mode in (0, 5):
+        regs["sp"] -= 16
+        memory[regs["sp"]] = original["x18"]
+    expectedSp = entrySp if mode == 5 else system["sp_el0"]
+    expectedElr = system["elr_el1"] + 4
+    expectedSpsr = system["spsr_el1"]
+    expectedGpr = dict(original)
+    pc, equal, called = labels["usSyncStackReady"], False, False
+
+    def value(operand):
+        if operand.startswith("#"):
+            operand = operand[1:]
+            return offsets[operand] if operand in offsets else int(operand, 0)
+        return 0 if operand == "xzr" else regs[operand]
+
+    for _ in range(256):
+        op, args = code[pc]
+        pc += 1
+        if op in ("str", "stp", "ldr", "ldp"):
+            m = re.fullmatch(r"\[(\w+)(?:,\s*(#[^\]]+))?\](!?)", args[-1])
+            assert m, "unsupported memory operand: %s" % args[-1]
+            base, offset, update = m.groups()
+            address = regs[base] + (value(offset) if offset else 0)
+            if update:
+                regs[base] = address
+            for i, register in enumerate(args[:-1]):
+                if op in ("str", "stp"):
+                    memory[address + i * 8] = value(register)
+                else:
+                    regs[register] = memory[address + i * 8]
+        elif op in ("add", "sub", "and"):
+            left, right = value(args[1]), value(args[2])
+            result = left + right if op == "add" else left - right if op == "sub" else left & right
+            regs[args[0]] = result & MASK
+        elif op == "mov":
+            regs[args[0]] = value(args[1])
+        elif op == "mrs":
+            regs[args[0]] = system[args[1]]
+        elif op == "msr":
+            if args[0] != "daifset":
+                system[args[0]] = value(args[1])
+        elif op == "cmp":
+            equal = value(args[0]) == value(args[1])
+        elif op == "b":
+            pc = labels[args[0]]
+        elif op == "b.eq":
+            if equal:
+                pc = labels[args[0]]
+        elif op in ("cbz", "cbnz"):
+            if (value(args[0]) == 0) == (op == "cbz"):
+                pc = labels[args[1]]
+        elif op == "bl":
+            assert args == ["usPayloadHandle"] and not called
+            called = True
+            frame = regs["x0"]
+            assert frame == regs["sp"] == regs["x19"], "handler frame pointer differs"
+            for i in range(31):
+                assert memory[frame + offsets["US_FRAME_X%d" % i]] == original["x%d" % i], "incorrect save of x%d" % i
+            assert memory[frame + offsets["US_FRAME_SP"]] == expectedSp, "wrong interrupted SP bank"
+            assert memory[frame + offsets["US_FRAME_STRIDE"]] == entrySp, "wrong saved entry SP"
+            for name in ("ELR", "SPSR", "ESR", "FAR"):
+                assert memory[frame + offsets["US_FRAME_" + name]] == system[name.lower() + "_el1"], "incorrect " + name
+            if destination is not None:
+                replacement = 0xB0000000 + destination
+                memory[frame + offsets["US_FRAME_X%d" % destination]] = replacement
+                expectedGpr["x%d" % destination] = replacement
+            memory[frame + offsets["US_FRAME_ELR"]] = expectedElr
+            for i in list(range(19)) + [30]:
+                regs["x%d" % i] = 0xDEAD0000 + i
+            regs["x0"] = int(claimed)
+            system["elr_el1"], system["spsr_el1"] = 0, 0
+        elif op == "wfi":
+            assert called and not claimed, "unexpected halt"
+            assert code[pc] == ("b", ["usSyncNoForward"]), "halt does not loop quietly"
+            return
+        elif op == "eret":
+            assert called and claimed
+            for register, expected in expectedGpr.items():
+                assert regs[register] == expected, "incorrect restore of " + register
+            assert regs["sp"] == entrySp, "entry SP_EL1 was not restored"
+            assert system["sp_el0"] == 0x400000, "SP_EL0 was changed"
+            assert system["elr_el1"] == expectedElr, "ELR was not restored"
+            assert system["spsr_el1"] == expectedSpsr, "SPSR was not restored"
+            return
+        else:
+            raise AssertionError("unsupported entry instruction: " + op)
+    raise AssertionError("entry did not return or halt")
+
+
+def check(text):
+    code, labels = instructions(text)
+    offsets = frameOffsets()
+    assert labels["usSyncEntry"] == labels["usSyncEntrySp0"], "entries do not share the checked path"
+    assert code[labels["usSyncEntry"]:labels["usSyncStackReady"]] == [
+        ("msr", ["daifset", "#0xF"]), ("b", ["usStackLookup"])], "entry spends GPRs before the lookup"
+    assert code[labels["usSyncNoStack"]:labels["usSyncNoStack"] + 2] == [
+        ("wfi", [""]), ("b", ["usSyncNoStack"])], "unknown CPU does not halt quietly"
+    for mode in (0, 4, 5):
+        for destination in [None] + list(range(31)):
+            roundTrip(code, labels, offsets, mode, destination)
+        roundTrip(code, labels, offsets, mode, None, claimed=False)
 
 
 def main():
-    path = sys.argv[1] if len(sys.argv) > 1 else "payload/entry.S"
-    stored = set()
-    read = set()
-
-    for line in open(path):
-        m = STORE.match(line)
-        if m:
-            stored |= slots(m)
-            continue
-        m = LOAD.match(line)
-        if m:
-            read |= slots(m)
-
-    missing = sorted(stored - read)
-    print("%s: slots written %s" % (path, sorted(stored)))
-    print("%s: slots read back %s" % (" " * len(path), sorted(read)))
-    if missing:
-        print("FAIL: %s written and never read back"
-              % ", ".join("x%d" % n for n in missing))
+    path = Path(sys.argv[1] if len(sys.argv) > 1 else "payload/entry.S")
+    try:
+        check(path.read_text())
+    except (AssertionError, KeyError, ValueError, IndexError) as exc:
+        print("FAIL %s: %s" % (path, exc))
         return 1
-    print("PASS: every slot the entry writes is read back")
+    print("PASS %s: all 31 register slots, three SP paths, and unclaimed halt" % path)
     return 0
 
 

@@ -19,6 +19,13 @@ bool usSessionInit(UsSession *s) {
 
     /* Read once: the tables are the boot's and are gone with it. */
     s->cpus = usAcpiProbeCpus();
+    if (s->cpus.count == 0) {
+        uint64_t mpidr;
+
+        __asm__ volatile("mrs %0, mpidr_el1" : "=r"(mpidr));
+        s->cpus.mpidr[0] = mpidr & US_MPIDR_AFFINITY_MASK;
+        s->cpus.count = 1;
+    }
 
     if (!usPoolAllocate(&s->poolAlloc)) {
         return false;

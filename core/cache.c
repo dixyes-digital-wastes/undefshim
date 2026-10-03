@@ -6,9 +6,7 @@
  * instructions behind.
  */
 
-#include <uefi.h>
-
-#include "uefi/src/cache.h"
+#include "core/cache.h"
 
 static uint32_t dataCacheLineSize(void) {
     uint64_t ctr;

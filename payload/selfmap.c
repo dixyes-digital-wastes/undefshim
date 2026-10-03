@@ -2,31 +2,8 @@
  * Finding our own mapping, see selfmap.h.
  */
 
-#include "core/par.h"
+#include "core/translate.h"
 #include "payload/selfmap.h"
-
-/*
- * Asks the hardware what an address translates to.
- *
- * The instruction is synchronising in one direction only, so a barrier is
- * needed before the result register is read; without it the value read can be
- * the one from the previous attempt, which produces an answer that looks
- * perfectly reasonable and belongs to a different address.
- */
-static uint64_t translate(uint64_t va) {
-    uint64_t par;
-
-    /*
-     * The address goes in a register, and the result is read after a barrier:
-     * the instruction synchronises in one direction only, so without it the
-     * value read can be the previous attempt's, which is a perfectly
-     * reasonable answer belonging to a different address.
-     */
-    __asm__ volatile("at s1e1r, %1\n\tisb\n\tmrs %0, par_el1"
-                     : "=r"(par)
-                     : "r"(va));
-    return par;
-}
 
 UsSelfMap usSelfMapFind(uint64_t targetPa, uint64_t targetBytes, uint64_t nearVa) {
     UsSelfMap out = { 0 };
@@ -75,7 +52,7 @@ UsSelfMap usSelfMapFind(uint64_t targetPa, uint64_t targetBytes, uint64_t nearVa
     base = (nearVa & ~(US_PAGE_SIZE - 1)) - US_SELFMAP_WINDOW;
 
     for (va = base; va <= base + 2 * US_SELFMAP_WINDOW; va += US_PAGE_SIZE) {
-        UsPar par;
+        uint64_t pa;
 
         if (out.probes >= US_SELFMAP_MAX_PROBES) {
             out.exhausted = true;
@@ -83,12 +60,11 @@ UsSelfMap usSelfMapFind(uint64_t targetPa, uint64_t targetBytes, uint64_t nearVa
         }
         out.probes++;
 
-        par = usParDecode(translate(va));
-        if (!par.valid) {
+        if (!usTranslateAddress(va, false, &pa)) {
             out.faulted = true;
             continue;
         }
-        if (par.pa != (targetPa & ~(US_PAGE_SIZE - 1))) {
+        if (pa != (targetPa & ~(US_PAGE_SIZE - 1))) {
             continue;
         }
 

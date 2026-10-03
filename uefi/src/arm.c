@@ -7,7 +7,9 @@
 #include "common/layout.h"
 #include "core/scan.h"
 #include "core/thunk.h"
+#include "core/translate.h"
 #include "payload_blob.h"
+#include "payload/payload.h"
 #include "transfer_blob.h"
 #include "uefi/src/arm.h"
 #include "uefi/src/cache.h"
@@ -123,7 +125,8 @@ typedef struct UsArmTarget_t {
 } UsArmTarget;
 
 static bool armSlot(UsSession *s, const UsArmTarget *target, uint32_t next) {
-    uint32_t stub[US_SLOT_STUB_WORDS];
+    uint32_t stub[US_SLOT_RUNTIME_WORDS];
+    UsPayloadConfig *cfg = (UsPayloadConfig *)(uintptr_t)s->payloadPlace.configVa;
     uint8_t *slotAt;
     uint8_t *stubAt;
     uint32_t original;
@@ -131,30 +134,53 @@ static bool armSlot(UsSession *s, const UsArmTarget *target, uint32_t next) {
     uint32_t tail0;
     uint32_t tail1;
     /*
-     * Whether this slot's stub may use the interrupted stack, and with it
-     * which of the payload's two entries it reaches.
+     * Whether this slot's stub may spend a stack word, and with it whether the
+     * entry reads the saved x18 from the interrupted stack or rebuilds it.
      *
-     * It may where execution was using SP_EL0: that is a stack, the
-     * interrupted stack pointer is still in SP, and the stub pushes the
-     * registers the entry spends so the entry can give them back. It may not
-     * where SP holds whatever SP_EL1 happened to be.
-     *
-     * spxStack overrides the second half, and exists to test it rather than
-     * believe it: a recorded probe once said pushing on the EL1h vector faults
-     * until the machine resets, and a frame read since then shows SP holding
-     * an ordinary kernel stack with the frame pointer equal to it. Both cannot
-     * be true, and one run with the flag on settles which is.
+     * Only the EL1h vector may: there SP is the interrupted kernel stack, and
+     * the ABI red zone below it is guaranteed not to be disturbed by the
+     * exception itself. On the EL1t vector SP is the entry bank's value, not a
+     * stack the interrupted code was using, so nothing is pushed and the
+     * entry rebuilds x18 from TPIDR_EL1, exactly as the kernel's own handler
+     * for that vector does.
      */
-    bool el1t = target->slot == UsVectorSlotEl1tSync;
-    bool save = el1t || s->spxStack;
-    uint32_t entryOffset = save ? US_PAYLOAD_ENTRYSP0_OFFSET
-                                : US_PAYLOAD_ENTRY_OFFSET;
+    bool save = target->slot == UsVectorSlotEl1hSync;
+    uint32_t entryOffset = US_PAYLOAD_ENTRY_OFFSET;
 
     slotAt = (uint8_t *)(uintptr_t)usImageRvaToPtr(target->image,
                                                    target->tableRva
                                                        + (uint32_t)target->slot * 0x80U);
     stubAt = (uint8_t *)(uintptr_t)usImageRvaToPtr(target->image, target->stubRva);
-    if (slotAt == NULL || stubAt == NULL) {
+    if (slotAt == NULL || stubAt == NULL || cfg->stubCount >= US_PAYLOAD_MAX_STUBS) {
+        return false;
+    }
+    uint64_t tableAddress = (uintptr_t)usImageRvaToPtr(target->image, target->tableRva);
+    uint64_t tablePa;
+    uint64_t stubPa;
+    uint64_t lastPa;
+    if (!usTranslateAddress(tableAddress, false, &tablePa)
+        || !usTranslateAddress((uintptr_t)stubAt, true, &stubPa)
+        || !usTranslateAddress((uintptr_t)stubAt + sizeof(stub) - 1, true, &lastPa)
+        || lastPa != stubPa + sizeof(stub) - 1) {
+        uint64_t el;
+        uint64_t sctlr1;
+        uint64_t sctlr2 = 0;
+        __asm__ volatile("mrs %0, CurrentEL\n\tmrs %1, sctlr_el1"
+                         : "=r"(el), "=r"(sctlr1));
+        if (el == 8) {
+            __asm__ volatile("mrs %0, sctlr_el2" : "=r"(sctlr2));
+        }
+        usConsolePuts("arm: translate refused el=");
+        usConsolePutHex(el);
+        usConsolePuts(" sctlr1=");
+        usConsolePutHex(sctlr1);
+        usConsolePuts(" sctlr2=");
+        usConsolePutHex(sctlr2);
+        usConsolePuts(" table=");
+        usConsolePutHex(tableAddress);
+        usConsolePuts(" stub=");
+        usConsolePutHex((uintptr_t)stubAt);
+        usConsolePuts("\n");
         return false;
     }
     original = (uint32_t)slotAt[0] | ((uint32_t)slotAt[1] << 8)
@@ -168,14 +194,9 @@ static bool armSlot(UsSession *s, const UsArmTarget *target, uint32_t next) {
      *
      * A slot holding a branch keeps its meaning, adjusted for the distance the
      * stub is away from it. A slot holding a handler written out in place runs
-     * its first instruction and continues past it. That is faithful because of
-     * what the stub has and has not done by then: it writes no memory, and the
-     * only registers it has is x16 and x17, which the platform does not
-     * preserve across this vector. This matters because Windows takes its
-     * exceptions on SP_EL0, and the kernel's table has the handler at that
-     * offset written out rather than branched to: leaving that slot alone
-     * leaves the exceptions this project exists for going to a handler that
-     * has never heard of an RCpc load.
+     * its first instruction and continues past it. The stub now touches only
+     * x18, and gives that back before the tail runs, so the tail is reached
+     * with every register but NZCV flags as the exception left them.
      */
     {
         uint32_t tailIndex = usSlotStubTailIndex(save);
@@ -210,8 +231,18 @@ static bool armSlot(UsSession *s, const UsArmTarget *target, uint32_t next) {
 
     usEncodeSlotStub(stub, s->payloadPlace.baseVa + entryOffset, tail0, tail1,
                      save);
-    memcpy(stubAt, stub, US_SLOT_STUB_BYTES);
-    usCacheFlushRange(stubAt, US_SLOT_STUB_BYTES);
+    usEncodeSlotTarget(stub + US_SLOT_STUB_WORDS,
+                       s->payloadPlace.baseVa + entryOffset);
+    memcpy(stubAt, stub, sizeof(stub));
+    usCacheFlushRange(stubAt, sizeof(stub));
+    cfg->stubs[cfg->stubCount++] = (UsPayloadStub){
+        .address = (uint64_t)(uintptr_t)stubAt,
+        .tableAddress = tableAddress,
+        .imageAddress = (uintptr_t)target->image->base,
+        .tablePa = tablePa,
+        .addressPa = stubPa,
+        .targetIndex = usSlotStubTargetIndex(save),
+    };
 
     /* The slot last: until the stub is there, a branch into it would be a
      * branch into whatever the hole held, which is zeroes. */
@@ -258,7 +289,8 @@ static bool armImage(UsSession *s, UsImageKind kind, size_t *armed) {
      * Where the stubs go. The hole has to be in the same image as the slots,
      * for the branch that reaches it.
      */
-    hole = usLocateSpareSlot(img, US_SLOT_STUB_BYTES * US_STUB_SLOTS);
+    hole = usLocateSpareSlot(img, US_SLOT_RUNTIME_BYTES * US_STUB_SLOTS
+                                 * (uint32_t)tables.count);
     if (!hole.found) {
         usConsolePuts("arm: no room in ");
         usConsolePuts(usImageKindName(kind));
@@ -286,7 +318,7 @@ static bool armImage(UsSession *s, UsImageKind kind, size_t *armed) {
                 .image = img,
                 .tableRva = tables.rvas[i],
                 .stubRva = hole.rva
-                           + (uint32_t)(i * US_STUB_SLOTS + k) * US_SLOT_STUB_BYTES,
+                           + (uint32_t)(i * US_STUB_SLOTS + k) * US_SLOT_RUNTIME_BYTES,
                 .slot = s->armSlot0 ? slots[k] : UsVectorSlotEl1hSync,
             };
 

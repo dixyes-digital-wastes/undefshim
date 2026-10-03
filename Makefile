@@ -31,7 +31,8 @@ PAYLOAD_CFLAGS := --target=aarch64-none-elf -std=gnu23 -ffreestanding \
 
 PAYLOAD_SRCS := $(PAYLOAD_DIR)/payload.c $(PAYLOAD_DIR)/uart.c $(PAYLOAD_DIR)/us_mem.c \
                 $(PAYLOAD_DIR)/selfmap.c $(PAYLOAD_DIR)/transfer.c $(PAYLOAD_DIR)/vamap.c \
-                core/pgtable.c core/par.c core/ldapr.c core/ldr.c
+                $(PAYLOAD_DIR)/early.c core/cache.c core/thunk.c \
+                core/pgtable.c core/par.c core/ldapr.c core/ldr.c core/stackgen.c core/translate.c
 PAYLOAD_ASM := $(PAYLOAD_DIR)/entry.S $(PAYLOAD_DIR)/end.S
 PAYLOAD_OBJS := $(patsubst %.c,$(PAYLOAD_BUILD)/%.o,$(notdir $(PAYLOAD_SRCS))) \
                 $(patsubst $(PAYLOAD_DIR)/%.S,$(PAYLOAD_BUILD)/%.o,$(PAYLOAD_ASM))
@@ -88,7 +89,7 @@ DRIVER_MAIN ?= uefi/src/driver.c
 DRIVER_MAIN_OBJ := $(BUILD_DIR)/driver_main.o
 
 DRIVER_SRCS := uefi/src/config.c uefi/src/registry.c \
-               uefi/src/loadimage_hook.c uefi/src/cache.c uefi/src/console.c \
+               uefi/src/loadimage_hook.c core/cache.c uefi/src/console.c \
                uefi/src/pool.c uefi/src/service_hook.c uefi/src/gmm_hook.c \
                uefi/src/patch.c uefi/src/work.c uefi/src/payload_place.c uefi/src/arm.c \
                uefi/src/rewrite.c \
@@ -96,7 +97,7 @@ DRIVER_SRCS := uefi/src/config.c uefi/src/registry.c \
                uefi/src/vamap.c \
                uefi/src/session.c \
                core/cfg.c core/pe.c core/scan.c core/plan.c core/rva_patch.c core/pool.c \
-               core/thunk.c core/ldapr.c core/acpi.c \
+               core/thunk.c core/ldapr.c core/acpi.c core/stackgen.c core/translate.c \
                $(TOML)/toml.c
 DRIVER_ASM := uefi/src/stack.S
 DRIVER_OBJS := $(DRIVER_MAIN_OBJ) \
@@ -179,7 +180,8 @@ $(PAYLOAD_HDR): $(PAYLOAD_BIN)
 	@printf '#define US_PAYLOAD_BYTES %s\n' "$$(stat -c %s $<)" >> $@
 	@for sym in usSyncEntry:ENTRY usSyncEntrySp0:ENTRYSP0 usPayloadConfigBlock:CONFIG usPayloadSelfTest:SELFTEST \
 	           usPayloadHandle:HANDLE usTransferEntry:TRANSFER usVaMapRecord:VAMAP \
-	           usVaMapHook:VAMAPHOOK usVaMapNotify:VAMAPNOTIFY; do \
+	           usVaMapHook:VAMAPHOOK usVaMapNotify:VAMAPNOTIFY \
+	           usStackLookup:STACKLOOKUP usSyncStackReady:READY usSyncNoStack:NOSTACK; do \
 	    name=$${sym%%:*}; tag=$${sym##*:}; \
 	    off=$$(llvm-nm $(PAYLOAD_ELF) | awk -v w="$$name" \
 	        '$$3==w {v=strtonum("0x"$$1)} $$3=="usPayloadStart" {s=strtonum("0x"$$1)} END{print v-s}'); \
@@ -277,7 +279,7 @@ run: esp
 check:
 	@$(MAKE) --no-print-directory -C $(POSIX_UEFI_TESTS) check
 	@$(MAKE) --no-print-directory -C $(TOML_TESTS) check
-	@$(MAKE) --no-print-directory -C tests/unit check
+	@$(MAKE) --no-print-directory -C tests/unit check BUILD_DIR=$(BUILD_DIR)
 	@$(MAKE) --no-print-directory -C $(TOOLS_TESTS) check CORPUS=$(CORPUS) PLAN_CORPUS=$(PLAN_CORPUS)
 
 # Checks that boot the image. Slower, but this is the only evidence that
