@@ -72,6 +72,24 @@ def processors(sock_file):
                  for m in re.finditer(r"CPU#(\d+)\s*\n\s*PC=([0-9a-f]+)", out))
 
 
+def connect(port, timeout):
+    """The monitor, or None when there is nothing to talk to.
+
+    A machine that has reset is a machine whose monitor socket is gone, and
+    that is an answer rather than a failure: it is what a triple fault looks
+    like from outside. Raising here instead reported it as the tool breaking.
+    """
+    try:
+        sock = socket.create_connection(("127.0.0.1", port), timeout=timeout)
+        sock.settimeout(timeout)
+        f = sock.makefile("rwb")
+        f.readline()
+        cmd(f, {"execute": "qmp_capabilities"})
+        return sock, f
+    except (OSError, SystemExit, TimeoutError):
+        return None, None
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--qmp-port", type=int, default=4447)
@@ -84,10 +102,10 @@ def main():
                     help="report every this many samples")
     args = ap.parse_args()
 
-    sock = socket.create_connection(("127.0.0.1", args.qmp_port), timeout=20)
-    f = sock.makefile("rwb")
-    f.readline()
-    cmd(f, {"execute": "qmp_capabilities"})
+    sock, f = connect(args.qmp_port, 20)
+    if sock is None:
+        print("the machine is not there to watch", flush=True)
+        return 2
 
     if args.shots:
         os.makedirs(args.shots, exist_ok=True)

@@ -416,9 +416,16 @@ spx_stack = %s
             log("the machine was still working when the watch ran out")
             return 1
         if verdict == 2:
-            log("the machine went away")
-            return 1
+            # The monitor is gone, which is what a machine that reset looks
+            # like from outside -- a triple fault with no reboot ends QEMU.
+            # That is a result, not a failure of the watch.
+            log("the machine went away: it reset, and QEMU exited")
+            tail = open(serialLog, "rb").read().decode("latin1")[-1200:]
+            log("last serial output:\n%s" % tail)
+            return 2
 
+        # The colour is necessary and not sufficient: it says a bugcheck was
+        # drawn, not which one. The code and its arguments come from memory.
         qmp = socket.create_connection(("127.0.0.1", args.qmp_port), timeout=20)
         qmpFile = qmp.makefile("rwb")
         qmpFile.readline()
