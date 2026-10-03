@@ -1,0 +1,160 @@
+#!/usr/bin/env python3
+"""Read the payload's record out of a stopped machine and lay it out.
+
+The payload cannot write to the console once the kernel has its own page
+tables, so the pool is the only channel it has. The monitor can read the pool
+afterwards, and this prints everything in it in the shapes the C structures
+have: the summary, the rolling ring of whole frames, and the rolling ring of
+carried-out loads.
+
+The frames are the part that answers "what did the interrupted code have in
+this register", which is what a stop needs and what nothing else can supply.
+The loads are the part that answers "did the value we put there come from
+somewhere sensible".
+
+Usage: pool_dump.py [--qmp-port N] [--pool ADDR] [--serial FILE]
+The pool address is taken from the serial log when it is not given.
+"""
+
+import argparse
+import json
+import re
+import socket
+import sys
+
+MAGIC = 0x5952544E55504355  # "UCPUNTRY"
+
+# The C structures, counted out as they are laid out. They are written here
+# rather than derived, because the point of printing them is to check what the
+# C side actually produced.
+PUBLIC = ["magic", "entries", "handled", "lastEsr", "lastElr", "lastFar",
+          "lastCpu", "lastSp", "lastInsn", "emuInsn", "emuAddr", "emuValue",
+          "emuElr", "emuX0", "emuX9"]
+PUBLIC_WORDS = len(PUBLIC)
+TRACE_SLOTS = 8
+TRACE_WORDS = 38          # cpu, mpidr, then the 36 words of the frame
+EMU_SLOTS = 8
+EMU_WORDS = 5             # elr, insn, rt, address, value
+
+FRAME = ["x%d" % i for i in range(31)] + ["sp", "elr", "spsr", "esr", "far"]
+
+
+def cmd(f, obj):
+    f.write((json.dumps(obj) + "\n").encode())
+    f.flush()
+    while True:
+        line = f.readline()
+        if not line:
+            raise OSError("the monitor closed the connection")
+        r = json.loads(line)
+        if "return" in r or "error" in r:
+            return r
+
+
+def readPhysical(f, addr, count):
+    out = cmd(f, {"execute": "human-monitor-command",
+                  "arguments": {"command-line":
+                                "xp /%dgx 0x%x" % (min(count, 128), addr)}}).get("return", "")
+    values = []
+    for line in out.splitlines():
+        if ":" not in line:
+            continue
+        values += [int(v, 16) for v in line.split(":", 1)[1].split()]
+    return values
+
+
+def readAll(f, addr, count):
+    """The monitor caps one command, so ask in blocks."""
+    out = []
+    done = 0
+    while done < count:
+        want = min(count - done, 128)
+        block = readPhysical(f, addr + done * 8, want)
+        if not block:
+            break
+        out += block
+        done += len(block)
+    return out
+
+
+def poolFromSerial(path):
+    text = open(path, "rb").read().decode("latin1")
+    m = re.search(r"pool: pa=0x([0-9a-f]+)", text)
+    return int(m.group(1), 16) if m else None
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--qmp-port", type=int, default=4447)
+    ap.add_argument("--pool", type=lambda s: int(s, 16), default=None)
+    ap.add_argument("--serial", default="/tmp/alive.serial")
+    args = ap.parse_args()
+
+    pool = args.pool
+    if pool is None:
+        pool = poolFromSerial(args.serial)
+    if pool is None:
+        print("no pool address: not in the serial log, and none given")
+        return 1
+
+    sock = socket.create_connection(("127.0.0.1", args.qmp_port), timeout=20)
+    f = sock.makefile("rwb")
+    f.readline()
+    cmd(f, {"execute": "qmp_capabilities"})
+
+    total = PUBLIC_WORDS + TRACE_SLOTS * TRACE_WORDS + 1 + EMU_SLOTS * EMU_WORDS
+    words = readAll(f, pool + 8, total)
+    if len(words) < total:
+        print("only %d of %d words could be read at 0x%x"
+              % (len(words), total, pool + 8))
+        return 1
+
+    at = 0
+    print("record at 0x%x" % (pool + 8))
+    head = words[at:at + PUBLIC_WORDS]
+    at += PUBLIC_WORDS
+    print("  magic %s" % ("ok" if head[0] == MAGIC else "ABSENT (0x%x)" % head[0]))
+    for name, v in zip(PUBLIC[1:], head[1:]):
+        print("    %-9s = 0x%x" % (name, v))
+
+    entries = head[1]
+    trace = words[at:at + TRACE_SLOTS * TRACE_WORDS]
+    at += TRACE_SLOTS * TRACE_WORDS
+    emuCount = words[at]
+    at += 1
+    emu = words[at:at + EMU_SLOTS * EMU_WORDS]
+
+    print("")
+    print("the last up to %d exceptions, oldest first" % TRACE_SLOTS)
+    if entries == 0:
+        print("  none: the handler was never entered")
+    else:
+        shown = min(entries, TRACE_SLOTS)
+        for back in range(shown - 1, -1, -1):
+            index = entries - 1 - back
+            slot = index % TRACE_SLOTS
+            t = trace[slot * TRACE_WORDS:(slot + 1) * TRACE_WORDS]
+            print("  entry %d (slot %d): cpu=%d mpidr=0x%x"
+                  % (index, slot, t[0], t[1]))
+            frame = t[2:2 + 36]
+            for name, v in zip(FRAME, frame):
+                if v:
+                    print("      %-5s = 0x%x" % (name, v))
+
+    print("")
+    print("%d loads carried out, the last up to %d:"
+          % (emuCount, EMU_SLOTS))
+    if emuCount == 0:
+        print("  none")
+    else:
+        shown = min(emuCount, EMU_SLOTS)
+        for back in range(shown - 1, -1, -1):
+            index = emuCount - 1 - back
+            e = emu[(index % EMU_SLOTS) * EMU_WORDS:(index % EMU_SLOTS + 1) * EMU_WORDS]
+            print("  #%d elr=0x%x insn=0x%08x rt=%d addr=0x%x value=0x%x"
+                  % (index, e[0], e[1], e[2], e[3], e[4]))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
