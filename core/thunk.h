@@ -50,7 +50,7 @@ void usEncodeThunk(uint32_t out[US_THUNK_WORDS], uint64_t target);
  *   movz x16, ...                four halves of the payload's address
  *   br   x16
  * tail:
- *   the slot's own behaviour, two instructions
+ *   the two saves given back, then the slot's own behaviour, two instructions
  *
  * The instruction is examined rather than only the class, and that is what
  * makes the tail safe to reach. Windows uses `udf` as a trap of its own, and
@@ -64,8 +64,10 @@ void usEncodeThunk(uint32_t out[US_THUNK_WORDS], uint64_t target);
  * mask clears, so one comparison covers all of them.
  *
  * x16, x17 and x18 are spent here, and on one vector that matters. `save`
- * selects a form that pushes all three first and gives them back on both
- * exits, and it is used wherever there is a stack to push on. The two vectors
+ * selects a form that pushes all three first and leaves them there on the way
+ * into the payload, giving them back to the entry through the stack; the way
+ * into the tail, where the kernel's own code is waiting for them, pops them
+ * first. It is used wherever there is a stack to push on. The two vectors
  * differ in exactly that:
  *
  *   EL1t  SP is the interrupted stack, because execution was using SP_EL0 and
@@ -85,16 +87,18 @@ void usEncodeThunk(uint32_t out[US_THUNK_WORDS], uint64_t target);
  * register the entry destroys has to come back, and the set of registers the
  * entry destroys is what says which ones to save.
  */
-#define US_SLOT_STUB_WORDS 23U
+#define US_SLOT_STUB_WORDS 21U
 #define US_SLOT_STUB_BYTES (US_SLOT_STUB_WORDS * 4U)
 
 void usEncodeSlotStub(uint32_t *out, uint64_t target, uint32_t tail0,
                       uint32_t tail1, bool save);
 
 /*
- * Where the saving form leaves them, and how much it took. These are a
- * property of the stub, so they live beside it and reach the entry through the
- * generated header rather than being written out a second time in assembly.
+ * Where the saving form leaves them, and how much it took. The two saves are
+ * the whole of it and they stay put, so the top of the area is the interrupted
+ * stack pointer as the entry receives it. These are a property of the stub, so
+ * they live beside it and reach the entry through the generated header rather
+ * than being written out a second time in assembly.
  */
 #define US_STUB_SAVE_BYTES 32U
 #define US_STUB_SAVE_X18 0U

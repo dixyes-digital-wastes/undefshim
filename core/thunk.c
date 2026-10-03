@@ -110,15 +110,14 @@ static uint32_t branchTo(uint32_t fromIndex, uint32_t toIndex, uint32_t opcode,
 uint32_t usSlotStubTailIndex(bool save) {
     /*
      * Everything before the first tail word: the save, three to reach the
-     * class test, seven for the instruction test, the first restore, five for
-     * the address and the branch, and the restore the tail begins with.
+     * class test, seven for the instruction test, five for the address and
+     * the branch, and the restore the tail begins with.
      *
-     * Both restores are counted because there are two ways out and the
-     * registers belong to the kernel on both. Writing only the first leaves
-     * the tail running with the stub's values, which is invisible in the
-     * words -- that was an earlier version of this.
+     * Only the tail's restore is counted: the way into the payload keeps the
+     * saves on the stack for the entry, which is the one place they can be
+     * read back correctly.
      */
-    return (save ? 2U : 0U) + 3U + 7U + (save ? 2U : 0U) + 5U + (save ? 2U : 0U);
+    return (save ? 2U : 0U) + 3U + 7U + 5U + (save ? 2U : 0U);
 }
 
 void usEncodeSlotStub(uint32_t *out, uint64_t target, uint32_t tail0,
@@ -150,15 +149,18 @@ void usEncodeSlotStub(uint32_t *out, uint64_t target, uint32_t tail0,
     instructionBranch = n;
     out[n++] = 0;
 
-    if (save) {
-        /* The first way out: into the payload. Done before the branch so the
-         * payload is entered with the interrupted stack pointer rather than
-         * one save area below it -- the entry records that value and returns
-         * through it. */
-        out[n++] = US_STUB_POP_X18;
-        out[n++] = US_STUB_POP_X16_X17;
-    }
-
+    /*
+     * The way into the payload leaves all three where the saves put them.
+     *
+     * Popping them here is what the entry cannot work with: it reads x18 from
+     * the bottom of the save area and x16 and x17 from sixteen and twenty
+     * four bytes above it, and it takes the interrupted SP as the top of the
+     * area. With the saves popped, two of those three reads land above the
+     * stack -- on the interrupted code's own values, which are not these
+     * registers at all -- and the recorded SP comes out sixteen bytes above
+     * where it was. The stub's two saves are the save area; the entry reads
+     * it and pushes nothing.
+     */
     out[n++] = movz((uint32_t)(target & 0xFFFFU), 0, US_THUNK_REG);
     out[n++] = movk((uint32_t)((target >> 16) & 0xFFFFU), 16, US_THUNK_REG);
     out[n++] = movk((uint32_t)((target >> 32) & 0xFFFFU), 32, US_THUNK_REG);

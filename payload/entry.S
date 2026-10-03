@@ -70,26 +70,18 @@
     msr     daifset, #0xF
 
     /*
-     * Sixteen bytes of the interrupted stack, for the one register the
-     * bootstrap needs and the stub does not keep.
+     * Where the three the bootstrap spends are kept.
      *
-     * The stub, on the vector where it may push at all, has already put x16
-     * and x17 below this. x18 is spent by the lookup below, and it is the
-     * kernel's on the SP0 vector for the same reason x16 is: an exception
-     * that arrives there interrupted code entitled to its own registers, and
-     * the kernel's own path through that vector uses x18 to reach the
-     * thread's stack. So it is saved before anything else touches it, and the
-     * frame is what gets it back.
+     * On the vector whose stub may push, they are already on the interrupted
+     * stack, put there by the stub before it spent any of them, and left in
+     * place on the way in. Nothing is pushed here, and the offsets the frame
+     * is read with are counted against what the stub left. Pushing here as
+     * well would move every one of them up by a slot and take the interrupted
+     * SP sixteen bytes above where it was, and neither shows in the words.
      *
-     * The push is not only about x18. The offsets the frame is built with
-     * count it -- the interrupted SP is what is left above the stub's sixteen
-     * bytes and these sixteen -- so leaving it out moves three registers by a
-     * slot and shortens the recorded SP by sixteen, and both of those are
-     * silent.
+     * On the other vector there was no stack to have pushed on, so there is
+     * nothing to read and the frame records zeros for those three.
      */
-    .if \save
-    str     x18, [sp, #-16]!
-    .endif
 
     /*
      * This code runs before there is a stack, and that is not a figure of
@@ -292,22 +284,47 @@
     ldp     x4, x5, [x9, #US_FRAME_X4]
     ldp     x6, x7, [x9, #US_FRAME_X6]
     ldr     x8, [x9, #US_FRAME_X8]
+    /*
+     * x11 is loaded on its own rather than with x10, and it is the only load
+     * here that is easy to leave out: the frame stores the pair, and the
+     * pairing is what makes the omission invisible. x10 cannot be loaded with
+     * it, because x10 is spent on the stack pointer below and read a second
+     * time at the very end.
+     *
+     * Leaving it out hands the interrupted code a register holding whatever
+     * this handler's own code left there -- an address in the payload. Every
+     * exception that comes back then continues with a live register replaced
+     * by a pointer into the payload, and the first instruction to use it as
+     * one writes wherever it points.
+     */
+    ldr     x11, [x9, #US_FRAME_X11]
     ldp     x12, x13, [x9, #US_FRAME_X12]
     ldp     x14, x15, [x9, #US_FRAME_X14]
     /*
-     * The three the entry spends come back where there was anywhere to keep
-     * them, which is the vector whose stub pushed them. On the other one the
-     * frame holds zeros and nothing is restored, because there was no stack to
-     * have put them on.
+     * The three the entry spends.
      *
-     * Nothing has to be popped on the way out: eret restores the interrupted
-     * context whole, and SP is set to the interrupted value, so the bytes this
-     * entry and the stub pushed are simply left behind.
+     * Where the stub pushed them they come back exactly as they were. Where it
+     * could not, two of them are simply left as they are -- x16 and x17 are
+     * the registers every path through this vector destroys, the kernel's own
+     * handler included, so there is nothing to give back that would be more
+     * right than what is already in them.
+     *
+     * x18 is not like that, and it is the one that matters. The kernel's own
+     * handler for this vector does not save it either -- it derives it, from
+     * TPIDR_EL1, before using it as the per-CPU base for its first two stores.
+     * It can do that because x18 holds the processor control region, which is
+     * a property of the processor rather than something the interrupted code
+     * passed in. Leaving ours there instead hands the kernel a pointer to
+     * something that is not the processor's, and the next thing that reaches
+     * through it goes somewhere arbitrary.
      */
     .if \save
     ldr     x16, [x9, #US_FRAME_X16]
     ldr     x17, [x9, #US_FRAME_X17]
     ldr     x18, [x9, #US_FRAME_X18]
+    .else
+    mrs     x18, tpidr_el1
+    and     x18, x18, #0xfffffffffffff000
     .endif
     ldp     x19, x20, [x9, #US_FRAME_X19]
     ldp     x21, x22, [x9, #US_FRAME_X21]
