@@ -66,3 +66,4 @@ check: all
 	./test_ldapr
 	./test_acpi
 	./test_ldr
+	python3 check_entry_frame.py $(ROOT)/payload/entry.S

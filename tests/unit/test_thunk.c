@@ -297,15 +297,18 @@ static void testSlotStub(void) {
  * The form that saves the registers, for the vector where a stack is
  * available.
  *
- * What it has to do that the other does not is give them back on BOTH ways
- * out. There are two branches to the tail and one fall-through into the
- * payload, and the registers are the kernel's on all three -- its own
- * breakpoint services are `mov x16, #n; brk`, with the number carried in
- * x16 and read by the handler the tail reaches.
+ * What it has to do that the other does not is keep all three of the registers
+ * it spends, and hand them back on the way that needs them handed back. Both
+ * branches to the tail reach the kernel's own code, which is entitled to what
+ * was in them -- its own breakpoint services are `mov x16, #n; brk`, with the
+ * number carried in x16 and read by the handler the tail reaches -- so that
+ * way restores all three. The fall-through into the payload leaves the saves
+ * where they are, because the entry reads them out of the save area and takes
+ * the interrupted SP from the top of it.
  *
- * An earlier version emitted only one restore, on the fall-through. That
- * leaves the tail path running with the stub's values, which is invisible in
- * the words and shows up as a service number that does not exist.
+ * An earlier version restored on the fall-through as well. That is the one
+ * arrangement the entry cannot read: two of the three then come from above the
+ * stack, and the SP is taken sixteen bytes above where it was.
  */
 static void testSlotStubKeepingRegisters(void) {
     uint32_t stub[US_SLOT_STUB_WORDS];
@@ -335,20 +338,19 @@ static void testSlotStubKeepingRegisters(void) {
             x18Pops++;
         }
     }
-    eq64("and gives the pair back twice", pairPops, 2U);
-    eq64("and the third register twice", x18Pops, 2U);
+    eq64("and gives the pair back once", pairPops, 1U);
+    eq64("and the third register once", x18Pops, 1U);
 
     /*
-     * Both ways out restore, and they restore in the reverse order of the
-     * save, because a stack does. Only one of the two was written in an
-     * earlier version, and the tail then ran with the stub's values -- which
-     * is invisible in the words.
+     * The one restore is the tail's, and it restores in the reverse order of
+     * the save, because a stack does. The fall-through has none: the entry
+     * reads the saves where they are.
      */
-    eq64("the first way out restores the third", stub[12], POP_X18);
-    eq64("and then the pair", stub[13], POP_PAIR);
     enter = tailIndex - 2U;
-    eq64("the second way out restores the third", stub[enter], POP_X18);
+    eq64("the way out restores the third", stub[enter], POP_X18);
     eq64("and then the pair", stub[enter + 1U], POP_PAIR);
+    eq64("and the fall-through is the address build",
+         stub[enter - 5U] & 0xFFE00000U, 0xD2800000U);
 
     /* Both branches land on the second restore, not past it. */
     {
