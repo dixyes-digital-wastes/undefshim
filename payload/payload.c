@@ -173,6 +173,23 @@ static bool emulateLdapr(UsFrame *frame) {
             pool->entry.emuX9 = frame->x[9];
         }
     }
+
+    /* The same, for the last few rather than only the first. */
+    {
+        UsPayloadConfig *cfg = usPayloadConfig();
+
+        if (cfg->poolBase != 0) {
+            UsPool *pool = (UsPool *)(uintptr_t)cfg->poolBase;
+            UsPoolEmu *e = &pool->entry.emu[gEmulated % US_POOL_EMU_SLOTS];
+
+            e->elr = frame->elr;
+            e->insn = insn;
+            e->rt = decoded.rt;
+            e->address = address;
+            e->value = value;
+            pool->entry.emuCount = gEmulated + 1;
+        }
+    }
     gEmulated++;
 
     /* The value is in the frame, and the frame is what the entry restores, so
@@ -213,9 +230,13 @@ int usPayloadHandle(UsFrame *frame) {
         }
 
         /* Kept apart from the summary so that two exceptions arriving at once
-         * read as two events rather than as one that cannot have happened. */
-        if (frame != NULL && at < US_POOL_TRACE_SLOTS) {
-            UsPoolTrace *t = &pool->entry.trace[at];
+         * read as two events rather than as one that cannot have happened.
+         *
+         * The slot is the entry count modulo the ring, so what is kept is the
+         * most recent arrivals. Which slot holds the newest is worked out
+         * from the count, so the order survives the wrap. */
+        if (frame != NULL) {
+            UsPoolTrace *t = &pool->entry.trace[at % US_POOL_TRACE_SLOTS];
             const uint64_t *src = (const uint64_t *)(const void *)frame;
 
             t->cpu = (uint64_t)(int64_t)cpu;

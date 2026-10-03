@@ -99,7 +99,35 @@ typedef struct UsPoolTrace_t {
 } UsPoolTrace;
 
 #define US_POOL_TRACE_WORDS 36U
-#define US_POOL_TRACE_SLOTS 4U
+/*
+ * A rolling window, not the first few.
+ *
+ * What a stop needs explained is the exceptions just before it, since the
+ * summary only says where the machine ended up. Keeping the first four
+ * answered a question about the boot and nothing about a fault several
+ * thousand entries later.
+ */
+#define US_POOL_TRACE_SLOTS 8U
+
+/*
+ * One carried-out load, for the rolling record of the last few.
+ *
+ * The value write-back is the step whose mistakes are not visible at the
+ * point they are made: a wrong address makes a wrong value, the value goes
+ * into a register, and the next use of that register is where it shows --
+ * which is somewhere else entirely. Keeping the last few anyway is what makes
+ * the two connectable, and keeping the first one only answered a question
+ * about the boot.
+ */
+typedef struct UsPoolEmu_t {
+    uint64_t elr;      /* the instruction the exception was taken on */
+    uint64_t insn;     /* the load, as it was decoded */
+    uint64_t rt;       /* where the value went */
+    uint64_t address;
+    uint64_t value;
+} UsPoolEmu;
+
+#define US_POOL_EMU_SLOTS 8U
 
 typedef struct UsPoolEntry_t {
     uint64_t magic;
@@ -134,6 +162,10 @@ typedef struct UsPoolEntry_t {
 
     /* Every entry, in arrival order, up to the ring's size. */
     UsPoolTrace trace[US_POOL_TRACE_SLOTS];
+
+    /* The last few loads carried out, newest last once the ring has filled. */
+    uint64_t emuCount;
+    UsPoolEmu emu[US_POOL_EMU_SLOTS];
 } UsPoolEntry;
 
 typedef struct UsPool_t {
