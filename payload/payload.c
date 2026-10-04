@@ -420,7 +420,26 @@ static bool emulateLdapr(UsFrame *frame, int cpu) {
      * every later one. Doing it here, before the ELR moves, is what makes the
      * address the instruction's.
      */
-    (void)usRewriteSite(frame->elr);
+    /*
+     * Only instructions EL0 executed are replaced in place.
+     *
+     * Writing the kernel's own text at run time is what the kernel's
+     * integrity check reports: measured, a 109 with type 1 - a function or
+     * .pdata modified - five to seven minutes in, every time, and the
+     * parameters name an address inside the image. With the kernel's text
+     * left alone the same machine runs past twenty minutes and eighteen
+     * million emulated loads without it, and still reaches the desktop.
+     *
+     * Replacing the kernel's instructions is therefore something to do
+     * before the kernel runs, not while it does: a list applied at boot is
+     * already in place when the integrity check takes its baseline. Until
+     * that exists, the kernel's RCpc loads keep taking the exception.
+     *
+     * TODO: make this a configuration item rather than a constant.
+     */
+    if (usSlotOfSpsr(frame->spsr) == UsStubSlotEl0) {
+        (void)usRewriteSite(frame->elr);
+    }
 
     /* The value is in the frame, and the frame is what the entry restores, so
      * moving past the instruction is all that is left to do. Doing it here

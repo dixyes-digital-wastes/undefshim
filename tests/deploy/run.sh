@@ -70,6 +70,7 @@ fi
     -qmp tcp:127.0.0.1:4444,server=on,wait=off \
     "${win_args[@]}" \
     -device qemu-xhci,id=xhci \
+    -device usb-kbd,bus=xhci.0 \
     -device usb-storage,drive=esp,bootindex=1 \
     -drive file="$ESP",if=none,format=raw,id=esp \
     -serial "unix:$SERIAL_SOCK,server=on,wait=off" \
