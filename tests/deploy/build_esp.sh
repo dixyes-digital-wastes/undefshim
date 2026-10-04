@@ -18,7 +18,7 @@ BUILD_DIR="${BUILD_DIR:-build}"
 DRIVER="${DRIVER:-$BUILD_DIR/undefshim_driver.efi}"
 # An empty CONFIG builds a volume without one, which is how the "no config
 # file anywhere" case is exercised.
-CONFIG="${CONFIG-config/undefshim.toml}"
+CONFIG="${CONFIG-config/us.toml}"
 # Which script the shell runs. A variant is useful for control runs that need
 # to do something other than load the driver.
 STARTUP="${STARTUP:-tests/deploy/startup.nsh}"
@@ -44,7 +44,15 @@ mmd -i "$ESP" ::/EFI ::/EFI/BOOT
 mcopy -i "$ESP" "$SHELL_EFI" ::/EFI/BOOT/BOOTAA64.EFI
 mcopy -i "$ESP" "$DRIVER" ::/undefshim_driver.efi
 if [ -n "$CONFIG" ]; then
-    mcopy -i "$ESP" "$CONFIG" ::/undefshim.toml
+    mcopy -i "$ESP" "$CONFIG" ::/us.toml
+# Lists live next to the configuration that names them, and go on the volume
+# the same way: the driver resolves the directory relative to the volume it
+# read the configuration from.
+PATCHLIST_DIR="${PATCHLIST_DIR-$(dirname "$CONFIG")/usPatch}"
+if [ -d "$PATCHLIST_DIR" ]; then
+    mmd -i "$ESP" ::/usPatch 2>/dev/null || true
+    mcopy -i "$ESP" "$PATCHLIST_DIR"/* ::/usPatch/ 2>/dev/null || true
+fi
 fi
 mcopy -i "$ESP" "$STARTUP" ::/startup.nsh
 

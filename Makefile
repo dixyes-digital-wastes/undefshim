@@ -103,7 +103,7 @@ POSIX_LIB := $(POSIX_UEFI)/libuefi.a
 DRIVER_MAIN ?= uefi/src/driver.c
 DRIVER_MAIN_OBJ := $(BUILD_DIR)/driver_main.o
 
-DRIVER_SRCS := uefi/src/config.c uefi/src/registry.c \
+DRIVER_SRCS := uefi/src/config.c uefi/src/patch_apply.c uefi/src/registry.c \
                uefi/src/loadimage_hook.c core/cache.c uefi/src/console.c \
                uefi/src/pool.c uefi/src/service_hook.c uefi/src/gmm_hook.c \
                uefi/src/patch.c uefi/src/work.c uefi/src/payload_place.c uefi/src/arm.c \
@@ -112,6 +112,7 @@ DRIVER_SRCS := uefi/src/config.c uefi/src/registry.c \
                uefi/src/vamap.c \
                uefi/src/session.c \
                core/cfg.c core/pe.c core/scan.c core/plan.c core/rva_patch.c core/pool.c \
+               core/patchlist.c core/patchapply.c core/sha256.c \
                core/thunk.c core/ldapr.c core/acpi.c core/stackgen.c core/translate.c \
                core/par.c \
                $(TOML)/toml.c
