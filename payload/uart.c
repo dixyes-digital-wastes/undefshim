@@ -10,15 +10,15 @@
 
 #include "payload/uart.h"
 
-/* PL011 registers, as word indices. */
-#define US_PL011_DR 0U
-#define US_PL011_FR 6U
+/* PL011 registers, as byte offsets. */
+#define US_PL011_DR 0x00U
+#define US_PL011_FR 0x18U
 #define US_PL011_FR_TXFF (1U << 5)  /* transmit FIFO full */
 #define US_PL011_FR_BUSY (1U << 3)  /* transmit in progress */
 
-/* 8250 registers, as byte indices; a 32 bit bus spaces them a word apart. */
-#define US_8250_THR 0U
-#define US_8250_LSR 5U
+/* 8250 registers, as byte offsets; a 32 bit bus spaces them a word apart. */
+#define US_8250_THR 0x00U
+#define US_8250_LSR 0x05U
 #define US_8250_LSR_THRE (1U << 5)  /* holding register empty */
 
 static uintptr_t gBase;
