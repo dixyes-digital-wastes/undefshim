@@ -103,7 +103,7 @@ DRIVER_MAIN ?= uefi/src/driver.c
 DRIVER_MAIN_OBJ := $(BUILD_DIR)/driver_main.o
 
 DRIVER_SRCS := uefi/src/config.c uefi/src/patch_apply.c uefi/src/registry.c \
-               uefi/src/loadimage_hook.c core/cache.c uefi/src/console.c \
+               uefi/src/loadimage_hook.c core/cache.c uefi/src/console.c uefi/src/screen.c \
                uefi/src/pool.c uefi/src/service_hook.c uefi/src/gmm_hook.c \
                uefi/src/patch.c uefi/src/work.c uefi/src/payload_place.c uefi/src/arm.c \
                uefi/src/rewrite.c \

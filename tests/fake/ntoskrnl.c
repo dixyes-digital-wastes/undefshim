@@ -96,5 +96,15 @@ int main(int argc, char **argv) {
     check("word again", loadWord((const void *)&gWord), gWord);
 
     printf("FAKEK: %s\n", failed == 0 ? "PASS" : "FAIL");
-    return failed == 0 ? 0 : 1;
+
+    /*
+     * Park rather than return. The shell that started this exits when its
+     * script ends, the firmware then finds nothing else to boot and the
+     * machine quits - which is fine for the automated check, whose monitor
+     * has already seen the line above, but not for a run that is being looked
+     * at: a machine that has quit has no screen to look at.
+     */
+    for (;;) {
+        __asm__ volatile("wfi");
+    }
 }
