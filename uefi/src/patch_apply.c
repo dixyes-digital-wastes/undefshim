@@ -127,26 +127,11 @@ static void applyOne(UsImage *image, const char *name, const char *text,
     }
     uint8_t digest[32];
 
-    /* What the sites are being resolved against, for when they do not match. */
-    usConsolePuts("patch: text rva ");
-    usConsolePutHex(imageTextRva(image));
-    usConsolePuts(" bytes ");
-    usConsolePutHex(textBytes);
-    usConsolePuts(" first ");
-    usConsolePutHex((uint64_t)code[0] | ((uint64_t)code[1] << 8)
-                    | ((uint64_t)code[2] << 16) | ((uint64_t)code[3] << 24));
-    usConsolePuts("\n");
     digestText(image, code, textBytes, digest);
     stats.files = 1;
     UsPatchApplyResult result = usPatchApplyWithDigest(&file, sites, "ntoskrnl",
                                                        imageTextRva(image), digest, code,
                                                        textBytes, &stats);
-    usConsolePuts("patch: after, site0 ");
-    for (uint32_t i = 0; i < 4U && file.sites > 0U; i++) {
-        usConsolePutHex(code[sites[0].rva - imageTextRva(image) + i]);
-        usConsolePuts(" ");
-    }
-    usConsolePuts("\n");
     if (result == UsPatchApplied) {
         usConsolePuts(" applied ");
         usConsolePutDec(stats.applied);
