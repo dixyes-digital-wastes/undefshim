@@ -70,6 +70,20 @@ int main(int argc, char **argv) {
     (void)argc;
     (void)argv;
 
+    /*
+     * A real kernel installs its vectors by writing VBAR_EL1, and the driver
+     * finds where to put its stubs by following exactly that write. Writing
+     * the value back is what makes this image armable, and it is the one
+     * place where the fake has to imitate the kernel rather than simply use
+     * the instructions it cannot execute.
+     */
+    {
+        uint64_t vbar;
+
+        __asm__ volatile("mrs %0, vbar_el1" : "=r"(vbar));
+        __asm__ volatile("msr vbar_el1, %0" :: "r"(vbar));
+    }
+
     printf("FAKEK: up\n");
     check("wide", loadWide((const void *)&gWide), gWide);
     check("word", loadWord((const void *)&gWord), gWord);
