@@ -26,3 +26,6 @@ __pycache__/
 
 # Editor state, not project configuration.
 .vscode/
+
+# Harness state, not part of the project.
+.dsh/

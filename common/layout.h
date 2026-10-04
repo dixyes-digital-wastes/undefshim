@@ -65,6 +65,14 @@
  */
 #define US_STACK_SIZE 0x4000U
 
+/*
+ * Room the entry takes below the payload's own stack while a fault inside the
+ * payload is being answered, to hold the registers the answer "carry on" has
+ * to give back. Every register a call may destroy, which is x0 to x18 and the
+ * link register.
+ */
+#define US_FAULT_SPILL_BYTES 160U
+
 /* "USPL", used to tell a plausible pool from an uninitialised page. */
 #define US_POOL_MAGIC 0x4C505355U
 
@@ -129,10 +137,46 @@ typedef struct UsPoolEmu_t {
 
 #define US_POOL_EMU_SLOTS 8U
 
+/*
+ * One attempt at replacing an RCpc load where it stands, for the record the
+ * payload leaves behind. The result is a UsRewriteResult; zero means the slot
+ * has not been used.
+ */
+typedef struct UsPoolRewrite_t {
+    uint64_t site;
+    uint64_t insn;
+    uint64_t descriptorVa;
+    uint64_t descriptor;
+    uint64_t result;
+} UsPoolRewrite;
+
+#define US_POOL_REWRITE_SLOTS 8U
+
 typedef struct UsPoolEntry_t {
     uint64_t magic;
     uint64_t entries;    /* how many times the handler was entered */
     uint64_t handled;    /* how many of those it claimed */
+    /* How many of the rest were given to the kernel's own handler, and what
+     * the last of those was. A machine that stopped on an exception the
+     * payload never claimed says so here, and the exception state says which
+     * one it was. */
+    uint64_t handedBack;
+    uint64_t handbackEsr;
+    uint64_t handbackElr;
+    /*
+     * The paths that end without an answer, which are the ones a machine that
+     * stopped cannot otherwise explain: the entry stopping because it could
+     * not even name a destination, and a fault inside the payload that was not
+     * one it had asked about.
+     */
+    uint64_t stuck;
+    uint64_t stuckKind;
+    uint64_t stuckEsr;
+    uint64_t stuckElr;
+    uint64_t nestedFaults;
+    uint64_t nestedEsr;
+    uint64_t nestedFar;
+    uint64_t nestedElr;
     uint64_t lastEsr;
     uint64_t lastElr;
     uint64_t lastFar;
@@ -180,6 +224,23 @@ typedef struct UsPoolEntry_t {
      * without having to match them up by hand.
      */
     UsPoolTrace handback[US_POOL_TRACE_SLOTS];
+
+    /*
+     * The last few attempts at replacing an instruction where it stands.
+     *
+     * Whether that works is the difference between a boot that finishes and
+     * one that only looks busy, and it is not something the machine can say
+     * any other way: each record is one site, what was there, where its
+     * descriptor was found, and what came of the store.
+     */
+    uint64_t rewriteCount;    /* attempts, all outcomes */
+    uint64_t rewriteWritten;  /* sites that now hold the substitute */
+    UsPoolRewrite rewrite[US_POOL_REWRITE_SLOTS];
+
+    /* TEMPORARY, for bringing the rewrite up: what the handler saw.
+     * [0] the stack bank it was entered on, [1] the stack it switched from,
+     * [2] the last step reached, [3] the address last read. */
+    uint64_t rewriteDiag[4];
 } UsPoolEntry;
 
 typedef struct UsPool_t {

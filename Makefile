@@ -21,7 +21,21 @@ TOOLS_TESTS := tests/tools
 PAYLOAD_DIR := payload
 PAYLOAD_BUILD := $(BUILD_DIR)/payload
 
+#
+# x18 is reserved rather than allocated. The entry below the exception uses it
+# as its one scratch register - it is the register the kernel rebuilds for
+# itself at every kernel-mode entry, and the only one that can be spent there -
+# and it has already destroyed the value the payload's own code had before a
+# fault inside the payload is answered. Compiled code that kept anything in x18
+# would be resumed with the entry's leftovers; reserving it means nothing does.
+# Every header the sources include. Without this a change to a structure in
+# one of them rebuilds only the files make happens to know depend on it, and a
+# machine can end up running two different ideas of the same layout - which is
+# how a pool that grew a field on one side and not the other reads as garbage.
+US_HEADERS := $(wildcard core/*.h common/*.h payload/*.h uefi/src/*.h)
+
 PAYLOAD_CFLAGS := --target=aarch64-none-elf -std=gnu23 -ffreestanding \
+                  -ffixed-x18 \
                   -fshort-wchar -mno-red-zone -fno-stack-protector \
                   -fomit-frame-pointer -mgeneral-regs-only \
                   -fno-pic -fno-pie -fno-jump-tables -fno-builtin \
@@ -31,7 +45,8 @@ PAYLOAD_CFLAGS := --target=aarch64-none-elf -std=gnu23 -ffreestanding \
 
 PAYLOAD_SRCS := $(PAYLOAD_DIR)/payload.c $(PAYLOAD_DIR)/uart.c $(PAYLOAD_DIR)/us_mem.c \
                 $(PAYLOAD_DIR)/selfmap.c $(PAYLOAD_DIR)/transfer.c $(PAYLOAD_DIR)/vamap.c \
-                $(PAYLOAD_DIR)/early.c core/cache.c core/thunk.c \
+                $(PAYLOAD_DIR)/early.c $(PAYLOAD_DIR)/rewrite.c \
+                core/cache.c core/thunk.c \
                 core/pgtable.c core/par.c core/ldapr.c core/ldr.c core/stackgen.c core/translate.c
 PAYLOAD_ASM := $(PAYLOAD_DIR)/entry.S $(PAYLOAD_DIR)/end.S
 PAYLOAD_OBJS := $(patsubst %.c,$(PAYLOAD_BUILD)/%.o,$(notdir $(PAYLOAD_SRCS))) \
@@ -234,7 +249,7 @@ $(TRANSFER_HDR): $(TRANSFER_BIN) $(TRANSFER_ELF)
 
 # Named explicitly because the source can come from outside the tree, and
 # because the generated payload header has to exist before it is compiled.
-$(DRIVER_MAIN_OBJ): $(DRIVER_MAIN) $(PAYLOAD_HDR) $(TRANSFER_HDR) | $(BUILD_DIR)/uefi/src
+$(DRIVER_MAIN_OBJ): $(DRIVER_MAIN) $(PAYLOAD_HDR) $(TRANSFER_HDR) $(US_HEADERS) | $(BUILD_DIR)/uefi/src
 	$(CC) $(US_DRIVER_CFLAGS) -c $< -o $@
 
 # Every other translation unit.
@@ -245,7 +260,7 @@ $(DRIVER_MAIN_OBJ): $(DRIVER_MAIN) $(PAYLOAD_HDR) $(TRANSFER_HDR) | $(BUILD_DIR)
 # nothing at all. Keeping a list of the units that embed one was tried and
 # forgot a unit three times over, so every unit is rebuilt instead: the
 # objects are small, and the failure mode of the list is silent.
-$(BUILD_DIR)/%.o: %.c $(PAYLOAD_HDR) $(TRANSFER_HDR) \
+$(BUILD_DIR)/%.o: %.c $(PAYLOAD_HDR) $(TRANSFER_HDR) $(US_HEADERS) \
         | $(BUILD_DIR)/uefi/src $(BUILD_DIR)/core $(BUILD_DIR)/$(TOML)
 	$(CC) $(US_DRIVER_CFLAGS) -c $< -o $@
 

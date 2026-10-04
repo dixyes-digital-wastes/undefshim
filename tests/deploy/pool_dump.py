@@ -27,7 +27,10 @@ MAGIC = 0x5952544E55504355  # "UCPUNTRY"
 # The C structures, counted out as they are laid out. They are written here
 # rather than derived, because the point of printing them is to check what the
 # C side actually produced.
-PUBLIC = ["magic", "entries", "handled", "lastEsr", "lastElr", "lastFar",
+PUBLIC = ["magic", "entries", "handled", "handedBack", "handbackEsr", "handbackElr",
+          "stuck", "stuckKind", "stuckEsr", "stuckElr",
+          "nestedFaults", "nestedEsr", "nestedFar", "nestedElr",
+          "lastEsr", "lastElr", "lastFar",
           "lastCpu", "lastSp", "lastInsn", "emuInsn", "emuAddr", "emuValue",
           "emuElr", "emuX0", "emuX9"]
 PUBLIC_WORDS = len(PUBLIC)
@@ -35,8 +38,43 @@ TRACE_SLOTS = 8
 TRACE_WORDS = 38          # cpu, mpidr, then the 36 words of the frame
 EMU_SLOTS = 8
 EMU_WORDS = 5             # elr, insn, rt, address, value
+REWRITE_SLOTS = 8
+REWRITE_WORDS = 5         # site, insn, descriptorVa, descriptor, result
+
+# What a rewrite attempt came to, from UsRewriteResult in payload/rewrite.h.
+REWRITE_RESULTS = {
+    1: "written",
+    8: "not an RCpc load",
+    10: "in progress: reading the base",
+    11: "in progress: walking the tables",
+    12: "in progress: probing the descriptor",
+    13: "in progress: clearing the permission",
+    14: "in progress: storing",
+    15: "in progress: publishing the instruction",
+    16: "in progress: putting the permission back",
+    2: "already replaced",
+    3: "refused",
+    4: "no descriptor base",
+    5: "unmapped",
+    6: "descriptor page read-only",
+    7: "permission stuck",
+}
 
 FRAME = ["x%d" % i for i in range(31)] + ["sp", "elr", "spsr", "esr", "far"]
+
+
+def entryOffsets():
+    """Where the fields after the summary live, in bytes from the entry.
+
+    Counted the same way the dump counts them, so the two cannot drift: a
+    caller that wants one field does not have to read the whole ring.
+    """
+    at = PUBLIC_WORDS * 8
+    at += TRACE_SLOTS * TRACE_WORDS * 8      # trace
+    at += 8                                  # emuCount
+    at += EMU_SLOTS * EMU_WORDS * 8          # emu
+    at += TRACE_SLOTS * TRACE_WORDS * 8      # handback
+    return {"rewriteCount": at, "rewriteWritten": at + 8, "rewrite": at + 16}
 
 
 def cmd(f, obj):
@@ -103,7 +141,7 @@ def main():
     cmd(f, {"execute": "qmp_capabilities"})
 
     total = (PUBLIC_WORDS + TRACE_SLOTS * TRACE_WORDS + 1 + EMU_SLOTS * EMU_WORDS
-             + TRACE_SLOTS * TRACE_WORDS)
+             + TRACE_SLOTS * TRACE_WORDS + 2 + REWRITE_SLOTS * REWRITE_WORDS + 4)
     words = readAll(f, pool + 8, total)
     if len(words) < total:
         print("only %d of %d words could be read at 0x%x"
@@ -126,6 +164,30 @@ def main():
     emu = words[at:at + EMU_SLOTS * EMU_WORDS]
     at += EMU_SLOTS * EMU_WORDS
     handback = words[at:at + TRACE_SLOTS * TRACE_WORDS]
+    at += TRACE_SLOTS * TRACE_WORDS
+    rewriteCount, rewriteWritten = words[at], words[at + 1]
+    at += 2
+    rewrites = words[at:at + REWRITE_SLOTS * REWRITE_WORDS]
+    at += REWRITE_SLOTS * REWRITE_WORDS
+    diag = words[at:at + 4]
+    print("  what the handler saw: bank %d, switched from 0x%x, last step %d, "
+          "last address read 0x%x" % tuple(diag))
+
+    # The rewrites are the difference between a boot that finishes and one that
+    # only looks busy, so they are printed even when there are none.
+    print("replacing instructions where they stand: %d attempted, %d written"
+          % (rewriteCount, rewriteWritten))
+    # Every slot that has something in it, oldest first: an attempt that never
+    # finished wrote its slot as it went, and which step it reached is the only
+    # thing a machine that stopped has to say.
+    live = [i for i in range(REWRITE_SLOTS)
+            if any(rewrites[i * REWRITE_WORDS:(i + 1) * REWRITE_WORDS])]
+    for base in [i * REWRITE_WORDS for i in live]:
+        site, insn, descriptorVa, descriptor, result = rewrites[base:base + REWRITE_WORDS]
+        print("  site 0x%-16x insn 0x%-10x desc 0x%x%s  %s"
+              % (site, insn, descriptorVa,
+                 (" = 0x%x" % descriptor) if descriptor else "",
+                 REWRITE_RESULTS.get(result, "result %d" % result)))
 
     print("")
     print("the last up to %d exceptions, oldest first" % TRACE_SLOTS)

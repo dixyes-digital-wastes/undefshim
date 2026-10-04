@@ -26,6 +26,9 @@ def const(name):
 BASE = const("US_PTE_SELFMAP_BASE")
 END = const("US_PTE_SELFMAP_END")
 MASK = const("US_PTE_VA_MASK")
+PDE_BASE = const("US_PDE_SELFMAP_BASE")
+PPE_BASE = const("US_PPE_SELFMAP_BASE")
+PXE_BASE = const("US_PXE_SELFMAP_BASE")
 AP2 = 1 << 7
 
 failures = 0
@@ -51,6 +54,53 @@ def with_write(desc, writable):
 # The kernel's own literal: the descriptor of VA 0xfffff6fb7dbed000.
 check("the self-map's own descriptor comes out where the kernel puts it",
       pte(0xFFFFF6FB7DBED000) == 0xFFFFF6FB7DBEDF68)
+
+# Each level's descriptors are mapped by the level below, so the bases are a
+# recursion through the same formula, and two of them are values the x64 kernel
+# uses for the same levels.
+check("the page descriptor base's own descriptor is the next base",
+      pte(BASE) == PDE_BASE)
+check("that one is the value x64 uses for the same level",
+      PDE_BASE == 0xFFFFF6FB40000000)
+check("one level up follows the same rule", pte(PDE_BASE) == PPE_BASE)
+check("and is the x64 value as well", PPE_BASE == 0xFFFFF6FB7DA00000)
+check("as does the top", pte(PPE_BASE) == PXE_BASE)
+check("and the image carries a descriptor for the top one",
+      pte(PXE_BASE) == 0xFFFFF6FB7DBEDF68)
+check("the four bases are distinct",
+      len({BASE, PDE_BASE, PPE_BASE, PXE_BASE}) == 4)
+
+# Which descriptor maps an address, and how far a leaf at that level reaches.
+LEVELS = [(PXE_BASE, 39, 9, None), (PPE_BASE, 30, 18, 1 << 30),
+          (PDE_BASE, 21, 27, 1 << 21), (BASE, 12, 36, 1 << 12)]
+
+
+def slot(level, va):
+    base, shift, bits, _ = LEVELS[level]
+    return base + ((va >> shift) & ((1 << bits) - 1)) * 8
+
+
+# Indexing a level must not spill into the next one's base, which is what a
+# missing mask does at the bottom level for a kernel half address.
+for va in (0xFFFFF802DC204800, 0xFFFFF6FB7DBED000, 0, 0x7FF8F3B354F0):
+    for level in range(4):
+        s = slot(level, va)
+        check("level %d slot is 8-aligned: 0x%x" % (level, va), s % 8 == 0)
+# Dropping the mask is the mistake that makes this arithmetic overflow: the
+# page number of a kernel half address shifted into place does not fit in
+# sixty-four bits, so the sum wraps into a different region entirely.
+kernel = 0xFFFFF802DC204800
+check("the masked computation lands in the self-map window",
+      BASE <= slot(3, kernel) < BASE + (1 << 39))
+check("the unmasked one does not fit at all",
+      BASE + ((kernel >> 12) << 3) >= 1 << 64)
+# A block at one level and a page at the next cannot both be the answer: the
+# descriptor changes level with the address, which is why the level has to be
+# read out of the walk rather than assumed from the address.
+check("one 2MB region shares its block descriptor",
+      slot(2, 0xFFFFF802DC200000) == slot(2, 0xFFFFF802DC3FF000))
+check("the next 2MB region has the next one",
+      slot(2, 0xFFFFF802DC400000) - slot(2, 0xFFFFF802DC200000) == 8)
 
 # Whatever the address, the descriptor is inside the region the kernel also
 # describes with a literal, and on a descriptor boundary.

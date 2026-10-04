@@ -228,6 +228,27 @@ static void testRewriteConversion(void) {
     }
     ok("a word of data is not converted", !usLdaprToLdar(0xDEADBEEFU, NULL));
     ok("zero is not converted", !usLdaprToLdar(0U, NULL));
+
+    /*
+     * The substitute has to decode as the same instruction, because a site
+     * that has been replaced still traps on a processor whose caches have not
+     * caught up: the exception is the old instruction's and the memory holds
+     * the new one, so what the handler reads is an acquire load and it has to
+     * mean the same load.
+     */
+    for (size_t i = 0; i < sizeof(kConversions) / sizeof(kConversions[0]); i++) {
+        UsLdaprInsn fromRcpc = usLdaprDecode(kConversions[i].ldapr);
+        UsLdaprInsn fromAcquire = { 0 };
+
+        ok("the acquire load decodes", usLdarDecode(kConversions[i].ldar, &fromAcquire));
+        ok("at the same width", fromAcquire.kind == fromRcpc.kind);
+        ok("from the same base", fromAcquire.rn == fromRcpc.rn);
+        ok("into the same destination", fromAcquire.rt == fromRcpc.rt);
+        ok("an RCpc load is not taken for an acquire one",
+           !usLdarDecode(kConversions[i].ldapr, &fromAcquire));
+    }
+    ok("data is not an acquire load", !usLdarDecode(0xDEADBEEFU, NULL));
+    ok("and neither is zero", !usLdarDecode(0U, NULL));
 }
 
 int main(void) {

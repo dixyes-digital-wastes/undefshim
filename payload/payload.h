@@ -117,11 +117,46 @@ int usPayloadHandle(UsFrame *frame);
  * so a fault on it is that instruction's fault: the frame being handled is
  * what the kernel has to be given, and the nested fault's own ESR and FAR
  * already describe it. A fault anywhere else in the payload is a fault inside
- * a handler and is reported as one.
+ * a handler and is reported as one - except one that a probe asked for, which
+ * is an answer rather than a fault.
  *
- * Answers with the frame to restore, or NULL when there is none.
+ * Answers with the frame to restore, NULL when there is none, or
+ * US_PAYLOAD_RESUME when the handler's own code is to carry on.
  */
 UsFrame *usPayloadFault(void);
+
+/*
+ * Records that the entry cannot go on, and why.
+ *
+ * The entry reaches this when it cannot answer at all: no destination for the
+ * exception, or a CPU it has no stack for. Both end in the entry's own halt,
+ * which from outside is a machine that stopped with nothing to say, so what it
+ * knew at that moment is written where the host can read it.
+ */
+void usPayloadStuck(uint64_t kind);
+
+#define US_STUCK_NO_DESTINATION 1U
+#define US_STUCK_NO_STACK 2U
+
+/*
+ * What an access the handler expects may be refused answers with.
+ *
+ * The rewrite has to store into a page that the mapping may not allow, and the
+ * only honest answer to whether it does is to try it. While a probe is armed,
+ * a fault on exactly that address comes back to the handler as "no" instead of
+ * being reported as a fault in a handler, and the call says it did not happen.
+ * The handler then carries on at the instruction after the one that faulted.
+ *
+ * One access at a time, and only on the processor making it. A refused read
+ * leaves the value alone; a refused store changes nothing.
+ */
+#define US_PAYLOAD_RESUME ((UsFrame *)(uintptr_t)1)
+
+bool usPayloadProbeRead(uint64_t at, uint64_t *value);
+bool usPayloadProbeWrite(uint64_t at, uint64_t value);
+/* One instruction wide: a site is four bytes, and a store of eight would take
+ * the instruction after it with it. */
+bool usPayloadProbeWriteWord(uint64_t at, uint32_t value);
 
 /*
  * Says hello on the serial port, and nothing else.
@@ -163,6 +198,18 @@ typedef struct UsPayloadStub_t {
     uint64_t addressPa;
     uint32_t targetIndex;
     uint32_t published;
+    /*
+     * Where this image keeps the base of its own descriptor mapping, as an
+     * RVA, or zero when it has none to offer.
+     *
+     * Reading the descriptor that translates a page needs that base, it is
+     * not the constant the image's MiGetPteAddress uses (that one only works
+     * on a 48-bit address space, and this kernel runs a 47-bit one), and the
+     * only thing that knows where the variable is, is the image: hence an
+     * offset from the image's base, passed with the stub.
+     */
+    uint32_t descriptorBaseRva;
+    uint32_t reserved;
 } UsPayloadStub;
 
 typedef struct UsPayloadConfig_t {

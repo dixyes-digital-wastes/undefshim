@@ -81,6 +81,10 @@ static int emitFrame(FILE *f) {
      * from an exception of the interrupted code's. */
     fprintf(f, "#define US_STACK_SIZE %u\n", US_STACK_SIZE);
 
+    /* The room the entry takes to give the handler's registers back when the
+     * handler answers that the payload is to carry on where it was. */
+    fprintf(f, "#define US_FAULT_SPILL_BYTES %u\n", US_FAULT_SPILL_BYTES);
+
     return 0;
 }
 

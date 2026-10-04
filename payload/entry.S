@@ -133,7 +133,31 @@ usSyncHaveSp:
      * answers with the frame to restore.
      */
 usSyncFaultInside:
+    /*
+     * The handler may clobber the caller-saved registers, and one of its
+     * answers is "carry on where you were": that answer has to leave the
+     * handler's own registers as they were, so they are spilled first. The
+     * payload's stack is the one in use here, and this is a bounded amount of
+     * it.
+     */
+    sub     sp, sp, #US_FAULT_SPILL_BYTES
+    stp     x0, x1, [sp, #0]
+    stp     x2, x3, [sp, #16]
+    stp     x4, x5, [sp, #32]
+    stp     x6, x7, [sp, #48]
+    stp     x8, x9, [sp, #64]
+    stp     x10, x11, [sp, #80]
+    stp     x12, x13, [sp, #96]
+    stp     x14, x15, [sp, #112]
+    stp     x16, x17, [sp, #128]
+    str     x18, [sp, #144]
+    str     x30, [sp, #152]
+
     bl      usPayloadFault
+    cmp     x0, #1
+    b.eq    usSyncProbeAnswer
+
+    add     sp, sp, #US_FAULT_SPILL_BYTES
     cbz     x0, usSyncNoForward
     mov     x19, x0
     /* A real entry to EL1 leaves PAN set, and the branch below does not go
@@ -141,6 +165,26 @@ usSyncFaultInside:
     .inst   US_MSR_PAN_ON
     cmp     xzr, xzr
     b       usSyncRestore
+
+    /*
+     * A fault the handler asked to be told about: it has already moved ELR
+     * past the instruction that faulted, and the payload continues there with
+     * its own registers, since the exception was taken with them still live.
+     */
+usSyncProbeAnswer:
+    ldp     x0, x1, [sp, #0]
+    ldp     x2, x3, [sp, #16]
+    ldp     x4, x5, [sp, #32]
+    ldp     x6, x7, [sp, #48]
+    ldp     x8, x9, [sp, #64]
+    ldp     x10, x11, [sp, #80]
+    ldp     x12, x13, [sp, #96]
+    ldp     x14, x15, [sp, #112]
+    ldp     x16, x17, [sp, #128]
+    ldr     x18, [sp, #144]
+    ldr     x30, [sp, #152]
+    add     sp, sp, #US_FAULT_SPILL_BYTES
+    eret
 
     /*
      * One restore, two exits: eret resumes the interrupted code, and the
@@ -197,11 +241,20 @@ usSyncLanding:
     ldp     x9, x10, [x9, #US_FRAME_X9]
     br      x18
 
+    /*
+     * Both of these end in a halt, and a halt with nothing written down is a
+     * machine that stopped for no visible reason. What the entry knew is left
+     * for the host first.
+     */
     .globl usSyncNoStack
 usSyncNoStack:
+    mov     x0, #2
+    bl      usPayloadStuck
     wfi
     b       usSyncNoStack
 usSyncNoForward:
+    mov     x0, #1
+    bl      usPayloadStuck
     wfi
     b       usSyncNoForward
 
