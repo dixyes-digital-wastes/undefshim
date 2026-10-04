@@ -173,6 +173,8 @@ typedef struct UsPoolEntry_t {
     uint64_t stuckKind;
     uint64_t stuckEsr;
     uint64_t stuckElr;
+    uint64_t stuckSpsr;   /* which slot it came through */
+    uint64_t stuckVbar;   /* and the table that was in force */
     uint64_t nestedFaults;
     uint64_t nestedEsr;
     uint64_t nestedFar;

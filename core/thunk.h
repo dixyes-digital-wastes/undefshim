@@ -67,6 +67,9 @@ typedef enum UsStubSlot_e {
     UsStubSlotEl0 = 2,  /* at 0x400, the kernel's lower EL entry */
 } UsStubSlot;
 
+/* How many of those there are, for tables that are indexed by one. */
+#define US_STUB_SLOT_COUNT 3U
+
 #define US_SLOT_STUB_WORDS 20U
 #define US_SLOT_STUB_BYTES (US_SLOT_STUB_WORDS * 4U)
 #define US_SLOT_TARGET_WORDS 5U
@@ -79,6 +82,13 @@ void usEncodeSlotTarget(uint32_t out[US_SLOT_TARGET_WORDS], uint64_t target);
 
 /* Atomically replace this first MOVZ with B after staging/cache maintenance. */
 uint32_t usSlotStubTargetIndex(UsStubSlot slot);
+
+/*
+ * The landing this table and slot were given last time, when the table cannot
+ * be identified now. The exception still has to go somewhere, and the place
+ * it went for this table before is that place.
+ */
+bool usPayloadSlotTailCached(uint64_t vbar, uint64_t spsr, uint64_t *tail);
 
 void usEncodeSlotStub(uint32_t *out, uint64_t target, uint32_t tail0,
                       uint32_t tail1, UsStubSlot slot);

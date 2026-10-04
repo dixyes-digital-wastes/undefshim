@@ -28,7 +28,7 @@ MAGIC = 0x5952544E55504355  # "UCPUNTRY"
 # rather than derived, because the point of printing them is to check what the
 # C side actually produced.
 PUBLIC = ["magic", "entries", "handled", "handedBack", "handbackEsr", "handbackElr",
-          "stuck", "stuckKind", "stuckEsr", "stuckElr",
+          "stuck", "stuckKind", "stuckEsr", "stuckElr", "stuckSpsr", "stuckVbar",
           "nestedFaults", "nestedEsr", "nestedFar", "nestedElr",
           "nestedSelfVa", "nestedPoolBase", "nestedStackTop", "nestedCpu",
           "lastEsr", "lastElr", "lastFar",
