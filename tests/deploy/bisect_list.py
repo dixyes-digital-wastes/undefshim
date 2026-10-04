@@ -131,6 +131,9 @@ def main():
     step = 0
     while len(sites) > 1:
         half = len(sites) // 2
+        # The bad site is the one whose half hangs: a half that boots is the
+        # half without it. With more than one bad site the first hanging half
+        # is followed, and another run finds the next.
         for label, candidate in (("first", sites[:half]), ("second", sites[half:])):
             step += 1
             writeList(path, head, candidate, digest)
@@ -140,11 +143,11 @@ def main():
                   % (step, label, len(candidate), result["applied"], result["refused"],
                      result["entries"], "ran" if result["ran"] else "hung"))
             sys.stdout.flush()
-            if result["ran"]:
+            if not result["ran"]:
                 sites = candidate
                 break
         else:
-            print("neither half hangs: the problem needs a different split")
+            print("neither half hangs: the whole list hangs for another reason")
             return 1
     print("the site that stops it: %s" % sites[0])
     return 0

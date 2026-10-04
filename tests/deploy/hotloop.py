@@ -67,7 +67,7 @@ def writeList(path, digest, sites):
              ""]
     for rva in sorted(sites):
         insn = sites[rva]
-        ld = 0xC8DFFC00 | (insn & 0x1FE0) | (insn & 0x1F)
+        ld = (insn & 0xC0000000) | 0x08DFFC00 | (insn & 0x1FE0) | (insn & 0x1F)
         lines.append("0x%x %08x %08x" % (rva, insn, ld))
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="ascii") as handle:
