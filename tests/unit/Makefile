@@ -19,10 +19,14 @@ CFG_CFLAGS := -std=gnu23 -O2 -Wall -Wextra -I$(ROOT) -I$(TOML) $(TOML_DEFS)
 
 .PHONY: all check clean
 all: test_cfg test_layout test_scan_images test_rva_patch test_plan test_pgtable test_par \
-     test_thunk test_stackgen test_payload_place test_early test_ldapr test_acpi test_ldr
+     test_thunk test_stackgen test_payload_place test_early test_ldapr test_acpi test_ldr \
+     test_patchlist
 
 test_early: test_early.c $(ROOT)/payload/early.c $(ROOT)/payload/vamap.c \
             $(ROOT)/core/thunk.c
+	$(CC) -std=gnu23 -O2 -Wall -Wextra -I$(ROOT) $^ -o $@
+
+test_patchlist: test_patchlist.c $(ROOT)/core/patchlist.c $(ROOT)/core/sha256.c
 	$(CC) -std=gnu23 -O2 -Wall -Wextra -I$(ROOT) $^ -o $@
 
 test_ldr: test_ldr.c $(ROOT)/core/ldr.c
@@ -97,6 +101,7 @@ check: all
 	./test_payload_place
 	./test_early
 	./test_ldapr
+	./test_patchlist
 	./test_acpi
 	./test_ldr
 	python3 check_entry_frame.py $(ROOT)/payload/entry.S
