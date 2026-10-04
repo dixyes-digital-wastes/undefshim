@@ -369,7 +369,8 @@ tag = "spin probe"
         "-m", "4096", "-smp", "8,sockets=1,clusters=2,cores=4,threads=1",
         "-cpu", os.environ.get("QEMU_CPU", "cortex-a76-nolrcpc"),
         "-kernel", FIRMWARE,
-        "-device", "ramfb", "-vnc", "none" if args.no_screen else "0.0.0.0:0",
+        "-device", "ramfb", "-vnc", "none" if args.no_screen
+        else os.environ.get("QEMU_VNC", "0.0.0.0:0"),
         "-display", "none",
         "-gdb", "tcp::%d" % args.gdb_port,
         "-qmp", "tcp:127.0.0.1:%d,server=on,wait=off" % args.qmp_port,
