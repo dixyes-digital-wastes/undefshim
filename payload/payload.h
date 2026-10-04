@@ -253,6 +253,9 @@ typedef struct UsPayloadConfig_t {
      */
     uint64_t el0InPlace;
 
+    /* Whether to count where traps are taken; see [stats] enabled. */
+    uint64_t statsEnabled;
+
     /* Firmware affinity-to-index mapping used to generate the stack lookup */
     uint64_t cpuCount;
     /* One entry per processor plus the firmware mapping's terminator */

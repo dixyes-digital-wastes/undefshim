@@ -327,6 +327,15 @@ UsConfig *usConfigParse(const char *text, size_t len, char *err, size_t errLen) 
         return NULL;
     }
 
+    /* Where the handler's own count of trapping addresses is kept: off
+     * unless asked for, because it costs a lookup on every exception. */
+    cfg->statsEnabled = false;
+    toml_table_t *stats = toml_table_table(cfg->root, "stats");
+    if (!cfgBool(stats, "enabled", &cfg->statsEnabled, err, errLen)) {
+        usConfigFree(cfg);
+        return NULL;
+    }
+
     cfg->patchDir = "usPatch";
     toml_table_t *patch = toml_table_table(cfg->root, "patch");
     if (patch != NULL) {
