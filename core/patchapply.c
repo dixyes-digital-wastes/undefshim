@@ -39,10 +39,25 @@ bool usPatchTargetMatches(const UsPatchFile *file, const char *imageName) {
 }
 
 UsPatchApplyResult usPatchApplyFile(const UsPatchFile *file, const UsPatchSite *sites,
-                                    const char *imageName, uint8_t *text,
-                                    uint32_t textBytes, UsPatchStats *stats) {
+                                    const char *imageName, uint32_t textRva,
+                                    uint8_t *text, uint32_t textBytes,
+                                    UsPatchStats *stats) {
     uint8_t digest[32];
 
+    if (text == NULL || textBytes == 0U) {
+        stats->files++;
+        return UsPatchNoText;
+    }
+    usSha256(text, textBytes, digest);
+    return usPatchApplyWithDigest(file, sites, imageName, textRva, digest, text,
+                                  textBytes, stats);
+}
+
+UsPatchApplyResult usPatchApplyWithDigest(const UsPatchFile *file,
+                                          const UsPatchSite *sites,
+                                          const char *imageName, uint32_t textRva,
+                                          const uint8_t digest[32], uint8_t *text,
+                                          uint32_t textBytes, UsPatchStats *stats) {
     stats->files++;
     if (!usPatchTargetMatches(file, imageName)) {
         stats->wrongTarget++;
@@ -57,7 +72,6 @@ UsPatchApplyResult usPatchApplyFile(const UsPatchFile *file, const UsPatchSite *
      * another build of the same image would put instructions where they do not
      * belong, and there is no way to tell from the sites alone.
      */
-    usSha256(text, textBytes, digest);
     for (uint32_t i = 0; i < 32U; i++) {
         if (digest[i] != file->hash[i]) {
             stats->wrongBuild++;
@@ -70,15 +84,18 @@ UsPatchApplyResult usPatchApplyFile(const UsPatchFile *file, const UsPatchSite *
         const UsPatchSite *site = &sites[i];
         uint32_t width = site->width;
 
-        if (width == 0U || site->rva > textBytes || width > textBytes - site->rva) {
+        uint32_t offset = site->rva - textRva;
+
+        if (width == 0U || site->rva < textRva || offset > textBytes
+            || width > textBytes - offset) {
             stats->outOfRange++;
             continue;
         }
-        if (!usPatchMatches(site, text + site->rva)) {
+        if (!usPatchMatches(site, text + offset)) {
             stats->refused++;
             continue;
         }
-        usPatchWrite(site, text + site->rva);
+        usPatchWrite(site, text + offset);
         stats->applied++;
     }
     return UsPatchApplied;

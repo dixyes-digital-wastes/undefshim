@@ -112,7 +112,8 @@ static const char *good =
 static void testGood(void) {
     UsPatchSite sites[16];
     UsPatchFile file;
-    uint8_t memory[4] = { 0xf8, 0xbf, 0xc3, 0xea };
+    /* f8bfc3ea, as the four bytes at the address. */
+    uint8_t memory[4] = { 0xea, 0xc3, 0xbf, 0xf8 };
     uint8_t digest[32];
 
     memset(&file, 0, sizeof(file));
@@ -127,20 +128,20 @@ static void testGood(void) {
     eq64("byte for byte", file.hash[31], 0x1fU);
     eq64("the first site's address", sites[0].rva, 0x458b18U);
     eq64("its width", sites[0].width, 4U);
-    eq64("its match", sites[0].match[0], 0xf8U);
-    eq64("its replacement", sites[0].replace[0], 0xc8U);
+    eq64("its match", sites[0].match[0], 0xeaU);
+    eq64("its replacement", sites[0].replace[0], 0xeaU);
     eq64("a missing mask is all ones", sites[0].mask[0], 0xffU);
     eq64("an explicit mask is kept", sites[2 - 1].mask[3], 0xffU);
     eq64("the third site is replace only", sites[2].match[0], 0xffU);
-    eq64("and its replacement", sites[2].replace[0], 0xc8U);
+    eq64("and its replacement", sites[2].replace[0], 0xeaU);
 
     ok("the memory matches", usPatchMatches(&sites[0], memory));
-    memory[1] = 0x00;
+    memory[3] = 0x00;
     ok("and stops matching when it does not", !usPatchMatches(&sites[0], memory));
-    memory[1] = 0xbf;
+    memory[3] = 0xf8;
     usPatchWrite(&sites[0], memory);
-    eq64("a write lands", memory[0], 0xc8U);
-    eq64("all four bytes of it", memory[3], 0xeaU);
+    eq64("a write lands", memory[0], 0xeaU);
+    eq64("all four bytes of it", memory[3], 0xc8U);
     (void)digest;
 }
 
@@ -294,7 +295,7 @@ static void testApply(void) {
         "0x4 f8bfc3ea c8dfffea\n"        /* will match and be written */
         "0x8 00000000 deadbeef\n"        /* bytes are not what it says */
         "0x100 f8bfc3ea c8dfffea\n";     /* past the end of the text */
-    uint8_t text[16] = { 1, 2, 3, 4, 0xf8, 0xbf, 0xc3, 0xea, 9, 9, 9, 9, 9, 9, 9, 9 };
+    uint8_t text[16] = { 1, 2, 3, 4, 0xea, 0xc3, 0xbf, 0xf8, 9, 9, 9, 9, 9, 9, 9, 9 };
     uint8_t digest[32];
     char document[512];
     char hex[65];
@@ -312,20 +313,20 @@ static void testApply(void) {
     eq32("the file parses", usPatchParse(document, (uint32_t)strlen(document), sites,
                                         8U, &parsed), UsPatchOk);
     memset(&stats, 0, sizeof(stats));
-    eq32("it applies", usPatchApplyFile(&parsed, sites, "ntoskrnl.exe", text,
+    eq32("it applies", usPatchApplyFile(&parsed, sites, "ntoskrnl.exe", 0U, text,
                                         sizeof(text), &stats), UsPatchApplied);
     eq32("one site written", stats.applied, 1U);
     eq32("one site refused for its bytes", stats.refused, 1U);
     eq32("one site past the end", stats.outOfRange, 1U);
-    eq64("the instruction is replaced", text[4], 0xc8U);
-    eq64("all four bytes of it", text[7], 0xeaU);
+    eq64("the instruction is replaced", text[4], 0xeaU);
+    eq64("all four bytes of it", text[7], 0xc8U);
     eq64("and nothing else was touched", text[8], 9U);
 
     /* The same list against another build: the hash says no. */
     text[0] = 0xff;
     memset(&stats, 0, sizeof(stats));
     eq32("another build is refused",
-         usPatchApplyFile(&parsed, sites, "ntoskrnl", text, sizeof(text), &stats),
+         usPatchApplyFile(&parsed, sites, "ntoskrnl", 0U, text, sizeof(text), &stats),
          UsPatchWrongBuild);
     eq32("and nothing is written for it", stats.applied, 0U);
     text[0] = 1;
@@ -333,7 +334,7 @@ static void testApply(void) {
     /* Another image entirely. */
     memset(&stats, 0, sizeof(stats));
     eq32("another image is not this list's",
-         usPatchApplyFile(&parsed, sites, "winload.efi", text, sizeof(text), &stats),
+         usPatchApplyFile(&parsed, sites, "winload.efi", 0U, text, sizeof(text), &stats),
          UsPatchNotThisImage);
     ok("the stem decides", usPatchTargetMatches(&parsed, "NTOSKRNL.EFI"));
     ok("and a different stem does not", !usPatchTargetMatches(&parsed, "ntoskrnl2"));
