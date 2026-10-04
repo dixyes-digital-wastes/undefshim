@@ -321,7 +321,14 @@ def main():
 
     config = os.path.join(work, "run.toml")
     with open(config, "w") as f:
-        f.write("""[log]
+        # Where the serial output goes. Without it the machine is silent, and
+        # these runs are read from that output.
+        f.write("""[uart]
+baseAddr = 0x09000000
+type = "pl011"
+width = 32
+
+[log]
 level = "info"
 
 [scan]
@@ -334,9 +341,6 @@ armSlot0 = %s
 spxStack = %s
 vamap = %s
 """ % (args.rewrite, args.arm, args.arm_slot0, args.spx_stack, args.vamap))
-        # The root states where the serial output goes; without it there is
-        # none, and these runs are read from that output.
-        f.write('\nuartBase = 0x09000000\nuartType = "pl011"\nuartWidth = 32\n')
         if args.descriptor_base_rva:
             f.write('\n[kernel]\ndescriptorBaseRva = %s\n' % args.descriptor_base_rva)
         if args.spin_rva is not None:

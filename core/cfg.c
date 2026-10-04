@@ -360,29 +360,31 @@ UsConfig *usConfigParse(const char *text, size_t len, char *err, size_t errLen) 
     }
 
     /*
-     * Serial output, stated at the root: the driver, the payload and anything
-     * reporting later all need it, so it does not belong under a table of its
-     * own. No base means no serial output at all.
+     * Serial output, under a table of its own rather than under the kernel's:
+     * the driver, the payload and anything reporting later all need it, and
+     * none of them is the kernel. No base address means no serial output at
+     * all, which is how a machine says it wants silence.
      */
     cfg->hasUart = false;
     cfg->uartType = "pl011";
     cfg->uartBase = 0;
     cfg->uartWidth = 32;
-    if (cfgHas(cfg->root, "uartBase")) {
+    toml_table_t *uart = toml_table_table(cfg->root, "uart");
+    if (uart != NULL && cfgHas(uart, "baseAddr")) {
         int64_t base = 0;
         int64_t width = 0;
         const char *type = NULL;
         int typeLen = 0;
 
-        if (!cfgInt(cfg->root, "uartBase", &base, err, errLen) || base <= 0) {
-            setErrKey(err, errLen, "not an address: ", "uartBase");
+        if (!cfgInt(uart, "baseAddr", &base, err, errLen) || base <= 0) {
+            setErrKey(err, errLen, "not an address: ", "baseAddr");
             usConfigFree(cfg);
             return NULL;
         }
         cfg->uartBase = (uint64_t)base;
         cfg->hasUart = true;
-        if (cfgHas(cfg->root, "uartType")) {
-            if (!cfgStr(cfg->root, "uartType", &type, &typeLen, err, errLen)) {
+        if (cfgHas(uart, "type")) {
+            if (!cfgStr(uart, "type", &type, &typeLen, err, errLen)) {
                 usConfigFree(cfg);
                 return NULL;
             }
@@ -391,16 +393,16 @@ UsConfig *usConfigParse(const char *text, size_t len, char *err, size_t errLen) 
             } else if (sameStr(type, typeLen, "uart8250")) {
                 cfg->uartWidth = 8;
             } else {
-                setErrKey(err, errLen, "unknown uart type: ", "uartType");
+                setErrKey(err, errLen, "unknown uart type: ", "type");
                 usConfigFree(cfg);
                 return NULL;
             }
             cfg->uartType = type;
         }
-        if (cfgHas(cfg->root, "uartWidth")) {
-            if (!cfgInt(cfg->root, "uartWidth", &width, err, errLen)
+        if (cfgHas(uart, "width")) {
+            if (!cfgInt(uart, "width", &width, err, errLen)
                 || (width != 8 && width != 32)) {
-                setErrKey(err, errLen, "must be 8 or 32: ", "uartWidth");
+                setErrKey(err, errLen, "must be 8 or 32: ", "width");
                 usConfigFree(cfg);
                 return NULL;
             }

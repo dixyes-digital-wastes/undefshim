@@ -1,10 +1,11 @@
 # Runtime configuration, read from the first volume that provides it.
-#
-# Where the serial output goes, stated here because several parts of the
-# system use it. Leaving it out means no serial output at all.
-uartBase = 0x09000000
-uartType = "pl011"   # pl011 | uart8250
-uartWidth = 32       # 8 | 32
+
+[uart]
+# Where the serial output goes. Leaving this table out, or leaving baseAddr
+# out of it, means no serial output at all.
+baseAddr = 0x09000000
+type = "pl011"       # pl011 | uart8250
+width = 32           # 8 | 32
 
 [log]
 level = "info"       # off | error | info | verbose | debug
