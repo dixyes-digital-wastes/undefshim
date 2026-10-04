@@ -90,6 +90,14 @@ static char *readFile(efi_file_handle_t *file, size_t *outLen) {
  * Looks for the configuration file in one volume's root directory. Returns the
  * parsed config, or NULL when this volume has no candidate.
  */
+/* The volume the configuration was read from, so that a directory named in
+ * it can be resolved next to it rather than guessed at. */
+static efi_handle_t configVolume;
+
+efi_handle_t usConfigVolume(void) {
+    return configVolume;
+}
+
 static UsConfig *tryVolume(efi_handle_t handle, char *msg, size_t msgLen) {
     efi_guid_t sfsGuid = EFI_SIMPLE_FILE_SYSTEM_PROTOCOL_GUID;
     efi_simple_file_system_protocol_t *sfs = NULL;
@@ -139,6 +147,9 @@ static UsConfig *tryVolume(efi_handle_t handle, char *msg, size_t msgLen) {
     {
         char err[192] = { 0 };
         cfg = usConfigParse(text, textLen, err, sizeof(err));
+        if (cfg != NULL) {
+            configVolume = handle;
+        }
         if (cfg == NULL) {
             snprintf(msg, msgLen, "%s", err[0] != '\0' ? err : "config parse failed");
         }

@@ -12,6 +12,7 @@
 #include "payload/payload.h"
 #include "transfer_blob.h"
 #include "uefi/src/arm.h"
+#include "uefi/src/patch_apply.h"
 #include "uefi/src/cache.h"
 #include "uefi/src/console.h"
 #include "uefi/src/payload_place.h"
@@ -379,6 +380,18 @@ bool usArmVectorTable(UsSession *s) {
     }
 
     armImage(s, UsImageWinload, &armed);
+    /*
+     * Before the kernel's own slots are written and long before it runs: this
+     * is the moment its image is loaded and still writable, and the lists are
+     * meant to be part of what it starts with rather than a change to it.
+     */
+    {
+        UsImage *kernel = usRegistryGet(&s->registry, UsImageNtoskrnl);
+
+        if (kernel != NULL) {
+            usPatchApplyLists(s, kernel);
+        }
+    }
     armImage(s, UsImageNtoskrnl, &armed);
 
     if (armed == 0) {
