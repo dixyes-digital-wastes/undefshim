@@ -62,6 +62,15 @@ typedef struct UsConfig_t {
      * the feature off; the volume root is refused where it is used.
      */
     const char   *patchDir;
+    /*
+     * Where the kernel's own page table base lives, as an RVA, for the builds
+     * that state it. It is a property of the build rather than of any list,
+     * and it is never trusted: the handler checks it against the hardware's
+     * own translation before using it, and carries on without it if it does
+     * not hold.
+     */
+    bool          hasDescriptorBase;
+    uint32_t      descriptorBaseRva;
     bool          debugEnabled;
     UsPatch      *patches;    /* owned array */
     uint32_t      patchCount;

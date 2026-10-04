@@ -118,17 +118,6 @@ bool usArmTransfer(UsSession *s) {
  */
 #define US_STUB_SLOTS 3U
 
-/*
- * Where the kernel keeps the base of its descriptor mapping, from the 26100PE
- * symbols: MmPteBase, in the ALMOSTRO section.
- *
- * The payload needs this to find the descriptor that translates a page it
- * wants to rewrite, and it cannot be a constant in the payload: the value is
- * the kernel's own, chosen at boot, and the literal the kernel's own
- * MiGetPteAddress uses for it is the x64 one, which on a 47-bit address space
- * names an address that does not translate at all.
- */
-#define US_NTOSKRNL_DESCRIPTOR_BASE_RVA 0xE06368U
 
 typedef struct UsArmTarget_t {
     UsImage   *image;
@@ -357,8 +346,14 @@ static bool armImage(UsSession *s, UsImageKind kind, size_t *armed) {
                 .stubRva = hole.rva
                            + (uint32_t)(i * US_STUB_SLOTS + k) * US_SLOT_RUNTIME_BYTES,
                 .slot = s->armSlot0 ? slots[k] : UsVectorSlotEl1hSync,
-                .descriptorBaseRva = kind == UsImageNtoskrnl
-                                         ? US_NTOSKRNL_DESCRIPTOR_BASE_RVA
+                /*
+                 * Only if the configuration states one for this build, and
+                 * only as a candidate: the handler checks it against the
+                 * hardware before trusting it.
+                 */
+                .descriptorBaseRva = kind == UsImageNtoskrnl && s->config != NULL
+                                             && s->config->hasDescriptorBase
+                                         ? s->config->descriptorBaseRva
                                          : 0U,
             };
 
