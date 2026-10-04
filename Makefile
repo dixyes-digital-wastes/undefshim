@@ -80,12 +80,12 @@ US_DRIVER_CFLAGS := --target=$(TARGET_TRIPLE) -std=gnu23 -ffreestanding \
                     -fomit-frame-pointer -O2 -Wall -Wextra \
                     -I. -I$(POSIX_UEFI) -I$(SHIMS) -I$(TOML) -I$(PAYLOAD_BUILD) \
                     -DTOML_NO_FLOAT -DTOML_NO_TIMESTAMP -DTOML_NO_FILE \
-                    -DUS_BUILD_ID=\"$(BUILD_ID)\"
+                    -DUS_BUILD_ID=\"$(BUILD_ID)\" $(EXTRA_CFLAGS)
 
 US_DRIVER_LDFLAGS := --target=$(TARGET_TRIPLE) -nostdlib -fuse-ld=lld-link \
                      -Wl,-entry:uefi_init \
                      -Wl,-subsystem:efi_boot_service_driver \
-                     -Wl,-base:0x50000000 -Wl,-stack:262144 -Wl,/Brepro
+                     -Wl,-base:0x50000000 -Wl,-stack:262144 -Wl,/Brepro $(EXTRA_LDFLAGS)
 
 # posix-uefi is a third party tree, so it keeps its own warnings rather than ours.
 POSIX_CFLAGS := --target=$(TARGET_TRIPLE) -ffreestanding -fshort-wchar \
@@ -290,9 +290,12 @@ FAKE_BUILD := $(BUILD_DIR)/fake
 FAKE_CFLAGS := --target=$(TARGET_TRIPLE) -march=armv8.3-a -std=gnu23 -ffreestanding \
                -fshort-wchar -mno-red-zone -fno-stack-protector -fomit-frame-pointer \
                -O2 -Wall -Wextra -I. -I$(POSIX_UEFI) -I$(SHIMS)
+# Its text is marked writable on purpose: the firmware maps a loaded image's
+# code read-only, and this image exists to have its code written to - which is
+# also how a real kernel's text is mapped when its own patching runs.
 FAKE_LDFLAGS := --target=$(TARGET_TRIPLE) -march=armv8.3-a -nostdlib -fuse-ld=lld-link \
                 -Wl,-entry:uefi_init -Wl,-subsystem:efi_application -Wl,-stack:262144 \
-                -Wl,/Brepro
+                -Wl,/Brepro -Xlinker /SECTION:.text,ERW
 
 fake: $(FAKE_BUILD)/ntoskrnl.efi
 
