@@ -152,6 +152,24 @@ typedef struct UsPoolRewrite_t {
 
 #define US_POOL_REWRITE_SLOTS 8U
 
+/* How many distinct trapping addresses are remembered. */
+#define US_STATS_SLOTS 96U
+
+typedef struct UsPoolStat_t {
+    uint64_t va;      /* the address the exception was taken at */
+    uint64_t count;   /* how many times */
+} UsPoolStat;
+
+typedef struct UsPoolStats_t {
+    uint64_t magic;
+    uint64_t offered;   /* every entry the handler saw */
+    uint64_t recorded;  /* how many of those found or took a slot */
+    uint64_t overflows; /* seen when the table was full and the address new */
+    UsPoolStat slots[US_STATS_SLOTS];
+} UsPoolStats;
+
+#define US_POOL_STATS_MAGIC 0x5354415453554F50ULL   /* "POUSSTAT" backwards */
+
 typedef struct UsPoolEntry_t {
     uint64_t magic;
     uint64_t entries;    /* how many times the handler was entered */
@@ -259,6 +277,19 @@ typedef struct UsPool_t {
      * that is present is proof the payload ran rather than a leftover.
      */
     UsPoolEntry entry;
+
+    /*
+     * Where the handler has been spending its time: one record per address a
+     * trap was taken at, counted. The trap path is the only place that knows,
+     * and user mode cannot read kernel memory, so the count has to be kept
+     * here for something else to read.
+     *
+     * It is an open table: a trap looks the address up, and takes the first
+     * free slot when it is not there. Nothing is evicted, so a busy address
+     * keeps its slot and the ones seen after the table fills are counted
+     * rather than recorded.
+     */
+    UsPoolStats stats;
 
     /*
      * Physical address of this pool. At bootPhase the pool is identity mapped

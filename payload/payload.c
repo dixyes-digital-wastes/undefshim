@@ -483,7 +483,45 @@ static void recordHandback(UsFrame *frame) {
     }
 }
 
+/*
+ * One record per trapping address, so that which sites are still costing an
+ * exception can be read out afterwards. It is deliberately dumb: look the
+ * address up, count it, and take the first free slot when it is new. A probe
+ * would be better, but the trap path is not the place for one.
+ */
+static void usStatsRecord(uint64_t va) {
+    UsPayloadConfig *cfg = usPayloadConfig();
+    UsPool *pool;
+
+    if (cfg->poolBase == 0) {
+        return;
+    }
+    pool = (UsPool *)(uintptr_t)cfg->poolBase;
+    if (pool->stats.magic != US_POOL_STATS_MAGIC) {
+        if (pool->stats.magic != 0) {
+            return;
+        }
+        pool->stats.magic = US_POOL_STATS_MAGIC;
+    }
+    pool->stats.offered++;
+    for (uint32_t i = 0; i < US_STATS_SLOTS; i++) {
+        if (pool->stats.slots[i].va == va) {
+            pool->stats.slots[i].count++;
+            pool->stats.recorded++;
+            return;
+        }
+        if (pool->stats.slots[i].va == 0) {
+            pool->stats.slots[i].va = va;
+            pool->stats.slots[i].count = 1;
+            pool->stats.recorded++;
+            return;
+        }
+    }
+    pool->stats.overflows++;
+}
+
 int usPayloadHandle(UsFrame *frame) {
+    usStatsRecord(frame->elr);
     UsPayloadConfig *cfg = usPayloadConfig();
     uint64_t vbar;
     uint32_t ec;
