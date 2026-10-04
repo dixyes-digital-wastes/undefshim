@@ -489,6 +489,11 @@ static void recordHandback(UsFrame *frame) {
  * address up, count it, and take the first free slot when it is new. A probe
  * would be better, but the trap path is not the place for one.
  */
+/* Turned off to measure what it costs: see the note where it is called. */
+#ifndef US_STATS_ENABLED
+#define US_STATS_ENABLED 0
+#endif
+
 static void usStatsRecord(uint64_t va) {
     UsPayloadConfig *cfg = usPayloadConfig();
     UsPool *pool;
@@ -521,7 +526,9 @@ static void usStatsRecord(uint64_t va) {
 }
 
 int usPayloadHandle(UsFrame *frame) {
-    usStatsRecord(frame->elr);
+    if (usPayloadConfig()->statsEnabled != 0) {
+        usStatsRecord(frame->elr);
+    }
     UsPayloadConfig *cfg = usPayloadConfig();
     uint64_t vbar;
     uint32_t ec;

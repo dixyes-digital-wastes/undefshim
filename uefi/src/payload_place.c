@@ -85,6 +85,7 @@ static void writeConfig(const UsPayloadPlace *place, const UsSession *session) {
      */
     cfg->quiet = 1;
     cfg->el0InPlace = session->config != NULL && session->config->el0InPlace ? 1U : 0U;
+    cfg->statsEnabled = session->config != NULL && session->config->statsEnabled ? 1U : 0U;
 }
 
 bool usPayloadPlace(UsSession *session, UsPayloadPlace *out) {

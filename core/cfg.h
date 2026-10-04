@@ -52,6 +52,11 @@ typedef struct UsConfig_t {
     /* Whether user-mode instructions may be replaced while the kernel runs. */
     bool          el0InPlace;
     /*
+     * Whether the handler keeps a count of where traps are taken. It costs a
+     * lookup on every entry, so it is off unless asked for.
+     */
+    bool          statsEnabled;
+    /*
      * Directory of patch list files, relative to the volume the configuration
      * was read from. Points into the document storage. An empty string turns
      * the feature off; the volume root is refused where it is used.
