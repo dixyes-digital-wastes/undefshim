@@ -158,29 +158,19 @@ static bool armSlot(UsSession *s, const UsArmTarget *target, uint32_t next) {
     uint64_t tablePa;
     uint64_t stubPa;
     uint64_t lastPa;
-    if (!usTranslateAddress(tableAddress, false, &tablePa)
-        || !usTranslateAddress((uintptr_t)stubAt, true, &stubPa)
-        || !usTranslateAddress((uintptr_t)stubAt + sizeof(stub) - 1, true, &lastPa)
+    /*
+     * The physical addresses are recorded for the publication that runs
+     * later, and the question asked here is the one the boot's own stores
+     * answer: where does *this* exception level's regime put the address. The
+     * EL1&0 regime has already been rebuilt for the kernel by the time this
+     * runs and no longer holds the images where the loader put them, so asking
+     * it here refuses a write that would in fact succeed.
+     */
+    if (!usTranslateOwnAddress(tableAddress, false, &tablePa)
+        || !usTranslateOwnAddress((uintptr_t)stubAt, true, &stubPa)
+        || !usTranslateOwnAddress((uintptr_t)stubAt + sizeof(stub) - 1, true, &lastPa)
         || lastPa != stubPa + sizeof(stub) - 1) {
-        uint64_t el;
-        uint64_t sctlr1;
-        uint64_t sctlr2 = 0;
-        __asm__ volatile("mrs %0, CurrentEL\n\tmrs %1, sctlr_el1"
-                         : "=r"(el), "=r"(sctlr1));
-        if (el == 8) {
-            __asm__ volatile("mrs %0, sctlr_el2" : "=r"(sctlr2));
-        }
-        usConsolePuts("arm: translate refused el=");
-        usConsolePutHex(el);
-        usConsolePuts(" sctlr1=");
-        usConsolePutHex(sctlr1);
-        usConsolePuts(" sctlr2=");
-        usConsolePutHex(sctlr2);
-        usConsolePuts(" table=");
-        usConsolePutHex(tableAddress);
-        usConsolePuts(" stub=");
-        usConsolePutHex((uintptr_t)stubAt);
-        usConsolePuts("\n");
+        usConsolePuts("arm: the stub's own address cannot be translated\n");
         return false;
     }
     original = (uint32_t)slotAt[0] | ((uint32_t)slotAt[1] << 8)

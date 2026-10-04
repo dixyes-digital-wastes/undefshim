@@ -98,6 +98,7 @@ DRIVER_SRCS := uefi/src/config.c uefi/src/registry.c \
                uefi/src/session.c \
                core/cfg.c core/pe.c core/scan.c core/plan.c core/rva_patch.c core/pool.c \
                core/thunk.c core/ldapr.c core/acpi.c core/stackgen.c core/translate.c \
+               core/par.c \
                $(TOML)/toml.c
 DRIVER_ASM := uefi/src/stack.S
 DRIVER_OBJS := $(DRIVER_MAIN_OBJ) \
