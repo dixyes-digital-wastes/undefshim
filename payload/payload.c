@@ -435,9 +435,13 @@ static bool emulateLdapr(UsFrame *frame, int cpu) {
      * already in place when the integrity check takes its baseline. Until
      * that exists, the kernel's RCpc loads keep taking the exception.
      *
-     * TODO: make this a configuration item rather than a constant.
+     * Whether even that is wanted is the configuration's business: a machine
+     * that should not have foreign code patched underneath it either sets
+     * el0_in_place to false, and then every RCpc load keeps taking the
+     * exception, which is slower and always correct.
      */
-    if (usSlotOfSpsr(frame->spsr) == UsStubSlotEl0) {
+    if (usPayloadConfig()->el0InPlace != 0
+        && usSlotOfSpsr(frame->spsr) == UsStubSlotEl0) {
         (void)usRewriteSite(frame->elr);
     }
 

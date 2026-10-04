@@ -318,6 +318,25 @@ UsConfig *usConfigParse(const char *text, size_t len, char *err, size_t errLen) 
         usConfigFree(cfg);
         return NULL;
     }
+    /* Replacing user-mode instructions where they stand is the default: it is
+     * what makes a user-mode RCpc load stop taking an exception, and it is
+     * not something the kernel's integrity check has an opinion about. */
+    cfg->el0InPlace = true;
+    if (!cfgBool(scan, "el0_in_place", &cfg->el0InPlace, err, errLen)) {
+        usConfigFree(cfg);
+        return NULL;
+    }
+
+    cfg->patchDir = "usPatch";
+    toml_table_t *patch = toml_table_table(cfg->root, "patch");
+    if (patch != NULL) {
+        int length = 0;
+        const char *dir = toml_table_string_ref(patch, "dir", &length);
+
+        if (dir != NULL) {
+            cfg->patchDir = dir;
+        }
+    }
 
     toml_table_t *dbg = toml_table_table(cfg->root, "debug");
     if (!cfgBool(dbg, "enabled", &cfg->debugEnabled, err, errLen)) {

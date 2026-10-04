@@ -49,6 +49,14 @@ typedef struct UsConfig_t {
     int           version;
     UsLogLevel    logLevel;
     bool          ldaprRewrite;
+    /* Whether user-mode instructions may be replaced while the kernel runs. */
+    bool          el0InPlace;
+    /*
+     * Directory of patch list files, relative to the volume the configuration
+     * was read from. Points into the document storage. An empty string turns
+     * the feature off; the volume root is refused where it is used.
+     */
+    const char   *patchDir;
     bool          debugEnabled;
     UsPatch      *patches;    /* owned array */
     uint32_t      patchCount;

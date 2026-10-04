@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "core/patchapply.h"
 #include "core/patchlist.h"
 #include "core/sha256.h"
 
@@ -281,8 +282,66 @@ static void testGarbage(void) {
     ok("truncations and garbage all returned", true);
 }
 
+/*
+ * Applying a list: which image it is for, which build of it, and whether the
+ * bytes are still the ones the list was written against.
+ */
+static void testApply(void) {
+    static const char *file =
+        "USPATCHV1\n"
+        "peFile ntoskrnl\n"
+        "textSHA256Hash %s\n"
+        "0x4 f8bfc3ea c8dfffea\n"        /* will match and be written */
+        "0x8 00000000 deadbeef\n"        /* bytes are not what it says */
+        "0x100 f8bfc3ea c8dfffea\n";     /* past the end of the text */
+    uint8_t text[16] = { 1, 2, 3, 4, 0xf8, 0xbf, 0xc3, 0xea, 9, 9, 9, 9, 9, 9, 9, 9 };
+    uint8_t digest[32];
+    char document[512];
+    char hex[65];
+    UsPatchSite sites[8];
+    UsPatchFile parsed;
+    UsPatchStats stats;
+
+    usSha256(text, sizeof(text), digest);
+    for (unsigned i = 0; i < 32; i++) {
+        snprintf(hex + i * 2, 3, "%02x", digest[i]);
+    }
+    hex[64] = '\0';
+    snprintf(document, sizeof(document), file, hex);
+    memset(&parsed, 0, sizeof(parsed));
+    eq32("the file parses", usPatchParse(document, (uint32_t)strlen(document), sites,
+                                        8U, &parsed), UsPatchOk);
+    memset(&stats, 0, sizeof(stats));
+    eq32("it applies", usPatchApplyFile(&parsed, sites, "ntoskrnl.exe", text,
+                                        sizeof(text), &stats), UsPatchApplied);
+    eq32("one site written", stats.applied, 1U);
+    eq32("one site refused for its bytes", stats.refused, 1U);
+    eq32("one site past the end", stats.outOfRange, 1U);
+    eq64("the instruction is replaced", text[4], 0xc8U);
+    eq64("all four bytes of it", text[7], 0xeaU);
+    eq64("and nothing else was touched", text[8], 9U);
+
+    /* The same list against another build: the hash says no. */
+    text[0] = 0xff;
+    memset(&stats, 0, sizeof(stats));
+    eq32("another build is refused",
+         usPatchApplyFile(&parsed, sites, "ntoskrnl", text, sizeof(text), &stats),
+         UsPatchWrongBuild);
+    eq32("and nothing is written for it", stats.applied, 0U);
+    text[0] = 1;
+
+    /* Another image entirely. */
+    memset(&stats, 0, sizeof(stats));
+    eq32("another image is not this list's",
+         usPatchApplyFile(&parsed, sites, "winload.efi", text, sizeof(text), &stats),
+         UsPatchNotThisImage);
+    ok("the stem decides", usPatchTargetMatches(&parsed, "NTOSKRNL.EFI"));
+    ok("and a different stem does not", !usPatchTargetMatches(&parsed, "ntoskrnl2"));
+}
+
 int main(void) {
     testSha256();
+    testApply();
     testGood();
     testRefusals();
     testSkippedSites();

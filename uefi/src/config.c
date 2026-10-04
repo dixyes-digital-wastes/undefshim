@@ -17,18 +17,6 @@ static char toLowerAscii(char c) {
     return (c >= 'A' && c <= 'Z') ? (char)(c + ('a' - 'A')) : c;
 }
 
-static char toUpperAscii(char c) {
-    return (c >= 'a' && c <= 'z') ? (char)(c - ('a' - 'A')) : c;
-}
-
-static size_t nameLen(const wchar_t *name) {
-    size_t n = 0;
-    while (name[n] != 0) {
-        n++;
-    }
-    return n;
-}
-
 /* Case insensitive comparison of a firmware path against an ASCII literal. */
 static bool nameEq(const wchar_t *name, const char *literal) {
     size_t i = 0;
@@ -40,43 +28,13 @@ static bool nameEq(const wchar_t *name, const char *literal) {
     return name[i] == 0;
 }
 
-static bool nameStartsWith(const wchar_t *name, const char *prefix) {
-    for (size_t i = 0; prefix[i] != '\0'; i++) {
-        if (name[i] == 0 || toUpperAscii((char)name[i]) != toUpperAscii(prefix[i])) {
-            return false;
-        }
-    }
-    return true;
-}
-
-static bool nameEndsWith(const wchar_t *name, const char *suffix) {
-    size_t nameLength = nameLen(name);
-    size_t suffixLength = 0;
-    while (suffix[suffixLength] != '\0') {
-        suffixLength++;
-    }
-    if (nameLength < suffixLength) {
-        return false;
-    }
-    const wchar_t *tail = name + (nameLength - suffixLength);
-    for (size_t i = 0; i < suffixLength; i++) {
-        if (toUpperAscii((char)tail[i]) != toUpperAscii(suffix[i])) {
-            return false;
-        }
-    }
-    return true;
-}
-
 /*
- * Accepts the long name and the 8.3 name FAT generates for it. The numeric tail
- * of a short name depends on what else shares the volume, so only the prefix
- * and extension are matched.
+ * The configuration file is us.toml, and US.TOM is the same name: it is a
+ * valid 8.3 name already, so that is the spelling a case folding filesystem
+ * or a tool that upper cases short names would show. nameEq folds case.
  */
 static bool isConfigName(const wchar_t *name) {
-    if (nameEq(name, "undefshim.toml")) {
-        return true;
-    }
-    return nameStartsWith(name, "UNDEFS~") && nameEndsWith(name, ".TOM");
+    return nameEq(name, "us.toml");
 }
 
 static void *alloc(uintn_t size) {

@@ -26,7 +26,8 @@ test_early: test_early.c $(ROOT)/payload/early.c $(ROOT)/payload/vamap.c \
             $(ROOT)/core/thunk.c
 	$(CC) -std=gnu23 -O2 -Wall -Wextra -I$(ROOT) $^ -o $@
 
-test_patchlist: test_patchlist.c $(ROOT)/core/patchlist.c $(ROOT)/core/sha256.c
+test_patchlist: test_patchlist.c $(ROOT)/core/patchlist.c $(ROOT)/core/patchapply.c \
+                $(ROOT)/core/sha256.c
 	$(CC) -std=gnu23 -O2 -Wall -Wextra -I$(ROOT) $^ -o $@
 
 test_ldr: test_ldr.c $(ROOT)/core/ldr.c
