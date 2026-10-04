@@ -30,7 +30,9 @@ BOOT_TIMEOUT="${BOOT_TIMEOUT:-90}"
 
 # A firmware exception ends the run: waiting out the timeout after the guest
 # has already died just wastes time and hides the reason.
-FAULT_PATTERN="Synchronous Exception"
+# Overridable: a fault ends the run, which is right for a check but cuts
+# the firmware's message short when the reason is what is wanted.
+FAULT_PATTERN="${FAULT_PATTERN-Synchronous Exception}"
 
 # Optional Windows volume. When given, the boot volume's startup.nsh finds it
 # and chainloads its boot manager, so the driver sees a real boot. Read only:

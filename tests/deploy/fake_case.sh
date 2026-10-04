@@ -64,6 +64,10 @@ DRIVER="$DRIVER" CONFIG=config/us.toml STARTUP=tests/deploy/fake_startup.nsh \
     bash tests/deploy/build_esp.sh >/dev/null
 mcopy -i "$ESP" -o "$FAKE_DIR/ntoskrnl.efi" ::/ntoskrnl.efi
 
+# A socket left behind by an earlier run makes QEMU refuse to start, which
+# looks exactly like a boot that said nothing.
+rm -f "${SERIAL_SOCK:-$BUILD_DIR/serial.sock}"
+
 ESP="$ESP" SERIAL_LOG="$SERIAL_LOG" STOP_PATTERN="FAKEK: PASS" \
     ARM_PATTERN="US-M6.5-ARMED" BOOT_TIMEOUT="${BOOT_TIMEOUT:-180}" \
     bash tests/deploy/run.sh >/dev/null 2>&1 || true
