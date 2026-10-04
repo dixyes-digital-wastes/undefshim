@@ -156,8 +156,24 @@ static void testRefusals(void) {
         { "an empty file has no version", "", UsPatchUnsupported },
         { "and neither does a comment", "# nothing here\n", UsPatchUnsupported },
         { "a later version is refused", "USPATCHV2\n", UsPatchUnsupported },
-        { "a version and nothing else", "USPATCHV1\n", UsPatchNoTarget },
-        { "a target but no hash", "USPATCHV1\npeFile ntoskrnl\n", UsPatchNoHash },
+        /* No matcher at all is refused: there would be nothing to check. */
+        { "a version and nothing else", "USPATCHV1\n", UsPatchNoMatchers },
+        /* A matcher twice is a bad file, not a coincidence to resolve. */
+        { "two names",
+          "USPATCHV1\npeFile ntoskrnl\npeFile winload\n", UsPatchDuplicate },
+        { "two hashes",
+          "USPATCHV1\ntextSHA256Hash "
+          "0000000000000000000000000000000000000000000000000000000000000000\n"
+          "textSHA256Hash "
+          "1111111111111111111111111111111111111111111111111111111111111111\n",
+          UsPatchDuplicate },
+        { "two uuids",
+          "USPATCHV1\npdbUUID 00010203-0405-0607-0809-0a0b0c0d0e0f-1\n"
+          "pdbUUID 00010203-0405-0607-0809-0a0b0c0d0e0f-2\n", UsPatchDuplicate },
+        /* One matcher on its own is enough to be checkable. */
+        { "a uuid alone is enough",
+          "USPATCHV1\npdbUUID 00010203-0405-0607-0809-0a0b0c0d0e0f-1\n", UsPatchOk },
+        { "a name alone is enough", "USPATCHV1\npeFile ntoskrnl\n", UsPatchOk },
         { "a short hash", "USPATCHV1\npeFile ntoskrnl\ntextSHA256Hash cafebabe\n",
           UsPatchNoHash },
         { "an unknown instruction",

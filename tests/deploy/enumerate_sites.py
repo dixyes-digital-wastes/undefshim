@@ -82,6 +82,35 @@ def functions(data, sectionsByName, directories, textRva, textBytes):
             for i in range(len(starts))]
 
 
+def identityFor(data, byName, directories):
+    """The program database's GUID and age, as the image itself states them."""
+    debug = directories[6]
+    if debug[0] == 0:
+        return None
+    section = next((v for v in byName.values()
+                    if v["rva"] <= debug[0] < v["rva"] + max(v["vsize"], v["rawSize"])), None)
+    if section is None:
+        return None
+    at = section["raw"] + (debug[0] - section["rva"])
+    for index in range(debug[1] // 28):
+        entry = at + index * 28
+        kind, size, rva = struct.unpack_from("<III", data, entry + 12)
+        if kind != 2 or size < 24:
+            continue
+        holder = next((v for v in byName.values()
+                       if v["rva"] <= rva < v["rva"] + max(v["vsize"], v["rawSize"])), None)
+        if holder is None:
+            continue
+        record = data[holder["raw"] + (rva - holder["rva"]):]
+        if record[0:4] != b"RSDS":
+            continue
+        guid = record[4:20]
+        age = struct.unpack_from("<I", record, 20)[0]
+        return "%s-%s-%s-%s-%s-%d" % (guid[0:4].hex(), guid[4:6].hex(), guid[6:8].hex(),
+                                      guid[8:10].hex(), guid[10:16].hex(), age)
+    return None
+
+
 def loadSymbols(path):
     symbols = []
     if path and os.path.exists(path):
@@ -150,6 +179,9 @@ def main():
     parser.add_argument("--pefile", default="ntoskrnl")
     parser.add_argument("--out", default="config/usPatch/all-ldapr.txt")
     parser.add_argument("--limit", type=int, default=0, help="write at most this many")
+    parser.add_argument("--pdb", action="store_true",
+                        help="state the program database's identity, which the file and the "
+                             "running image agree on, instead of a hash of the text")
     parser.add_argument("--digest-from", default="",
                         help="a run log whose driver-printed digest to stamp the list with: "
                              "the loader patches a little of the text itself, so the file's "
@@ -215,14 +247,17 @@ def main():
                 break
             pc += 4
     sites.sort()
-    print("%d sites in %d bytes of text, digest %s" % (len(sites), textBytes, digest))
+    pdb = identityFor(data, byName, directories)
+    lines_split = "%d sites in %d bytes of text, digest %s, pdb %s" % (len(sites), textBytes,
+                                                                      digest, pdb)
+    print(lines_split)
 
     lines = ["# Every RCpc load in this kernel's text, found by disassembling each",
              "# function in the exception directory rather than by scanning for a",
              "# pattern. One site per line, with the symbol it lives in.",
              "USPATCHV1",
              "peFile " + args.pefile,
-             "textSHA256Hash " + digest,
+             ("pdbUUID " + pdb) if (args.pdb and pdb) else ("textSHA256Hash " + digest),
              ""]
     for rva, raw, mnemonic in sites[:args.limit or None]:
         word = raw[0] | (raw[1] << 8) | (raw[2] << 16) | (raw[3] << 24)
