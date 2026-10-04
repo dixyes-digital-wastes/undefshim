@@ -107,7 +107,9 @@ static Token next(Scanner *scan) {
     }
 
     uint32_t run = 0;
-    while (scan->at + run < scan->length && isAlnum(token.at[run])) {
+    while (scan->at + run < scan->length
+           && (isAlnum(token.at[run])
+               || (token.at[run] == '-' && run > 0 && isHex(token.at[run - 1])))) {
         run++;
     }
     if (run == 0) {
@@ -124,7 +126,9 @@ static Token next(Scanner *scan) {
         bool hex = true;
 
         for (uint32_t i = 0; i < run; i++) {
-            if (!isHex(token.at[i])) {
+            /* A hyphen is part of a token that carries one, as a uuid does;
+             * runBytes rejects them where a field is meant to be digits. */
+            if (!isHex(token.at[i]) && token.at[i] != '-') {
                 hex = false;
                 break;
             }
@@ -136,11 +140,17 @@ static Token next(Scanner *scan) {
     return token;
 }
 
-/* How many bytes a run of hexadecimal digits describes, or 0 if it cannot. */
+/* How many bytes a run of hexadecimal digits describes, or 0 if it cannot.
+ * A field is digits only: the hyphens a uuid is written with belong to it. */
 static uint32_t runBytes(const Token *token) {
     if (token->kind != TokenHexRun || (token->length % 2U) != 0
         || token->length == 0 || token->length > US_PATCH_MAX_WIDTH * 2U) {
         return 0;
+    }
+    for (uint32_t i = 0; i < token->length; i++) {
+        if (!isHex(token->at[i])) {
+            return 0;
+        }
     }
     return token->length / 2U;
 }
@@ -150,6 +160,59 @@ static uint32_t runBytes(const Token *token) {
  * first, and stored the way the machine keeps it, least significant first: a
  * site reads f8bfc3ea and the four bytes at its address are ea c3 bf f8.
  */
+/*
+ * A uuid as a debugger writes it, with the age after it: 8-4-4-4-12
+ * hexadecimal digits, hyphens between the groups, then another hyphen and the
+ * age in decimal. All of that is one token, because that is how it is
+ * written; the bytes keep the order they are written in, unlike a site's
+ * fields.
+ */
+static bool readIdentity(const Token *token, uint8_t *out, uint32_t bytes,
+                         uint32_t *outAge) {
+    static const uint32_t groups[5] = { 4U, 2U, 2U, 2U, 6U };
+    uint32_t at = 0;
+    uint32_t written = 0;
+    uint32_t age = 0;
+
+    for (uint32_t group = 0; group < 5U; group++) {
+        if (group > 0) {
+            if (at >= token->length || token->at[at] != '-') {
+                return false;
+            }
+            at++;
+        }
+        for (uint32_t pair = 0; pair < groups[group]; pair++) {
+            if (at + 1U >= token->length || !isHex(token->at[at])
+                || !isHex(token->at[at + 1U])) {
+                return false;
+            }
+            if (written < bytes) {
+                out[written] = (uint8_t)((hexValue(token->at[at]) << 4)
+                                         | hexValue(token->at[at + 1U]));
+            }
+            written++;
+            at += 2U;
+        }
+    }
+    if (written != bytes || at >= token->length || token->at[at] != '-') {
+        return false;
+    }
+    at++;
+    if (at >= token->length) {
+        return false;
+    }
+    for (; at < token->length; at++) {
+        char c = token->at[at];
+
+        if (c < '0' || c > '9') {
+            return false;
+        }
+        age = age * 10U + (uint32_t)(c - '0');
+    }
+    *outAge = age;
+    return true;
+}
+
 static void readBytes(const Token *token, uint8_t *out, uint32_t bytes) {
     for (uint32_t i = 0; i < bytes; i++) {
         uint32_t from = (bytes - 1U - i) * 2U;
@@ -177,11 +240,15 @@ UsPatchStatus usPatchParse(const char *text, uint32_t length, UsPatchSite *sites
     Scanner scan = { text, length, 0 };
     Token token;
     bool haveVersion = false;
-    bool haveHash = false;
+    bool seenTarget = false;
+    bool seenHash = false;
+    bool seenPdb = false;
 
     out->target = NULL;
     out->targetLength = 0;
     out->sites = 0;
+    out->hasHash = false;
+    out->hasPdbIdentity = false;
     out->skipped = 0;
     out->errorAt = 0;
 
@@ -200,7 +267,14 @@ UsPatchStatus usPatchParse(const char *text, uint32_t length, UsPatchSite *sites
         }
         if (token.kind == TokenWord) {
             if (sameWord(&token, "peFile")) {
-                Token name = next(&scan);
+                Token name;
+
+                if (seenTarget) {
+                    out->errorAt = (uint32_t)(token.at - text);
+                    return UsPatchDuplicate;
+                }
+                seenTarget = true;
+                name = next(&scan);
 
                 if (name.kind != TokenWord && name.kind != TokenHexRun) {
                     out->errorAt = (uint32_t)(name.at != NULL ? name.at - text : scan.at);
@@ -211,7 +285,14 @@ UsPatchStatus usPatchParse(const char *text, uint32_t length, UsPatchSite *sites
                 continue;
             }
             if (sameWord(&token, "textSHA256Hash")) {
-                Token digits = next(&scan);
+                Token digits;
+
+                if (seenHash) {
+                    out->errorAt = (uint32_t)(token.at - text);
+                    return UsPatchDuplicate;
+                }
+                seenHash = true;
+                digits = next(&scan);
 
                 if (digits.kind != TokenHexRun || digits.length != 64U) {
                     out->errorAt = (uint32_t)(digits.at != NULL ? digits.at - text : scan.at);
@@ -223,7 +304,25 @@ UsPatchStatus usPatchParse(const char *text, uint32_t length, UsPatchSite *sites
                     out->hash[i] = (uint8_t)((hexValue(digits.at[i * 2]) << 4)
                                              | hexValue(digits.at[i * 2 + 1]));
                 }
-                haveHash = true;
+                out->hasHash = true;
+                continue;
+            }
+            if (sameWord(&token, "pdbUUID")) {
+                Token uuid = next(&scan);
+                uint32_t age = 0;
+
+                if (seenPdb) {
+                    out->errorAt = (uint32_t)(token.at - text);
+                    return UsPatchDuplicate;
+                }
+                seenPdb = true;
+                if (uuid.kind != TokenHexRun
+                    || !readIdentity(&uuid, out->pdbGuid, 16U, &age)) {
+                    out->errorAt = (uint32_t)(uuid.at != NULL ? uuid.at - text : scan.at);
+                    return UsPatchSyntax;
+                }
+                out->pdbAge = age;
+                out->hasPdbIdentity = true;
                 continue;
             }
             /* An instruction from a newer format, or a typo: refuse it. */
@@ -305,14 +404,16 @@ UsPatchStatus usPatchParse(const char *text, uint32_t length, UsPatchSite *sites
     if (!haveVersion) {
         return UsPatchUnsupported;
     }
-    if (out->target == NULL) {
-        return UsPatchNoTarget;
+    /* At least one matcher: a list that carries none would be applied to
+     * whatever image it was pointed at, which is how a list written for one
+     * build ends up in another. */
+    if (!seenTarget && !seenHash && !seenPdb) {
+        return UsPatchNoMatchers;
     }
-    /* Without the hash there is no way to know the list is for this build,
-     * and a patch meant for another one is worse than no patch at all. */
-    if (!haveHash) {
-        return UsPatchNoHash;
-    }
+    (void)haveVersion;
+    (void)seenTarget;
+    (void)seenHash;
+    (void)seenPdb;
     out->status = UsPatchOk;
     return UsPatchOk;
 }

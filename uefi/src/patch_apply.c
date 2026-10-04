@@ -91,6 +91,42 @@ static uint32_t imageTextRva(UsImage *image) {
 /* Defined below, used by the application above it. */
 static void digestText(UsImage *image, uint8_t *code, uint32_t bytes, uint8_t out[32]);
 
+/*
+ * The build's identity, as the image itself carries it: the debug directory's
+ * CodeView entry holds the program database's GUID and age. Those bytes are
+ * the same in the file and in memory - nothing relocates them and the loader
+ * does not patch them - so a list written from the file can be checked
+ * against the running image without ever having run it.
+ */
+static bool imageIdentity(UsImage *image, UsPatchIdentity *out) {
+    uint32_t size = 0;
+    const uint8_t *table = usImageDataDirectory(image, 6U, &size);
+
+    if (table == NULL) {
+        return false;
+    }
+    for (uint32_t at = 0; at + 28U <= size; at += 28U) {
+        uint32_t type = rd32le(table + at + 12);
+        uint32_t bytes = rd32le(table + at + 16);
+        uint32_t rva = rd32le(table + at + 20);
+        const uint8_t *record;
+
+        if (type != 2U || bytes < 24U) {
+            continue;
+        }
+        record = usImageRvaToPtr(image, rva);
+        if (record == NULL || rd32le(record) != 0x53445352U) {   /* RSDS */
+            continue;
+        }
+        for (uint32_t i = 0; i < 16U; i++) {
+            out->guid[i] = record[4U + i];
+        }
+        out->age = rd32le(record + 20U);
+        return true;
+    }
+    return false;
+}
+
 static void applyOne(UsImage *image, const char *name, const char *text,
                      size_t length) {
     UsPatchSite *sites;
@@ -126,12 +162,17 @@ static void applyOne(UsImage *image, const char *name, const char *text,
         return;
     }
     uint8_t digest[32];
+    UsPatchIdentity identity;
+    UsPatchMatchers matchers;
 
     digestText(image, code, textBytes, digest);
+    matchers.imageName = "ntoskrnl";
+    matchers.digest = digest;
+    matchers.identity = imageIdentity(image, &identity) ? &identity : NULL;
     stats.files = 1;
-    UsPatchApplyResult result = usPatchApplyWithDigest(&file, sites, "ntoskrnl",
-                                                       imageTextRva(image), digest, code,
-                                                       textBytes, &stats);
+    UsPatchApplyResult result = usPatchApplyMatched(&file, sites, &matchers,
+                                                    imageTextRva(image), code, textBytes,
+                                                    &stats);
     if (result == UsPatchApplied) {
         usConsolePuts(" applied ");
         usConsolePutDec(stats.applied);

@@ -15,11 +15,30 @@
 #include "core/patchlist.h"
 
 typedef enum {
-    UsPatchApplied = 0,    /* the list belongs to this image and was used */
-    UsPatchNotThisImage,   /* the target name is a different image */
-    UsPatchWrongBuild,     /* the hash is not this text's */
-    UsPatchNoText,         /* the image has no text to check against */
+    UsPatchApplied = 0,    /* every matcher the list carries agreed */
+    UsPatchNotThisImage,   /* it names another image */
+    UsPatchWrongBuild,     /* the digest, or the program database's identity, is another build */
+    UsPatchNoText,         /* the image has no text to write into */
+    UsPatchUnverifiable,   /* it carries a matcher the caller cannot answer */
 } UsPatchApplyResult;
+
+/* The build as the program database states it: what the image's own CodeView
+ * record holds. */
+typedef struct {
+    uint8_t  guid[16];
+    uint32_t age;
+} UsPatchIdentity;
+
+/*
+ * What the caller knows about the image, for the matchers a list may carry.
+ * A NULL field means "cannot answer", and a list that asks a question nobody
+ * can answer is refused rather than applied on trust.
+ */
+typedef struct {
+    const char            *imageName;   /* compared on the stem */
+    const uint8_t         *digest;      /* 32 bytes of the text, or NULL */
+    const UsPatchIdentity *identity;    /* or NULL */
+} UsPatchMatchers;
 
 typedef struct {
     uint32_t files;
@@ -47,6 +66,15 @@ UsPatchApplyResult usPatchApplyFile(const UsPatchFile *file, const UsPatchSite *
                                     const char *imageName, uint32_t textRva,
                                     uint8_t *text, uint32_t textBytes,
                                     UsPatchStats *stats);
+
+/*
+ * The same, with everything the caller knows: a list's matchers are checked
+ * against these, and only the ones it carries are asked about.
+ */
+UsPatchApplyResult usPatchApplyMatched(const UsPatchFile *file, const UsPatchSite *sites,
+                                       const UsPatchMatchers *matchers, uint32_t textRva,
+                                       uint8_t *text, uint32_t textBytes,
+                                       UsPatchStats *stats);
 
 /*
  * The same, with the digest of the text handed in rather than computed here.
