@@ -192,14 +192,17 @@ static void testSkippedSites(void) {
     } cases[] = {
         { "an odd number of digits", "0x458b18 f8bfc3e c8dfffea\n", 0U, 1U },
         { "fields of different widths", "0x458b18 f8bfc3ea c8dfffea11\n", 0U, 1U },
-        { "a field longer than the limit",
-          "0x458b18 f8bfc3eaf8bfc3eaf8 c8dfffeac8dfffeac8\n", 0U, 1U },
-        { "an unaligned address", "0x458b19 f8bfc3ea c8dfffea\n", 0U, 1U },
+        /* Ten bytes is inside the limit, whatever the address. */
+        { "a ten byte field",
+          "0x458b18 f8bfc3eaf8bfc3eaf8 c8dfffeac8dfffeac8\n", 1U, 0U },
+        { "an odd width", "0x458b19 f8bfc3 c8dfff\n", 1U, 0U },
+        { "an odd address is no reason to refuse", "0x458b19 f8bfc3ea c8dfffea\n", 1U, 0U },
+        { "so is an odd width at an odd address", "0x458b1b abcd12 1234ab\n", 1U, 0U },
         { "an address with no replacement", "0x458b18\n", 0U, 1U },
         { "a second site over the first",
           "0x458b18 f8bfc3ea c8dfffea\n0x458b1a f8bfc3ea c8dfffea\n", 1U, 1U },
         { "a good one after a bad one",
-          "0x458b19 f8bfc3ea c8dfffea\n0x458b18 f8bfc3ea c8dfffea\n", 1U, 1U },
+          "0x458b18 f8bfc3e c8dfffe\n0x458b18 f8bfc3ea c8dfffea\n", 1U, 1U },
         { "a two byte patch", "0x458b18 f8bf c8df\n", 1U, 0U },
         /* The second address has no fields at all, so it is left out. */
         { "an address with nothing after it",

@@ -11,7 +11,9 @@
  *     0x458b30 c8dfffea                      # rva replace, no match to check
  *
  * The fields are runs of hexadecimal digits with no separators, upper or
- * lower case, and a field's length is its width in bytes. A field is written
+ * lower case, and the digits are in pairs: a byte array of one to sixteen
+ * bytes, the number of bytes is the field's width, and an odd number of
+ * bytes is as ordinary as an even one. A field is written
  * most significant byte first, the way an instruction is written, and applied
  * least significant byte first, the way the machine keeps it. Whitespace and
  * comments may appear between any two tokens, so the parse follows the
