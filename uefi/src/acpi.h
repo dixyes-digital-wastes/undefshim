@@ -15,6 +15,6 @@
  * processors": the boot carries on either way, and an empty list that was
  * taken literally would leave every CPU without a stack
  */
-UsAcpiCpus usAcpiProbeCpus(void);
+UsACPICPUs usACPIProbeCPUs(void);
 
 #endif

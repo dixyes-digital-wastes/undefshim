@@ -25,13 +25,13 @@ typedef struct UsSession_t UsSession;
 
 typedef struct UsPayloadPlace_t {
     /* Where the blob is, and how big it is */
-    uint64_t baseVa;
-    uint64_t basePa;
+    uint64_t baseVA;
+    uint64_t basePA;
     uint64_t bytes;
 
     /* Into the blob: the assembly entry, and the configuration block */
-    uint64_t entryVa;
-    uint64_t configVa;
+    uint64_t entryVA;
+    uint64_t configVA;
 } UsPayloadPlace;
 
 /*

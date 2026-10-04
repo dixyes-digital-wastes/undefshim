@@ -45,7 +45,7 @@ typedef struct UsSink_t {
 
 typedef struct UsPlan_t {
     UsSiteList    sites;
-    UsLdaprCounts ldapr;
+    UsLDAPRCounts ldapr;
 
     /* Images the plan covers, for the dump to say what it was built from */
     size_t   imageCount;
@@ -66,7 +66,7 @@ typedef struct UsPlan_t {
      * instruction this hardware does not have -- which is before the kernel
      * has installed a table of its own
      */
-    UsVbarTables vbar;
+    UsVBARTables vbar;
 
     /* What the payload will need. Constant today, but it is a requirement of
      * the plan rather than a fact about the allocator, so it is stated here */

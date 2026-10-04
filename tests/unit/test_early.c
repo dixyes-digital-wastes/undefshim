@@ -31,7 +31,7 @@ UsPayloadConfig *usPayloadConfig(void) {
     return &cfg;
 }
 
-static uint64_t tableVa(unsigned index) {
+static uint64_t tableVA(unsigned index) {
     unsigned first = index < 2 ? 0 : 2;
     return (uintptr_t)stubs[first] - 0x1000 + 0x800 + (index % 2) * 0x800;
 }
@@ -39,8 +39,8 @@ static uint64_t tableVa(unsigned index) {
 bool usTranslateAddress(uint64_t va, bool write, uint64_t *pa) {
     if (!write) {
         for (unsigned i = 0; i < 4; i++) {
-            if (va == tableVa(i)) {
-                *pa = cfg.stubs[i].tablePa;
+            if (va == tableVA(i)) {
+                *pa = cfg.stubs[i].tablePA;
                 return true;
             }
         }
@@ -53,7 +53,7 @@ bool usTranslateAddress(uint64_t va, bool write, uint64_t *pa) {
             if ((int)i == denyWrite || (denyLast && va != start)) {
                 return false;
             }
-            *pa = cfg.stubs[i].addressPa + va - start + (wrongPhysical ? 0x1000 : 0);
+            *pa = cfg.stubs[i].addressPA + va - start + (wrongPhysical ? 0x1000 : 0);
             return true;
         }
     }
@@ -91,7 +91,7 @@ void usCacheFlushRange(const void *address, size_t bytes) {
     }
     assert(index < 4 && cfg.stubs[index].published == 2);
     unsigned targetIndex = cfg.stubs[index].targetIndex;
-    assert(cfg.selfVa == PAYLOAD_VA && cfg.poolBase == POOL_VA);
+    assert(cfg.selfVA == PAYLOAD_VA && cfg.poolBase == POOL_VA);
     assert(cfg.stackTop[0] == POOL_VA + US_POOL_STACK_OFFSET(0) + US_STACK_SIZE);
     if (bytes == US_SLOT_TARGET_BYTES) {
         uint32_t expected[US_SLOT_TARGET_WORDS];
@@ -113,15 +113,15 @@ static void init(void) {
     memset(&cfg, 0, sizeof(cfg));
     memset(poolStorage, 0, sizeof(poolStorage));
     memset(writeChecks, 0, sizeof(writeChecks));
-    cfg.selfPa = cfg.selfVa = PAYLOAD_PA;
+    cfg.selfPA = cfg.selfVA = PAYLOAD_PA;
     cfg.selfBytes = 0x4000;
     cfg.entryOffset = 0x1240;
-    cfg.poolPa = cfg.poolBase = (uintptr_t)poolStorage;
+    cfg.poolPA = cfg.poolBase = (uintptr_t)poolStorage;
     cfg.stubCount = 4;
     UsPool *pool = (UsPool *)(void *)poolStorage;
-    pool->selfPa = pool->selfVa = cfg.poolPa;
+    pool->selfPA = pool->selfVA = cfg.poolPA;
     for (unsigned i = 0; i < US_MAX_CPUS; i++) {
-        cfg.stackTop[i] = cfg.poolPa + US_POOL_STACK_OFFSET(i) + US_STACK_SIZE;
+        cfg.stackTop[i] = cfg.poolPA + US_POOL_STACK_OFFSET(i) + US_STACK_SIZE;
         pool->stackTop[i] = cfg.stackTop[i];
     }
     for (unsigned i = 0; i < 4; i++) {
@@ -133,15 +133,15 @@ static void init(void) {
             .address = image + 0x1000 + (i % 2) * US_SLOT_RUNTIME_BYTES,
             .imageAddress = image,
             .tableAddress = image + 0x800 + (i % 2) * 0x800,
-            .tablePa = 0x50000800 + i * 0x800,
-            .addressPa = 0x60001000 + i * US_SLOT_RUNTIME_BYTES,
-            .targetIndex = usSlotStubTargetIndex(i == 0 ? UsStubSlotEl1t
-                                                       : UsStubSlotEl1h),
+            .tablePA = 0x50000800 + i * 0x800,
+            .addressPA = 0x60001000 + i * US_SLOT_RUNTIME_BYTES,
+            .targetIndex = usSlotStubTargetIndex(i == 0 ? UsStubSlotEL1t
+                                                       : UsStubSlotEL1h),
         };
     }
     memcpy(original, stubs, sizeof(original));
-    usVaMapRecord = (UsVaMapRecord){
-        .poolBefore = cfg.poolPa,
+    usVAMapRecord = (UsVAMapRecord){
+        .poolBefore = cfg.poolPA,
         .payloadBefore = PAYLOAD_PA,
         .convertPointer = (uintptr_t)convertMock,
     };
@@ -167,9 +167,9 @@ static void testLandingCache(void) {
     uint64_t tail = 0;
 
     /* Nothing is known before anything has been worked out */
-    assert(!usPayloadSlotTailCached(tableVa(0), 4U, &tail));
-    assert(!usPayloadSlotTailCached(tableVa(0), 5U, &tail));
-    assert(!usPayloadSlotTailCached(tableVa(0), 0U, &tail));
+    assert(!usPayloadSlotTailCached(tableVA(0), 4U, &tail));
+    assert(!usPayloadSlotTailCached(tableVA(0), 5U, &tail));
+    assert(!usPayloadSlotTailCached(tableVA(0), 0U, &tail));
 
     denyWrite = -1;                    /* let the lookups succeed */
     const uint64_t spsr[3] = { 4U, 5U, 0U };
@@ -178,14 +178,14 @@ static void testLandingCache(void) {
 
     /* Whatever this configuration can work out, it has to remember */
     for (unsigned i = 0; i < 3; i++) {
-        if (usPayloadSlotTail(tableVa(i), spsr[i], &worked[i])) {
+        if (usPayloadSlotTail(tableVA(i), spsr[i], &worked[i])) {
             known[i] = true;
             uint64_t cached = 0;
 
-            assert(usPayloadSlotTailCached(tableVa(i), spsr[i], &cached));
+            assert(usPayloadSlotTailCached(tableVA(i), spsr[i], &cached));
             assert(cached == worked[i]);
             /* Another slot's answer is not this slot's */
-            assert(!usPayloadSlotTailCached(tableVa(i), spsr[(i + 1) % 3], &cached));
+            assert(!usPayloadSlotTailCached(tableVA(i), spsr[(i + 1) % 3], &cached));
         }
     }
     assert(known[0] || known[1] || known[2]);
@@ -199,24 +199,24 @@ int main(void) {
     init();
     testLandingCache();
     assert(!usPayloadEarly());
-    assert(!usPayloadPublish(tableVa(0)));
-    usVaMapNotify(NULL, NULL);
+    assert(!usPayloadPublish(tableVA(0)));
+    usVAMapNotify(NULL, NULL);
     assert(converts == 2 && flushes == 0);
     assert(memcmp(stubs, original, sizeof(stubs)) == 0);
-    assert(cfg.highVa == PAYLOAD_VA && cfg.highPoolVa == POOL_VA);
-    assert(cfg.selfPa == PAYLOAD_PA && cfg.poolPa == (uintptr_t)poolStorage);
+    assert(cfg.highVA == PAYLOAD_VA && cfg.highPoolVA == POOL_VA);
+    assert(cfg.selfPA == PAYLOAD_PA && cfg.poolPA == (uintptr_t)poolStorage);
     UsPool *pool = (UsPool *)(void *)poolStorage;
-    assert(pool->selfVa == POOL_VA && pool->selfPa == cfg.poolPa);
+    assert(pool->selfVA == POOL_VA && pool->selfPA == cfg.poolPA);
     for (unsigned i = 0; i < US_MAX_CPUS; i++) {
         assert(cfg.stackTop[i] == POOL_VA + US_POOL_STACK_OFFSET(i) + US_STACK_SIZE);
         assert(pool->stackTop[i] == cfg.stackTop[i]);
     }
     assert(!usPayloadPublish(0xdead000));
     assert(flushes == 0);
-    assert(usPayloadPublish(tableVa(1)));
+    assert(usPayloadPublish(tableVA(1)));
     assert(flushes == 4 && cfg.stubs[0].published == 1 && cfg.stubs[1].published == 1);
     assert(cfg.stubs[2].published == 0 && cfg.stubs[3].published == 0);
-    assert(usPayloadPublish(tableVa(2)));
+    assert(usPayloadPublish(tableVA(2)));
     assert(flushes == 8);
     for (unsigned i = 0; i < 4; i++) {
         assert(cfg.stubs[i].published == 1 && writeChecks[i] == 2);
@@ -228,8 +228,8 @@ int main(void) {
     }
     UsPayloadConfig done = cfg;
     assert(usPayloadEarly());
-    assert(usPayloadPublish(tableVa(0)));
-    usVaMapNotify(NULL, NULL);
+    assert(usPayloadPublish(tableVA(0)));
+    usVAMapNotify(NULL, NULL);
     assert(converts == 4 && flushes == 8);
     assert(memcmp(&cfg, &done, sizeof(cfg)) == 0);
 
@@ -238,61 +238,61 @@ int main(void) {
         failPool = failure == 0;
         failPayload = failure != 0;
         UsPayloadConfig before = cfg;
-        usVaMapNotify(NULL, NULL);
+        usVAMapNotify(NULL, NULL);
         assert(converts == 2);
         unchanged(&before);
     }
     init();
-    usVaMapRecord.convertPointer = 0;
+    usVAMapRecord.convertPointer = 0;
     UsPayloadConfig before = cfg;
-    usVaMapNotify(NULL, NULL);
+    usVAMapNotify(NULL, NULL);
     assert(converts == 0);
     unchanged(&before);
 
     init();
-    cfg.stackTop[0] = cfg.poolPa - 8;
+    cfg.stackTop[0] = cfg.poolPA - 8;
     before = cfg;
-    usVaMapNotify(NULL, NULL);
+    usVAMapNotify(NULL, NULL);
     unchanged(&before);
 
     for (unsigned invalid = 0; invalid < 4; invalid++) {
         init();
-        usVaMapNotify(NULL, NULL);
+        usVAMapNotify(NULL, NULL);
         if (invalid == 0) {
             cfg.stubs[1].targetIndex = 99;
         } else if (invalid == 1) {
             cfg.stubs[1].imageAddress = 0;
         } else if (invalid == 2) {
-            cfg.stubs[1].tablePa = cfg.stubs[0].tablePa;
+            cfg.stubs[1].tablePA = cfg.stubs[0].tablePA;
         } else {
             cfg.stubCount = US_PAYLOAD_MAX_STUBS + 1;
         }
         before = cfg;
-        assert(!usPayloadPublish(tableVa(0)));
+        assert(!usPayloadPublish(tableVA(0)));
         unchanged(&before);
     }
     for (unsigned failure = 0; failure < 3; failure++) {
         init();
-        usVaMapNotify(NULL, NULL);
+        usVAMapNotify(NULL, NULL);
         denyWrite = failure == 0 ? 0 : -1;
         wrongPhysical = failure == 1;
         denyLast = failure == 2;
-        assert(!usPayloadPublish(tableVa(0)));
+        assert(!usPayloadPublish(tableVA(0)));
         assert(cfg.stubs[0].published == 0);
         assert(memcmp(stubs[0], original[0], sizeof(stubs[0])) == 0);
         denyWrite = -1;
         wrongPhysical = denyLast = false;
-        assert(usPayloadPublish(tableVa(0)));
+        assert(usPayloadPublish(tableVA(0)));
         assert(cfg.stubs[0].published == 1 && cfg.stubs[1].published == 1);
         assert(flushes == 4);
     }
     init();
-    usVaMapNotify(NULL, NULL);
+    usVAMapNotify(NULL, NULL);
     cfg.stubs[0].published = 2;
-    assert(!usPayloadPublish(tableVa(0)));
+    assert(!usPayloadPublish(tableVA(0)));
     assert(memcmp(stubs[0], original[0], sizeof(stubs[0])) == 0);
     cfg.stubs[0].published = 0;
-    assert(usPayloadPublish(tableVa(0)) && flushes == 4);
+    assert(usPayloadPublish(tableVA(0)) && flushes == 4);
     puts("early: conversion, deferred ASLR publication, table/image identity, write checks and retry passed");
     return 0;
 }

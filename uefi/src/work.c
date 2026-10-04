@@ -88,7 +88,7 @@ void usWorkCollect(UsSession *session) {
      * Both still happen before the kernel runs any of it
      */
     if (req.complete && session->ldaprRewrite) {
-        size_t replaced = usRewriteLdapr(session);
+        size_t replaced = usRewriteLDAPR(session);
 
         usConsolePuts(replaced != 0 ? "US-M7-REWRITTEN\n" : "US-M7-NOREWRITE\n");
     }

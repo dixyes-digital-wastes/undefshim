@@ -51,7 +51,7 @@
  * well: the page holding a table's descriptors is described by an entry in the
  * table below it, so this is also how one level's base gives the next one up
  */
-static inline uint64_t usPteSlotFor(uint64_t selfMapBase, uint64_t va) {
+static inline uint64_t usPTESlotFor(uint64_t selfMapBase, uint64_t va) {
     return selfMapBase + ((va & US_PTE_VA_MASK) >> 9);
 }
 
@@ -59,8 +59,8 @@ static inline uint64_t usPteSlotFor(uint64_t selfMapBase, uint64_t va) {
  * kept for the checks that pin that literal down; the payload does not use it,
  * because on this kernel the literal names an address that does not translate
  * and the live base is MmPteBase */
-static inline uint64_t usPteForAddress(uint64_t va) {
-    return usPteSlotFor(US_PTE_SELFMAP_BASE, va);
+static inline uint64_t usPTEForAddress(uint64_t va) {
+    return usPTESlotFor(US_PTE_SELFMAP_BASE, va);
 }
 
 /*
@@ -135,7 +135,7 @@ extern const UsSelfMapLevel usSelfMapLevels[US_SELF_MAP_LEVELS];
 typedef struct UsLeaf_t {
     bool     found;
     unsigned level;         /* which of the four maps the address */
-    uint64_t descriptorVa;  /* where that descriptor is, writable in place */
+    uint64_t descriptorVA;  /* where that descriptor is, writable in place */
     uint64_t descriptor;    /* what it holds now */
     uint64_t size;          /* how much it covers: 4K, 2M or 1G */
     uint64_t pa;            /* where the address translates to, offset included */

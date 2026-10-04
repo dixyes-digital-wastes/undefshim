@@ -52,7 +52,7 @@ static size_t buildImage(uint8_t *base, const ImageSpec *spec) {
     uint32_t optOff = peOff + 24;
     uint32_t sectionsOff = optOff + 0xF0;
     size_t sectionBytes = spec->sectionCount * 40;
-    uint32_t firstSectionRva = 0x1000;
+    uint32_t firstSectionRVA = 0x1000;
 
     memset(base, 0, size);
 
@@ -69,18 +69,18 @@ static size_t buildImage(uint8_t *base, const ImageSpec *spec) {
 
     /* Optional header, 64 bit */
     *(uint16_t *)(base + optOff) = 0x20B;
-    *(uint32_t *)(base + optOff + 16) = firstSectionRva;
+    *(uint32_t *)(base + optOff + 16) = firstSectionRVA;
     *(uint64_t *)(base + optOff + 24) = 0x140000000ULL;
     *(uint32_t *)(base + optOff + 32) = PAGE;
     *(uint32_t *)(base + optOff + 36) = 0x200;
-    *(uint32_t *)(base + optOff + 56) = (uint32_t)(sectionBytes + firstSectionRva + PAGE);
+    *(uint32_t *)(base + optOff + 56) = (uint32_t)(sectionBytes + firstSectionRVA + PAGE);
     *(uint32_t *)(base + optOff + 60) = (uint32_t)(sectionsOff + sectionBytes);
     *(uint16_t *)(base + optOff + 68) = US_PE_SUBSYSTEM_NATIVE;
 
     /* Section table and section bodies */
     for (size_t i = 0; i < spec->sectionCount; i++) {
         uint8_t *sh = base + sectionsOff + i * 40;
-        uint32_t rva = firstSectionRva + (uint32_t)(i * PAGE);
+        uint32_t rva = firstSectionRVA + (uint32_t)(i * PAGE);
 
         memcpy(sh, spec->sections[i], strlen(spec->sections[i]));
         *(uint32_t *)(sh + 8) = PAGE;      /* virtual size */
@@ -91,7 +91,7 @@ static size_t buildImage(uint8_t *base, const ImageSpec *spec) {
     }
 
     if (spec->marker != NULL) {
-        uint8_t *at = base + firstSectionRva;
+        uint8_t *at = base + firstSectionRVA;
         for (size_t i = 0; spec->marker[i] != '\0'; i++) {
             at[i * 2] = (uint8_t)spec->marker[i];
         }
@@ -119,7 +119,7 @@ static UsImageVisit note(const UsImage *img, UsImageKind kind, void *ctx) {
 
     if (seen->count < 8) {
         seen->kinds[seen->count] = kind;
-        seen->rvas[seen->count] = img->entryRva;
+        seen->rvas[seen->count] = img->entryRVA;
         seen->count++;
     }
     return seen->count >= seen->stopAfter ? UsImageVisitStop : UsImageVisitContinue;
@@ -140,7 +140,7 @@ static void testKernel(void) {
     reset();
     buildImage(gRegion + 3 * PAGE, &spec);
 
-    eqInt("kernel found", usPeScanRegion(gRegion, sizeof(gRegion), note, &seen), 1);
+    eqInt("kernel found", usPEScanRegion(gRegion, sizeof(gRegion), note, &seen), 1);
     eqInt("kernel reported once", (int)seen.count, 1);
     if (seen.count == 1) {
         ok("kernel classified as the kernel", seen.kinds[0] == UsImageNtoskrnl);
@@ -158,7 +158,7 @@ static void testWinload(void) {
     reset();
     buildImage(gRegion + 2 * PAGE, &spec);
 
-    eqInt("winload found", usPeScanRegion(gRegion, sizeof(gRegion), note, &seen), 1);
+    eqInt("winload found", usPEScanRegion(gRegion, sizeof(gRegion), note, &seen), 1);
     eqInt("winload reported once", (int)seen.count, 1);
     if (seen.count == 1) {
         ok("winload classified as winload", seen.kinds[0] == UsImageWinload);
@@ -178,7 +178,7 @@ static void testBothAndOrder(void) {
     buildImage(gRegion + 2 * PAGE, &winload);
     buildImage(gRegion + 12 * PAGE, &kernel);
 
-    eqInt("two images found", usPeScanRegion(gRegion, sizeof(gRegion), note, &seen), 2);
+    eqInt("two images found", usPEScanRegion(gRegion, sizeof(gRegion), note, &seen), 2);
     eqInt("two images reported", (int)seen.count, 2);
     if (seen.count == 2) {
         /* Address order, because that is the order memory is written in */
@@ -202,7 +202,7 @@ static void testVisitorCanStop(void) {
 
     /* Stopping is how a caller that only wants the first match avoids paying
      * for the rest of the scan */
-    eqInt("scan stops on request", usPeScanRegion(gRegion, sizeof(gRegion), note, &seen), 1);
+    eqInt("scan stops on request", usPEScanRegion(gRegion, sizeof(gRegion), note, &seen), 1);
     eqInt("only the first was reported", (int)seen.count, 1);
 }
 
@@ -217,14 +217,14 @@ static void testIgnoresNonImages(void) {
     reset();
     buildImage(gRegion + 3 * PAGE, &kernel);
     eqInt("truncated image rejected",
-          usPeScanRegion(gRegion, 4 * PAGE, note, &seen), 0);
+          usPEScanRegion(gRegion, 4 * PAGE, note, &seen), 0);
     eqInt("nothing reported", (int)seen.count, 0);
 
     /* Only MZ at a page boundary counts */
     reset();
     gRegion[PAGE] = 'M';
     gRegion[PAGE + 1] = 'Z';
-    eqInt("a bare MZ is not an image", usPeScanRegion(gRegion, sizeof(gRegion), note, &seen), 0);
+    eqInt("a bare MZ is not an image", usPEScanRegion(gRegion, sizeof(gRegion), note, &seen), 0);
 
     /* An image that is neither stage is not noise: it is a PE, but it has
      * neither the linker script section names nor the load option string */
@@ -238,17 +238,17 @@ static void testIgnoresNonImages(void) {
         memset(sh + 40, 'X', 8);
     }
     eqInt("an unclassifiable image is skipped",
-          usPeScanRegion(gRegion, sizeof(gRegion), note, &seen), 0);
+          usPEScanRegion(gRegion, sizeof(gRegion), note, &seen), 0);
 }
 
 static void testEmptyRegion(void) {
     Seen seen = { .stopAfter = 8 };
 
     reset();
-    eqInt("a region with nothing in it", usPeScanRegion(gRegion, sizeof(gRegion), note, &seen), 0);
-    eqInt("null base is refused", usPeScanRegion(NULL, 4096, note, &seen), 0);
+    eqInt("a region with nothing in it", usPEScanRegion(gRegion, sizeof(gRegion), note, &seen), 0);
+    eqInt("null base is refused", usPEScanRegion(NULL, 4096, note, &seen), 0);
     eqInt("a region too small to hold a header",
-          usPeScanRegion(gRegion, 16, note, &seen), 0);
+          usPEScanRegion(gRegion, 16, note, &seen), 0);
 }
 
 int main(void) {

@@ -20,23 +20,23 @@ typedef struct {
     efi_gop_pixel_format_t PixelFormat;
     efi_gop_pixel_bitmask_t PixelInformation;
     uint32_t               PixelsPerScanLine;
-} usGopModeInfo;
+} UsGOPModeInfo;
 
 typedef struct {
     uint32_t       MaxMode;
     uint32_t       Mode;
-    usGopModeInfo *Info;
+    UsGOPModeInfo *Info;
     uint64_t       SizeOfInfo;
     uint64_t       FrameBufferBase;
     uint64_t       FrameBufferSize;
-} usGopMode;
+} UsGOPMode;
 
 typedef struct {
     void *QueryMode;
     void *SetMode;
     void *Blt;
-    usGopMode *Mode;
-} usGop;
+    UsGOPMode *Mode;
+} UsGOP;
 
 /* Two, so that a line of eighty characters fills a 1280 wide screen and the
  * text is readable without leaning in */
@@ -53,7 +53,7 @@ typedef struct {
 #define US_SCREEN_INK 0x00000000U
 #define US_SCREEN_PAPER 0x00FFFFFFU
 
-static usGop *gGop;
+static UsGOP *gGOP;
 static uint8_t *gFrame;
 static uint32_t gWidth;
 static uint32_t gHeight;
@@ -174,27 +174,27 @@ bool usScreenInit(void) {
     if (gReady) {
         return true;
     }
-    gGop = NULL;
-    if (EFI_ERROR(BS->LocateProtocol(&guid, NULL, (void **)&gGop)) || gGop == NULL
-        || gGop->Mode == NULL || gGop->Mode->Info == NULL) {
+    gGOP = NULL;
+    if (EFI_ERROR(BS->LocateProtocol(&guid, NULL, (void **)&gGOP)) || gGOP == NULL
+        || gGOP->Mode == NULL || gGOP->Mode->Info == NULL) {
         return false;
     }
     /* Only the two formats whose channels are eight bits wide are drawn on: a
      * bit mask or a blt-only mode would need a translation this does not
      * have, and guessing at one would put unreadable pixels on the screen */
-    if (gGop->Mode->Info->PixelFormat != PixelRedGreenBlueReserved8BitPerColor
-        && gGop->Mode->Info->PixelFormat != PixelBlueGreenRedReserved8BitPerColor) {
+    if (gGOP->Mode->Info->PixelFormat != PixelRedGreenBlueReserved8BitPerColor
+        && gGOP->Mode->Info->PixelFormat != PixelBlueGreenRedReserved8BitPerColor) {
         return false;
     }
-    if (gGop->Mode->FrameBufferBase == 0 || gGop->Mode->Info->PixelsPerScanLine == 0
-        || gGop->Mode->Info->HorizontalResolution == 0
-        || gGop->Mode->Info->VerticalResolution == 0) {
+    if (gGOP->Mode->FrameBufferBase == 0 || gGOP->Mode->Info->PixelsPerScanLine == 0
+        || gGOP->Mode->Info->HorizontalResolution == 0
+        || gGOP->Mode->Info->VerticalResolution == 0) {
         return false;
     }
-    usScreenUseFrameBuffer((void *)(uintptr_t)gGop->Mode->FrameBufferBase,
-                           gGop->Mode->Info->HorizontalResolution,
-                           gGop->Mode->Info->VerticalResolution,
-                           gGop->Mode->Info->PixelsPerScanLine);
+    usScreenUseFrameBuffer((void *)(uintptr_t)gGOP->Mode->FrameBufferBase,
+                           gGOP->Mode->Info->HorizontalResolution,
+                           gGOP->Mode->Info->VerticalResolution,
+                           gGOP->Mode->Info->PixelsPerScanLine);
     return gReady;
 }
 

@@ -37,7 +37,7 @@
 
 #define US_8250_LSR_THRE (1U << 5)
 
-static UsUartKind gKind = UsUartOff;
+static UsUARTKind gKind = UsUARTOff;
 static uintptr_t gBase;
 static uint32_t gShift;
 static uint32_t gWidth = 32U;
@@ -62,7 +62,7 @@ static void writeReg(uint32_t index, uint32_t value) {
 }
 
 static void bringUp(void) {
-    if (gKind == UsUartPl011) {
+    if (gKind == UsUARTPL011) {
         writeReg(US_PL011_CR, 0U);
         writeReg(US_PL011_ICR, 0x7FFU);
         writeReg(US_PL011_IBRD, 13U);
@@ -82,18 +82,18 @@ static void bringUp(void) {
     writeReg(US_8250_MCR, 0x03U); /* terminal ready, request to send */
 }
 
-void usConsoleUse(UsUartKind kind, uint64_t base, uint32_t width) {
+void usConsoleUse(UsUARTKind kind, uint64_t base, uint32_t width) {
     gKind = kind;
     gBase = (uintptr_t)base;
     gWidth = width == 8U ? 8U : 32U;
-    gShift = (kind == UsUartUart8250 && gWidth == 32U) ? 2U : 0U;
-    if (kind != UsUartOff && gBase != 0) {
+    gShift = (kind == UsUART8250 && gWidth == 32U) ? 2U : 0U;
+    if (kind != UsUARTOff && gBase != 0) {
         bringUp();
     }
 }
 
 static bool roomToWrite(void) {
-    if (gKind == UsUartPl011) {
+    if (gKind == UsUARTPL011) {
         return (readReg(US_PL011_FR) & US_PL011_FR_TXFF) == 0U;
     }
     return (readReg(US_8250_LSR) & US_8250_LSR_THRE) != 0U;
@@ -106,13 +106,13 @@ void usConsolePutc(char c) {
      * on a machine that asked for no serial output
      */
     usScreenPutc(c);
-    if (gKind == UsUartOff || gBase == 0) {
+    if (gKind == UsUARTOff || gBase == 0) {
         return;
     }
     /* Bounded spin: a wrong base address must not hang the boot */
     for (uint32_t spin = 0; !roomToWrite() && spin < 1000000U; spin++) {
     }
-    writeReg(gKind == UsUartPl011 ? US_PL011_DR : US_8250_THR, (uint32_t)(uint8_t)c);
+    writeReg(gKind == UsUARTPL011 ? US_PL011_DR : US_8250_THR, (uint32_t)(uint8_t)c);
 }
 
 void usConsolePuts(const char *s) {

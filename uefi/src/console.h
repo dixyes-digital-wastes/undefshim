@@ -15,10 +15,10 @@
 #define US_CONSOLE_H
 
 typedef enum {
-    UsUartOff = 0,   /* nothing is written */
-    UsUartPl011,     /* ARM's own, 32 bits per register */
-    UsUartUart8250,  /* the one that turns up on PC-derived boards */
-} UsUartKind;
+    UsUARTOff = 0,   /* nothing is written */
+    UsUARTPL011,     /* ARM's own, 32 bits per register */
+    UsUART8250,  /* the one that turns up on PC-derived boards */
+} UsUARTKind;
 
 /*
  * Points the console at a port and brings it up. Until this is called nothing
@@ -26,7 +26,7 @@ typedef enum {
  * 8 or 32 for an 8250, whose registers are a byte apart when read a byte at a
  * time and a word apart when read as words
  */
-void usConsoleUse(UsUartKind kind, uint64_t base, uint32_t width);
+void usConsoleUse(UsUARTKind kind, uint64_t base, uint32_t width);
 
 void usConsolePutc(char c);
 void usConsolePuts(const char *s);

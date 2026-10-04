@@ -58,7 +58,7 @@ UsMatchList usScanImage(UsImage *img, const UsPattern *pat);
  * so they have to be found before the kernel starts, when the table is still
  * where the loader put it
  */
-extern const UsPattern usPatMsrVbarEl1;
+extern const UsPattern usPatMsrVBAREL1;
 
 /*
  * The leaf that hands execution to the next stage. The same 36 byte body
@@ -77,13 +77,13 @@ extern const UsPattern usPatTransferLeaf;
  * and the sequence is gone. Locators are therefore tried in order and the
  * caller is told which one answered
  */
-extern const UsPattern usPatTtbrHandoff;
+extern const UsPattern usPatTTBRHandoff;
 
 /* LDAPR and friends: the instructions the shim exists to emulate */
-extern const UsPattern usPatLdaprW;
-extern const UsPattern usPatLdaprX;
-extern const UsPattern usPatLdaprB;
-extern const UsPattern usPatLdaprH;
+extern const UsPattern usPatLDAPRW;
+extern const UsPattern usPatLDAPRX;
+extern const UsPattern usPatLDAPRB;
+extern const UsPattern usPatLDAPRH;
 
 /* The load option string that only winload carries, in UTF-16 */
 extern const UsPattern usPatOsloaderXsl;
@@ -91,7 +91,7 @@ extern const UsPattern usPatOsloaderXsl;
 typedef struct UsLeafSite_t {
     bool     found;
     uint32_t rva;          /* start of the leaf */
-    uint32_t patchRva;     /* first sixteen bytes of it, the patch point */
+    uint32_t patchRVA;     /* first sixteen bytes of it, the patch point */
     size_t   matches;      /* how many the locator saw; only 1 is usable */
 } UsLeafSite;
 
@@ -127,7 +127,7 @@ typedef enum UsHandoffForm_e {
     /* Found in the .trans section */
     UsHandoffInTransSection,
     /* Found by the SCTLR_EL1 write that follows it */
-    UsHandoffBeforeSctlr,
+    UsHandoffBeforeSCTLR,
 } UsHandoffForm;
 
 typedef struct UsHandoffSite_t {
@@ -137,7 +137,7 @@ typedef struct UsHandoffSite_t {
     size_t        candidates;   /* how many the shape matched before narrowing */
 } UsHandoffSite;
 
-UsHandoffSite usLocateTtbrHandoff(UsImage *img);
+UsHandoffSite usLocateTTBRHandoff(UsImage *img);
 
 /*
  * A hole in a mapped, executable section, large enough to hold something
@@ -192,7 +192,7 @@ UsSpareSlot usLocateSpareSlot(UsImage *img, uint32_t minBytes);
  */
 #define US_VBAR_MAX_TABLES 8
 
-typedef struct UsVbarTables_t {
+typedef struct UsVBARTables_t {
     uint32_t rvas[US_VBAR_MAX_TABLES];
     uint32_t syncWord[US_VBAR_MAX_TABLES];
     bool     syncUsable[US_VBAR_MAX_TABLES];
@@ -200,9 +200,9 @@ typedef struct UsVbarTables_t {
     size_t   sites;       /* msr vbar_el1 sites seen */
     size_t   unresolved;  /* sites whose register came from memory */
     bool     overflow;    /* more distinct tables than this can hold */
-} UsVbarTables;
+} UsVBARTables;
 
-UsVbarTables usFindVbarTables(UsImage *img);
+UsVBARTables usFindVBARTables(UsImage *img);
 
 /*
  * The slots that can matter, as the architecture orders them
@@ -212,9 +212,9 @@ UsVbarTables usFindVbarTables(UsImage *img);
  * shape of every exception this project exists to handle
  */
 typedef enum UsVectorSlot_e {
-    UsVectorSlotEl1tSync = 0,  /* +0x000 */
-    UsVectorSlotEl1hSync = 4,  /* +0x200 */
-    UsVectorSlotEl0Sync32 = 8, /* +0x400, the kernel's lower EL entry */
+    UsVectorSlotEL1tSync = 0,  /* +0x000 */
+    UsVectorSlotEL1hSync = 4,  /* +0x200 */
+    UsVectorSlotEL0Sync32 = 8, /* +0x400, the kernel's lower EL entry */
 } UsVectorSlot;
 
 /*
@@ -225,19 +225,19 @@ typedef enum UsVectorSlot_e {
  * this project exists for. A slot holding anything else cannot: those bytes
  * are the handler, and there is nothing to keep
  */
-bool usVectorSlotBranch(UsImage *img, uint32_t tableRva, UsVectorSlot slot,
+bool usVectorSlotBranch(UsImage *img, uint32_t tableRVA, UsVectorSlot slot,
                         int32_t *displacement);
 
 /* Counts of the instructions the shim has to emulate, per image */
-typedef struct UsLdaprCounts_t {
+typedef struct UsLDAPRCounts_t {
     size_t word;
     size_t xword;
     size_t byte;
     size_t half;
     size_t total;
-} UsLdaprCounts;
+} UsLDAPRCounts;
 
-UsLdaprCounts usCountLdapr(UsImage *img);
+UsLDAPRCounts usCountLDAPR(UsImage *img);
 
 /* --- the sites a boot has to act on ------------------------------------- */
 
@@ -254,7 +254,7 @@ UsLdaprCounts usCountLdapr(UsImage *img);
 typedef enum UsSiteKind_e {
     /* msr vbar_el1, xN. Where a vector table is installed, and therefore the
      * point at which an exception can be taken over */
-    UsSiteVbarWrite = 0,
+    UsSiteVBARWrite = 0,
     /*
      * The leaf that hands control to the next stage. It is the last thing that
      * runs before the kernel, which makes it the one moment the kernel image
@@ -263,7 +263,7 @@ typedef enum UsSiteKind_e {
     UsSiteTransferLeaf,
     /* Where the final page tables are loaded. A mapping added before this is
      * gone after it */
-    UsSiteTtbrHandoff,
+    UsSiteTTBRHandoff,
 } UsSiteKind;
 
 typedef struct UsSite_t {

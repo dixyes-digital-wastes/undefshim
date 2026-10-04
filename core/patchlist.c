@@ -241,13 +241,13 @@ UsPatchStatus usPatchParse(const char *text, uint32_t length, UsPatchSite *sites
     Token token;
     bool seenTarget = false;
     bool seenHash = false;
-    bool seenPdb = false;
+    bool seenPDB = false;
 
     out->target = NULL;
     out->targetLength = 0;
     out->sites = 0;
     out->hasHash = false;
-    out->hasPdbIdentity = false;
+    out->hasPDBIdentity = false;
     out->skipped = 0;
     out->errorAt = 0;
 
@@ -309,18 +309,18 @@ UsPatchStatus usPatchParse(const char *text, uint32_t length, UsPatchSite *sites
                 Token uuid = next(&scan);
                 uint32_t age = 0;
 
-                if (seenPdb) {
+                if (seenPDB) {
                     out->errorAt = (uint32_t)(token.at - text);
                     return UsPatchDuplicate;
                 }
-                seenPdb = true;
+                seenPDB = true;
                 if (uuid.kind != TokenHexRun
-                    || !readIdentity(&uuid, out->pdbGuid, 16U, &age)) {
+                    || !readIdentity(&uuid, out->pdbGUID, 16U, &age)) {
                     out->errorAt = (uint32_t)(uuid.at != NULL ? uuid.at - text : scan.at);
                     return UsPatchSyntax;
                 }
                 out->pdbAge = age;
-                out->hasPdbIdentity = true;
+                out->hasPDBIdentity = true;
                 continue;
             }
             /* An instruction from a newer format, or a typo: refuse it */
@@ -399,7 +399,7 @@ UsPatchStatus usPatchParse(const char *text, uint32_t length, UsPatchSite *sites
         sites[out->sites++] = site;
     }
 
-    if (!seenTarget && !seenHash && !seenPdb) {
+    if (!seenTarget && !seenHash && !seenPDB) {
         return UsPatchNoMatchers;
     }
     out->status = UsPatchOk;

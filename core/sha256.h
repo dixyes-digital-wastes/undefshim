@@ -16,13 +16,13 @@ typedef struct {
     uint64_t bytes;                 /* total length, for the padding */
     uint8_t  block[64];
     uint32_t used;                  /* bytes buffered in block */
-} UsSha256;
+} UsSHA256;
 
-void usSha256Init(UsSha256 *ctx);
-void usSha256Update(UsSha256 *ctx, const void *data, uint32_t length);
-void usSha256Final(UsSha256 *ctx, uint8_t out[US_SHA256_DIGEST]);
+void usSHA256Init(UsSHA256 *ctx);
+void usSHA256Update(UsSHA256 *ctx, const void *data, uint32_t length);
+void usSHA256Final(UsSHA256 *ctx, uint8_t out[US_SHA256_DIGEST]);
 
 /* The whole thing in one call, for short inputs */
-void usSha256(const void *data, uint32_t length, uint8_t out[US_SHA256_DIGEST]);
+void usSHA256(const void *data, uint32_t length, uint8_t out[US_SHA256_DIGEST]);
 
 #endif

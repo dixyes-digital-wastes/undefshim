@@ -106,7 +106,7 @@ static void testSelfMapBases(void) {
     eqU64("the image's literal is the x64 base",
           US_PTE_SELFMAP_BASE, 0xFFFFF68000000000ULL);
     eqU64("the next level is that base's own page descriptor",
-          US_PDE_SELFMAP_BASE, usPteSlotFor(IMAGE_BASE, IMAGE_BASE));
+          US_PDE_SELFMAP_BASE, usPTESlotFor(IMAGE_BASE, IMAGE_BASE));
     {
         uint64_t literal[4];
         uint64_t runtime[4];
@@ -131,13 +131,13 @@ static void testSelfMapBases(void) {
     eqU64("and it is the value the x64 kernel uses for the same level",
           US_PDE_SELFMAP_BASE, 0xFFFFF6FB40000000ULL);
     eqU64("the level above follows from it",
-          US_PPE_SELFMAP_BASE, usPteSlotFor(IMAGE_BASE, US_PDE_SELFMAP_BASE));
+          US_PPE_SELFMAP_BASE, usPTESlotFor(IMAGE_BASE, US_PDE_SELFMAP_BASE));
     eqU64("and is the x64 value too",
           US_PPE_SELFMAP_BASE, 0xFFFFF6FB7DA00000ULL);
     eqU64("as does the top one",
-          US_PXE_SELFMAP_BASE, usPteSlotFor(IMAGE_BASE, US_PPE_SELFMAP_BASE));
+          US_PXE_SELFMAP_BASE, usPTESlotFor(IMAGE_BASE, US_PPE_SELFMAP_BASE));
     eqU64("which is the address the image carries a descriptor for",
-          usPteForAddress(US_PXE_SELFMAP_BASE), 0xFFFFF6FB7DBEDF68ULL);
+          usPTEForAddress(US_PXE_SELFMAP_BASE), 0xFFFFF6FB7DBEDF68ULL);
     ok("the level bases are distinct", US_PDE_SELFMAP_BASE != US_PPE_SELFMAP_BASE);
 }
 
@@ -178,7 +178,7 @@ static void testLeafFindsAPage(void) {
         ok("at the bottom level", leaf.level == 3);
         eqU64("and it is the page descriptor that maps it", leaf.descriptor,
               (pa & US_PAGE_ADDR_MASK) | 3);
-        eqU64("at the address the arithmetic names", leaf.descriptorVa,
+        eqU64("at the address the arithmetic names", leaf.descriptorVA,
               slot(levels[3], va, 12));
         eqU64("covering a page", leaf.size, US_GRANULE_4K);
         eqU64("and translating the whole address", leaf.pa, pa + (va & 0xFFF));

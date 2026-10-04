@@ -36,16 +36,16 @@ typedef void (*UsSelfTestFn)(void);
 #define US_PAYLOAD_MEMORY_TYPE EfiRuntimeServicesCode
 
 static void writeConfig(const UsPayloadPlace *place, const UsSession *session) {
-    UsPayloadConfig *cfg = (UsPayloadConfig *)(uintptr_t)place->configVa;
+    UsPayloadConfig *cfg = (UsPayloadConfig *)(uintptr_t)place->configVA;
 
     /*
      * Where to report from, as the configuration states it: a base of zero
      * means the payload stays silent, which is what leaving it out means
      */
-    cfg->uartBase = session->config != NULL && session->config->hasUart
+    cfg->uartBase = session->config != NULL && session->config->hasUART
                         ? session->config->uartBase
                         : 0U;
-    cfg->uartKind = session->config == NULL || !session->config->hasUart
+    cfg->uartKind = session->config == NULL || !session->config->hasUART
                         ? 0U
                         : (session->config->uartType[0] == 'p' ? US_PAYLOAD_UART_PL011
                                                                : US_PAYLOAD_UART_8250);
@@ -53,10 +53,10 @@ static void writeConfig(const UsPayloadPlace *place, const UsSession *session) {
     for (uint32_t i = 0; i < US_MAX_CPUS; i++) {
         cfg->stackTop[i] = session->pool->stackTop[i];
     }
-    cfg->selfVa = place->baseVa;
-    cfg->selfPa = place->basePa;
+    cfg->selfVA = place->baseVA;
+    cfg->selfPA = place->basePA;
     cfg->selfBytes = place->bytes;
-    cfg->poolPa = session->pool->selfPa;
+    cfg->poolPA = session->pool->selfPA;
     cfg->entryOffset = US_PAYLOAD_ENTRY_OFFSET;
 
     /* The trace of what happened goes here, and it has to survive the address
@@ -77,10 +77,10 @@ static void writeConfig(const UsPayloadPlace *place, const UsSession *session) {
         uint64_t count = session->cpus.count;
 
         for (uint64_t i = 0; i < count; i++) {
-            cfg->cpus[i] = (UsPayloadCpu){ .mpidr = session->cpus.mpidr[i], .index = i };
+            cfg->cpus[i] = (UsPayloadCPU){ .mpidr = session->cpus.mpidr[i], .index = i };
         }
         /* The end of the list, for the entry's lookup */
-        cfg->cpus[count] = (UsPayloadCpu){ .mpidr = 0, .index = ~(uint64_t)0 };
+        cfg->cpus[count] = (UsPayloadCPU){ .mpidr = 0, .index = ~(uint64_t)0 };
         cfg->cpuCount = count;
     }
 
@@ -147,11 +147,11 @@ bool usPayloadPlace(UsSession *session, UsPayloadPlace *out) {
      */
     usCacheFlushRange(dst, US_PAYLOAD_BYTES);
 
-    out->basePa = (uint64_t)pa;
-    out->baseVa = (uint64_t)pa;
+    out->basePA = (uint64_t)pa;
+    out->baseVA = (uint64_t)pa;
     out->bytes = US_PAYLOAD_BYTES;
-    out->entryVa = out->baseVa + US_PAYLOAD_ENTRY_OFFSET;
-    out->configVa = out->baseVa + US_PAYLOAD_CONFIG_OFFSET;
+    out->entryVA = out->baseVA + US_PAYLOAD_ENTRY_OFFSET;
+    out->configVA = out->baseVA + US_PAYLOAD_CONFIG_OFFSET;
 
     writeConfig(out, session);
 
@@ -170,13 +170,13 @@ void usPayloadReport(const UsSession *session) {
     }
 
     usConsolePuts("payload: at ");
-    usConsolePutHex(place->baseVa);
+    usConsolePutHex(place->baseVA);
     usConsolePuts(" bytes=");
     usConsolePutDec(place->bytes);
     usConsolePuts(" entry=");
-    usConsolePutHex(place->entryVa);
+    usConsolePutHex(place->entryVA);
     usConsolePuts(" config=");
-    usConsolePutHex(place->configVa);
+    usConsolePutHex(place->configVA);
     usConsolePuts("\n");
 
     /*
@@ -186,7 +186,7 @@ void usPayloadReport(const UsSession *session) {
      * the block was not written where the payload looks for it, which is the
      * one thing about placement that is easy to get wrong
      */
-    selfTest = (UsSelfTestFn)(uintptr_t)(place->baseVa + US_PAYLOAD_SELFTEST_OFFSET);
+    selfTest = (UsSelfTestFn)(uintptr_t)(place->baseVA + US_PAYLOAD_SELFTEST_OFFSET);
     selfTest();
 
     /* Printed last, on its own line: the deployment checks stop the machine

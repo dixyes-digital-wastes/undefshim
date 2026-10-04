@@ -65,8 +65,8 @@ static void testInit(void) {
     ok("accepts an aligned base", usPoolInitLayout(&pool, 0x40000000, 0x40000000));
     eqU64("magic", pool.magic, US_POOL_MAGIC);
     eqU64("stack slots", pool.stackSlots, US_MAX_CPUS);
-    eqU64("self pa", pool.selfPa, 0x40000000);
-    eqU64("self va", pool.selfVa, 0x40000000);
+    eqU64("self pa", pool.selfPA, 0x40000000);
+    eqU64("self va", pool.selfVA, 0x40000000);
     ok("valid after init", usPoolIsValid(&pool));
 
     /* Alignment is what the CPU requires, not a nicety */
@@ -100,7 +100,7 @@ static void testValidation(void) {
     }
     {
         UsPool bad = pool;
-        bad.selfPa = 0x80000001;
+        bad.selfPA = 0x80000001;
         ok("rejects an unaligned self pa", !usPoolIsValid(&bad));
     }
     {
@@ -119,11 +119,11 @@ static void testValidation(void) {
         ok("rejects too many slots", !usPoolIsValid(&bad));
     }
     {
-        /* The layout follows selfVa, so relocating the pool has to relocate
+        /* The layout follows selfVA, so relocating the pool has to relocate
          * the stacks with it or the payload would jump to the old address */
         UsPool moved = pool;
         uint64_t delta = 0x100000000ULL;
-        moved.selfVa += delta;
+        moved.selfVA += delta;
         ok("a relocated header is inconsistent until stacks follow",
            !usPoolIsValid(&moved));
 
@@ -145,7 +145,7 @@ static void testValidation(void) {
  * value the registers can produce, and that is a statement about the bits
  * where they differ rather than about the words
  */
-static void testMpidrMask(void) {
+static void testMPIDRMask(void) {
     static const uint64_t registers[] = {
         0x0000000080000000ULL,  /* RES1, as the register reads */
         0x0000000080000001ULL,
@@ -192,7 +192,7 @@ int main(void) {
     testShape();
     testInit();
     testValidation();
-    testMpidrMask();
+    testMPIDRMask();
 
     printf("%d checks, %d failures\n", checks, failures);
     return failures != 0;

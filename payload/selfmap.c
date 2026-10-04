@@ -5,7 +5,7 @@
 #include "core/translate.h"
 #include "payload/selfmap.h"
 
-UsSelfMap usSelfMapFind(uint64_t targetPa, uint64_t targetBytes, uint64_t nearVa) {
+UsSelfMap usSelfMapFind(uint64_t targetPA, uint64_t targetBytes, uint64_t nearVA) {
     UsSelfMap out = { 0 };
     uint64_t sctlr;
     uint64_t base;
@@ -24,8 +24,8 @@ UsSelfMap usSelfMapFind(uint64_t targetPa, uint64_t targetBytes, uint64_t nearVa
     __asm__ volatile("mrs %0, sctlr_el1" : "=r"(sctlr));
     if ((sctlr & 1) == 0) {
         out.found = true;
-        out.va = targetPa;
-        out.pa = targetPa;
+        out.va = targetPA;
+        out.pa = targetPA;
         out.size = US_PAGE_SIZE;
         return out;
     }
@@ -34,7 +34,7 @@ UsSelfMap usSelfMapFind(uint64_t targetPa, uint64_t targetBytes, uint64_t nearVa
      * The window is placed relative to an address in the new space, so an
      * anchor below it cannot produce one
      */
-    if (nearVa < US_SELFMAP_WINDOW) {
+    if (nearVA < US_SELFMAP_WINDOW) {
         return out;
     }
 
@@ -47,7 +47,7 @@ UsSelfMap usSelfMapFind(uint64_t targetPa, uint64_t targetBytes, uint64_t nearVa
      * sweep at block granularity that compared exact addresses would only
      * match when the mapping is aligned the same way at both ends
      */
-    base = (nearVa & ~(US_PAGE_SIZE - 1)) - US_SELFMAP_WINDOW;
+    base = (nearVA & ~(US_PAGE_SIZE - 1)) - US_SELFMAP_WINDOW;
 
     for (va = base; va <= base + 2 * US_SELFMAP_WINDOW; va += US_PAGE_SIZE) {
         uint64_t pa;
@@ -62,7 +62,7 @@ UsSelfMap usSelfMapFind(uint64_t targetPa, uint64_t targetBytes, uint64_t nearVa
             out.faulted = true;
             continue;
         }
-        if (pa != (targetPa & ~(US_PAGE_SIZE - 1))) {
+        if (pa != (targetPA & ~(US_PAGE_SIZE - 1))) {
             continue;
         }
 
@@ -73,7 +73,7 @@ UsSelfMap usSelfMapFind(uint64_t targetPa, uint64_t targetBytes, uint64_t nearVa
          */
         out.found = true;
         out.va = va;
-        out.pa = targetPa & ~(US_PAGE_SIZE - 1);
+        out.pa = targetPA & ~(US_PAGE_SIZE - 1);
         out.size = US_PAGE_SIZE;
         return out;
     }

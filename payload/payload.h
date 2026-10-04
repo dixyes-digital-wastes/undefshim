@@ -73,7 +73,7 @@ typedef struct UsFrame_t {
  * made the answer is 0x24; the rest of the syndrome - the fault status, and
  * the direction - is the same in both
  */
-static inline uint64_t usEsrAsLowerEl(uint64_t esr) {
+static inline uint64_t usESRAsLowerEL(uint64_t esr) {
     return (esr & ~(UINT64_C(0x3F) << 26))
            | ((uint64_t)US_EC_DATA_ABORT_LOWER << 26);
 }
@@ -86,14 +86,14 @@ static inline uint64_t usEsrAsLowerEl(uint64_t esr) {
  * EL0 the one at 0x400, and EL1t - like anything unexpected - the entry at
  * zero
  */
-static inline UsStubSlot usSlotOfSpsr(uint64_t spsr) {
+static inline UsStubSlot usSlotOfSPSR(uint64_t spsr) {
     switch (spsr & 0xFU) {
     case 5U:
-        return UsStubSlotEl1h;
+        return UsStubSlotEL1h;
     case 0U:
-        return UsStubSlotEl0;
+        return UsStubSlotEL0;
     default:
-        return UsStubSlotEl1t;
+        return UsStubSlotEL1t;
     }
 }
 
@@ -173,10 +173,10 @@ void usPayloadSelfTest(void);
  * The index is carried rather than worked out from the position, because the
  * code that needs it runs before there is a stack to work anything out on
  */
-typedef struct UsPayloadCpu_t {
+typedef struct UsPayloadCPU_t {
     uint64_t mpidr;   /* the affinity fields only */
     uint64_t index;
-} UsPayloadCpu;
+} UsPayloadCPU;
 
 #define US_PAYLOAD_MAX_STUBS 32U
 
@@ -184,8 +184,8 @@ typedef struct UsPayloadStub_t {
     uint64_t address;
     uint64_t tableAddress;
     uint64_t imageAddress;
-    uint64_t tablePa;
-    uint64_t addressPa;
+    uint64_t tablePA;
+    uint64_t addressPA;
     uint32_t targetIndex;
     uint32_t published;
     /*
@@ -198,7 +198,7 @@ typedef struct UsPayloadStub_t {
      * only thing that knows where the variable is, is the image: hence an
      * offset from the image's base, passed with the stub
      */
-    uint32_t descriptorBaseRva;
+    uint32_t descriptorBaseRVA;
     uint32_t reserved;
 } UsPayloadStub;
 
@@ -221,7 +221,7 @@ typedef struct UsPayloadConfig_t {
 
     /* Address the blob was entered at, written by the boot. The only way the
      * payload can locate its own data */
-    uint64_t selfVa;
+    uint64_t selfVA;
 
     /*
      * The pool, for the trace of what happened. It is reachable at this
@@ -256,16 +256,16 @@ typedef struct UsPayloadConfig_t {
     /* Firmware affinity-to-index mapping used to generate the stack lookup */
     uint64_t cpuCount;
     /* One entry per processor plus the firmware mapping's terminator */
-    UsPayloadCpu cpus[US_MAX_CPUS + 1U];
+    UsPayloadCPU cpus[US_MAX_CPUS + 1U];
 
     /* Immutable physical ranges used to validate their runtime aliases */
-    uint64_t selfPa;
+    uint64_t selfPA;
     uint64_t selfBytes;
-    uint64_t poolPa;
+    uint64_t poolPA;
     uint64_t entryOffset;
 
-    uint64_t highVa;
-    uint64_t highPoolVa;
+    uint64_t highVA;
+    uint64_t highPoolVA;
     uint64_t stubCount;
     UsPayloadStub stubs[US_PAYLOAD_MAX_STUBS];
 } UsPayloadConfig;

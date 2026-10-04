@@ -93,8 +93,8 @@ static bool nameMatches(const void *utf16, uint32_t chars, const char *ascii) {
     return ascii[chars] == '\0';
 }
 
-bool usLdrFindModule(const void *loaderBlock, const char *asciiName,
-                     UsLdrModule *out) {
+bool usLDRFindModule(const void *loaderBlock, const char *asciiName,
+                     UsLDRModule *out) {
     const uint8_t *ldr = loaderBlock;
     uint64_t head;
     uint64_t node;

@@ -27,6 +27,6 @@
  * A failure is reported and recorded rather than returned, because there is
  * no caller to answer to
  */
-void usTransferEntry(uint64_t kernelEntryVa, uint64_t loaderBlockVa);
+void usTransferEntry(uint64_t kernelEntryVA, uint64_t loaderBlockVA);
 
 #endif

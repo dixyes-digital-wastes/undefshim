@@ -145,7 +145,7 @@ typedef struct UsPoolEmu_t {
 typedef struct UsPoolRewrite_t {
     uint64_t site;
     uint64_t insn;
-    uint64_t descriptorVa;
+    uint64_t descriptorVA;
     uint64_t descriptor;
     uint64_t result;
 } UsPoolRewrite;
@@ -179,8 +179,8 @@ typedef struct UsPoolEntry_t {
      * payload never claimed says so here, and the exception state says which
      * one it was */
     uint64_t handedBack;
-    uint64_t handbackEsr;
-    uint64_t handbackElr;
+    uint64_t handbackESR;
+    uint64_t handbackELR;
     /*
      * The paths that end without an answer, which are the ones a machine that
      * stopped cannot otherwise explain: the entry stopping because it could
@@ -189,26 +189,26 @@ typedef struct UsPoolEntry_t {
      */
     uint64_t stuck;
     uint64_t stuckKind;
-    uint64_t stuckEsr;
-    uint64_t stuckElr;
-    uint64_t stuckSpsr;   /* which slot it came through */
-    uint64_t stuckVbar;   /* and the table that was in force */
+    uint64_t stuckESR;
+    uint64_t stuckELR;
+    uint64_t stuckSPSR;   /* which slot it came through */
+    uint64_t stuckVBAR;   /* and the table that was in force */
     uint64_t nestedFaults;
-    uint64_t nestedEsr;
-    uint64_t nestedFar;
-    uint64_t nestedElr;
+    uint64_t nestedESR;
+    uint64_t nestedFAR;
+    uint64_t nestedELR;
     /* Where the payload and its pool were when that happened, so the two
      * addresses above can be read as offsets into code and data that exist
      * somewhere to be looked at */
-    uint64_t nestedSelfVa;
+    uint64_t nestedSelfVA;
     uint64_t nestedPoolBase;
     uint64_t nestedStackTop;
-    uint64_t nestedCpu;
-    uint64_t lastEsr;
-    uint64_t lastElr;
-    uint64_t lastFar;
-    uint64_t lastCpu;
-    uint64_t lastSp;
+    uint64_t nestedCPU;
+    uint64_t lastESR;
+    uint64_t lastELR;
+    uint64_t lastFAR;
+    uint64_t lastCPU;
+    uint64_t lastSP;
     /* The instruction that faulted, so the host can see what was emulated
      * rather than only how often */
     uint64_t lastInsn;
@@ -225,7 +225,7 @@ typedef struct UsPoolEntry_t {
     uint64_t emuInsn;
     uint64_t emuAddr;
     uint64_t emuValue;
-    uint64_t emuElr;
+    uint64_t emuELR;
     /* The two registers the address was built from, so an address that looks
      * wrong can be traced to which part of it was wrong */
     uint64_t emuX0;
@@ -297,14 +297,14 @@ typedef struct UsPool_t {
      * rebuilt it does not, and this is the value the injector has to map.
      * It is written once and never relocated
      */
-    uint64_t selfPa;
+    uint64_t selfPA;
 
     /*
      * Address the pool is reached by. Updated whenever the pool is moved to a
      * different address, so the payload can work out where it is rather than
      * assuming the mapping it was entered through
      */
-    uint64_t selfVa;
+    uint64_t selfVA;
 
     /*
      * Top of each CPU's stack, that is the address stack grows down from, and

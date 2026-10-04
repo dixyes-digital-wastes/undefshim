@@ -312,7 +312,7 @@ def roundTrip(code, labels, offsets, mode, destination, ret=1, faulted=False,
 def check(text):
     code, labels = instructions(text)
     offsets = frameOffsets()
-    assert labels["usSyncEntry"] == labels["usSyncEntrySp0"], "entries do not share the checked path"
+    assert labels["usSyncEntry"] == labels["usSyncEntrySP0"], "entries do not share the checked path"
     assert code[labels["usSyncEntry"]:labels["usSyncStackReady"]] == [
         ("msr", ["daifset", "#0xF"]), ("b", ["usStackLookup"])], "entry spends GPRs before the lookup"
     assert code[labels["usSyncNoStack"]:labels["usSyncNoStack"] + 4] == [

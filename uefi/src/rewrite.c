@@ -32,7 +32,7 @@ static size_t rewriteImage(UsImage *img) {
     }
 
     for (uint16_t i = 0; i < img->sectionCount; i++) {
-        const UsPeSection *s = &img->sections[i];
+        const UsPESection *s = &img->sections[i];
         uint8_t *base;
         uint32_t span;
         bool touched = false;
@@ -42,7 +42,7 @@ static size_t rewriteImage(UsImage *img) {
             continue;
         }
 
-        base = (uint8_t *)(uintptr_t)usImageRvaToPtr(img, s->virtualAddress);
+        base = (uint8_t *)(uintptr_t)usImageRVAToPtr(img, s->virtualAddress);
         if (base == NULL) {
             continue;
         }
@@ -61,7 +61,7 @@ static size_t rewriteImage(UsImage *img) {
                             | ((uint32_t)base[off + 3] << 24);
             uint32_t replacement;
 
-            if (!usLdaprToLdar(insn, &replacement)) {
+            if (!usLDAPRToLDAR(insn, &replacement)) {
                 continue;
             }
             base[off] = (uint8_t)replacement;
@@ -93,7 +93,7 @@ size_t usRewriteOne(UsImage *img) {
     return changed;
 }
 
-size_t usRewriteLdapr(UsSession *session) {
+size_t usRewriteLDAPR(UsSession *session) {
     static const UsImageKind kinds[] = {
         UsImageNtoskrnl,
         UsImageWinload,
@@ -113,7 +113,7 @@ size_t usRewriteLdapr(UsSession *session) {
         usConsolePuts("rewrite: ");
         usConsolePuts(usImageKindName(kinds[i]));
         usConsolePuts(" holds ");
-        usConsolePutDec((uint64_t)usCountLdapr(img).total);
+        usConsolePutDec((uint64_t)usCountLDAPR(img).total);
         usConsolePuts("\n");
         changed = rewriteImage(img);
         if (changed != 0) {

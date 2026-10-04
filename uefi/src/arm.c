@@ -51,11 +51,11 @@
 
 typedef struct UsArmTarget_t {
     UsImage   *image;
-    uint32_t   tableRva;
-    uint32_t   stubRva;
+    uint32_t   tableRVA;
+    uint32_t   stubRVA;
     UsVectorSlot slot;
     /* RVA of the image's descriptor base, or zero when it has none */
-    uint32_t   descriptorBaseRva;
+    uint32_t   descriptorBaseRVA;
 } UsArmTarget;
 
 /*
@@ -65,18 +65,18 @@ typedef struct UsArmTarget_t {
  */
 static UsStubSlot stubSlotOf(UsVectorSlot slot) {
     switch (slot) {
-    case UsVectorSlotEl1hSync:
-        return UsStubSlotEl1h;
-    case UsVectorSlotEl0Sync32:
-        return UsStubSlotEl0;
+    case UsVectorSlotEL1hSync:
+        return UsStubSlotEL1h;
+    case UsVectorSlotEL0Sync32:
+        return UsStubSlotEL0;
     default:
-        return UsStubSlotEl1t;
+        return UsStubSlotEL1t;
     }
 }
 
 static bool armSlot(UsSession *s, const UsArmTarget *target) {
     uint32_t stub[US_SLOT_RUNTIME_WORDS];
-    UsPayloadConfig *cfg = (UsPayloadConfig *)(uintptr_t)s->payloadPlace.configVa;
+    UsPayloadConfig *cfg = (UsPayloadConfig *)(uintptr_t)s->payloadPlace.configVA;
     uint8_t *slotAt;
     uint8_t *stubAt;
     uint32_t original;
@@ -96,17 +96,17 @@ static bool armSlot(UsSession *s, const UsArmTarget *target) {
     UsStubSlot stubSlot = stubSlotOf(target->slot);
     uint32_t entryOffset = US_PAYLOAD_ENTRY_OFFSET;
 
-    slotAt = (uint8_t *)(uintptr_t)usImageRvaToPtr(target->image,
-                                                   target->tableRva
+    slotAt = (uint8_t *)(uintptr_t)usImageRVAToPtr(target->image,
+                                                   target->tableRVA
                                                        + (uint32_t)target->slot * 0x80U);
-    stubAt = (uint8_t *)(uintptr_t)usImageRvaToPtr(target->image, target->stubRva);
+    stubAt = (uint8_t *)(uintptr_t)usImageRVAToPtr(target->image, target->stubRVA);
     if (slotAt == NULL || stubAt == NULL || cfg->stubCount >= US_PAYLOAD_MAX_STUBS) {
         return false;
     }
-    uint64_t tableAddress = (uintptr_t)usImageRvaToPtr(target->image, target->tableRva);
-    uint64_t tablePa;
-    uint64_t stubPa;
-    uint64_t lastPa;
+    uint64_t tableAddress = (uintptr_t)usImageRVAToPtr(target->image, target->tableRVA);
+    uint64_t tablePA;
+    uint64_t stubPA;
+    uint64_t lastPA;
     /*
      * The physical addresses are recorded for the publication that runs
      * later, and the question asked here is the one the boot's own stores
@@ -115,10 +115,10 @@ static bool armSlot(UsSession *s, const UsArmTarget *target) {
      * runs and no longer holds the images where the loader put them, so asking
      * it here refuses a write that would in fact succeed
      */
-    if (!usTranslateOwnAddress(tableAddress, false, &tablePa)
-        || !usTranslateOwnAddress((uintptr_t)stubAt, true, &stubPa)
-        || !usTranslateOwnAddress((uintptr_t)stubAt + sizeof(stub) - 1, true, &lastPa)
-        || lastPa != stubPa + sizeof(stub) - 1) {
+    if (!usTranslateOwnAddress(tableAddress, false, &tablePA)
+        || !usTranslateOwnAddress((uintptr_t)stubAt, true, &stubPA)
+        || !usTranslateOwnAddress((uintptr_t)stubAt + sizeof(stub) - 1, true, &lastPA)
+        || lastPA != stubPA + sizeof(stub) - 1) {
         usConsolePuts("arm: the stub's own address cannot be translated\n");
         return false;
     }
@@ -141,9 +141,9 @@ static bool armSlot(UsSession *s, const UsArmTarget *target) {
         uint32_t tailIndex = usSlotStubTailIndex(stubSlot);
         /* The branch the tail ends with is the last of its words, and the
          * encoder decides how many that is per slot */
-        uint32_t from = target->stubRva
+        uint32_t from = target->stubRVA
                         + (tailIndex + usSlotStubTailWords(stubSlot) - 1U) * 4U;
-        uint32_t slotRva = target->tableRva + (uint32_t)target->slot * 0x80U;
+        uint32_t slotRVA = target->tableRVA + (uint32_t)target->slot * 0x80U;
 
         if ((original & 0xFC000000U) == 0x14000000U) {
             int32_t displacement = (int32_t)(original << 6) >> 6;
@@ -154,37 +154,37 @@ static bool armSlot(UsSession *s, const UsArmTarget *target) {
                  * that meaning rather than adjusting it: the place it would
                  * point at is this stub */
                 tail1 = 0x14000000U;
-            } else if (!usEncodeBranch(from, slotRva + (uint32_t)(displacement * 4),
+            } else if (!usEncodeBranch(from, slotRVA + (uint32_t)(displacement * 4),
                                        &tail1)) {
                 return false;
             }
         } else {
             tail0 = original;
-            if (!usEncodeBranch(from, slotRva + 4U, &tail1)) {
+            if (!usEncodeBranch(from, slotRVA + 4U, &tail1)) {
                 return false;
             }
         }
     }
 
-    if (!usEncodeBranch(target->tableRva + (uint32_t)target->slot * 0x80U,
-                        target->stubRva, &enter)) {
+    if (!usEncodeBranch(target->tableRVA + (uint32_t)target->slot * 0x80U,
+                        target->stubRVA, &enter)) {
         return false;
     }
 
-    usEncodeSlotStub(stub, s->payloadPlace.baseVa + entryOffset, tail0, tail1,
+    usEncodeSlotStub(stub, s->payloadPlace.baseVA + entryOffset, tail0, tail1,
                      stubSlot);
     usEncodeSlotTarget(stub + US_SLOT_STUB_WORDS,
-                       s->payloadPlace.baseVa + entryOffset);
+                       s->payloadPlace.baseVA + entryOffset);
     memcpy(stubAt, stub, sizeof(stub));
     usCacheFlushRange(stubAt, sizeof(stub));
     cfg->stubs[cfg->stubCount++] = (UsPayloadStub){
         .address = (uint64_t)(uintptr_t)stubAt,
         .tableAddress = tableAddress,
         .imageAddress = (uintptr_t)target->image->base,
-        .tablePa = tablePa,
-        .addressPa = stubPa,
+        .tablePA = tablePA,
+        .addressPA = stubPA,
         .targetIndex = usSlotStubTargetIndex(stubSlot),
-        .descriptorBaseRva = target->descriptorBaseRva,
+        .descriptorBaseRVA = target->descriptorBaseRVA,
     };
 
     /* The slot last: until the stub is there, a branch into it would be a
@@ -193,13 +193,13 @@ static bool armSlot(UsSession *s, const UsArmTarget *target) {
     usCacheFlushRange(slotAt, sizeof(enter));
 
     usConsolePuts("arm: vbar +");
-    usConsolePutHex(target->tableRva);
+    usConsolePutHex(target->tableRVA);
     usConsolePuts(" slot ");
     usConsolePutDec((uint64_t)target->slot);
     usConsolePuts(" -> stub +");
-    usConsolePutHex(target->stubRva);
+    usConsolePutHex(target->stubRVA);
     usConsolePuts(" -> payload ");
-    usConsolePutHex(s->payloadPlace.baseVa + entryOffset);
+    usConsolePutHex(s->payloadPlace.baseVA + entryOffset);
     usConsolePuts("\n");
     return true;
 }
@@ -212,9 +212,9 @@ static bool armImage(UsSession *s, UsImageKind kind, size_t *armed) {
      * Leaving one out means that one's loads are not carried out at all
      */
     const UsVectorSlot slots[US_STUB_SLOTS] = {
-        UsVectorSlotEl1tSync,
-        UsVectorSlotEl1hSync,
-        UsVectorSlotEl0Sync32,
+        UsVectorSlotEL1tSync,
+        UsVectorSlotEL1hSync,
+        UsVectorSlotEL0Sync32,
     };
     /*
      * The EL0 entry is taken over in the kernel's own table only. The loader's
@@ -228,13 +228,13 @@ static bool armImage(UsSession *s, UsImageKind kind, size_t *armed) {
                                                             : US_STUB_SLOTS - 1U)
                                  : 1U;
     UsImage *img = usRegistryGet(&s->registry, kind);
-    UsVbarTables tables;
+    UsVBARTables tables;
     UsSpareSlot hole;
 
     if (img == NULL) {
         return false;
     }
-    tables = usFindVbarTables(img);
+    tables = usFindVBARTables(img);
     if (tables.count == 0) {
         return false;
     }
@@ -269,18 +269,18 @@ static bool armImage(UsSession *s, UsImageKind kind, size_t *armed) {
              * to the other one */
             UsArmTarget target = {
                 .image = img,
-                .tableRva = tables.rvas[i],
-                .stubRva = hole.rva
+                .tableRVA = tables.rvas[i],
+                .stubRVA = hole.rva
                            + (uint32_t)(i * US_STUB_SLOTS + k) * US_SLOT_RUNTIME_BYTES,
-                .slot = s->armSlot0 ? slots[k] : UsVectorSlotEl1hSync,
+                .slot = s->armSlot0 ? slots[k] : UsVectorSlotEL1hSync,
                 /*
                  * Only if the configuration states one for this build, and
                  * only as a candidate: the handler checks it against the
                  * hardware before trusting it
                  */
-                .descriptorBaseRva = kind == UsImageNtoskrnl && s->config != NULL
+                .descriptorBaseRVA = kind == UsImageNtoskrnl && s->config != NULL
                                              && s->config->hasDescriptorBase
-                                         ? s->config->descriptorBaseRva
+                                         ? s->config->descriptorBaseRVA
                                          : 0U,
             };
 

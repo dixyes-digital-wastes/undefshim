@@ -29,7 +29,7 @@
  * how many were replaced, which is worth reporting: zero means the scan found
  * nothing, and that is a different thing from the scan not having run
  */
-size_t usRewriteLdapr(UsSession *session);
+size_t usRewriteLDAPR(UsSession *session);
 
 /*
  * The same thing for one image, for the ones that arrive one at a time

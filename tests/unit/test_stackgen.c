@@ -19,26 +19,26 @@ static uint64_t logicalImmediate(uint32_t insn) {
     return rotation == 0 ? bits : (bits >> rotation) | (bits << (64 - rotation));
 }
 
-static bool simulate(const uint32_t *code, uint32_t used, uint32_t codeRva,
-                     uint32_t tableRva, uint32_t readyRva, uint32_t haltRva,
+static bool simulate(const uint32_t *code, uint32_t used, uint32_t codeRVA,
+                     uint32_t tableRVA, uint32_t readyRVA, uint32_t haltRVA,
                      const uint64_t *stackTop, uint32_t count, uint64_t mpidr,
                      uint64_t *selected) {
-    int64_t pc = codeRva;
+    int64_t pc = codeRVA;
     uint64_t x18 = 0;
     unsigned loads = 0;
     for (unsigned step = 0; step < US_STACK_LOOKUP_WORDS * 2; step++) {
-        if (pc == readyRva) {
+        if (pc == readyRVA) {
             assert(loads == 1);
             *selected = x18;
             return true;
         }
-        if (pc == haltRva) {
+        if (pc == haltRVA) {
             assert(loads == 0);
             return false;
         }
-        assert(pc >= codeRva && pc < (int64_t)codeRva + used * 4);
-        assert(((pc - codeRva) & 3) == 0);
-        uint32_t insn = code[(pc - codeRva) / 4];
+        assert(pc >= codeRVA && pc < (int64_t)codeRVA + used * 4);
+        assert(((pc - codeRVA) & 3) == 0);
+        uint32_t insn = code[(pc - codeRVA) / 4];
         int64_t next = pc + 4;
         if (insn == 0xD53800B2U) {
             x18 = mpidr;
@@ -52,9 +52,9 @@ static bool simulate(const uint32_t *code, uint32_t used, uint32_t codeRva,
             }
         } else if ((insn & 0xFF00001FU) == 0x58000012U) {
             int64_t address = pc + signedImmediate((insn >> 5) & 0x7FFFFU, 19) * 4;
-            assert(address >= tableRva && address < (int64_t)tableRva + count * 8);
-            assert(((address - tableRva) & 7) == 0);
-            x18 = stackTop[(address - tableRva) / 8];
+            assert(address >= tableRVA && address < (int64_t)tableRVA + count * 8);
+            assert(((address - tableRVA) & 7) == 0);
+            x18 = stackTop[(address - tableRVA) / 8];
             loads++;
         } else if ((insn & 0xFC000000U) == 0x14000000U) {
             next = pc + signedImmediate(insn & 0x03FFFFFFU, 26) * 4;
@@ -67,14 +67,14 @@ static bool simulate(const uint32_t *code, uint32_t used, uint32_t codeRva,
     return false;
 }
 
-static void exercise(const uint64_t *ids, uint32_t count, uint32_t codeRva,
-                     uint32_t tableRva, uint32_t expectedWords) {
-    const uint32_t readyRva = 0x200000;
-    const uint32_t haltRva = 0x200004;
+static void exercise(const uint64_t *ids, uint32_t count, uint32_t codeRVA,
+                     uint32_t tableRVA, uint32_t expectedWords) {
+    const uint32_t readyRVA = 0x200000;
+    const uint32_t haltRVA = 0x200004;
     uint32_t code[US_STACK_LOOKUP_WORDS];
     uint64_t stackTop[US_MAX_CPUS];
-    uint32_t used = usGenerateStackLookup(ids, count, codeRva, tableRva,
-                                         readyRva, haltRva, code);
+    uint32_t used = usGenerateStackLookup(ids, count, codeRVA, tableRVA,
+                                         readyRVA, haltRVA, code);
     assert(used == expectedWords);
     assert(used <= 305);
     for (uint32_t i = used; i < US_STACK_LOOKUP_WORDS; i++) {
@@ -85,10 +85,10 @@ static void exercise(const uint64_t *ids, uint32_t count, uint32_t codeRva,
     }
     for (uint32_t i = 0; i < count; i++) {
         uint64_t selected = 0;
-        assert(simulate(code, used, codeRva, tableRva, readyRva, haltRva,
+        assert(simulate(code, used, codeRVA, tableRVA, readyRVA, haltRVA,
                         stackTop, count, ids[i], &selected));
         assert(selected == stackTop[i]);
-        assert(simulate(code, used, codeRva, tableRva, readyRva, haltRva,
+        assert(simulate(code, used, codeRVA, tableRVA, readyRVA, haltRVA,
                         stackTop, count, ids[i] | ~US_MPIDR_AFFINITY_MASK, &selected));
         assert(selected == stackTop[i]);
     }
@@ -104,21 +104,21 @@ static void exercise(const uint64_t *ids, uint32_t count, uint32_t codeRva,
         }
         if (!known) {
             uint64_t selected = UINT64_MAX;
-            assert(!simulate(code, used, codeRva, tableRva, readyRva, haltRva,
+            assert(!simulate(code, used, codeRVA, tableRVA, readyRVA, haltRVA,
                              stackTop, count, unknown, &selected));
             assert(selected == UINT64_MAX);
         }
     }
 }
 
-static void rejected(const uint64_t *ids, uint32_t count, uint32_t codeRva,
-                     uint32_t tableRva, uint32_t readyRva, uint32_t haltRva) {
+static void rejected(const uint64_t *ids, uint32_t count, uint32_t codeRVA,
+                     uint32_t tableRVA, uint32_t readyRVA, uint32_t haltRVA) {
     uint32_t code[US_STACK_LOOKUP_WORDS];
     uint32_t before[US_STACK_LOOKUP_WORDS];
     memset(code, 0xA5, sizeof(code));
     memcpy(before, code, sizeof(code));
-    assert(usGenerateStackLookup(ids, count, codeRva, tableRva,
-                                readyRva, haltRva, code) == 0);
+    assert(usGenerateStackLookup(ids, count, codeRVA, tableRVA,
+                                readyRVA, haltRVA, code) == 0);
     assert(memcmp(before, code, sizeof(code)) == 0);
 }
 

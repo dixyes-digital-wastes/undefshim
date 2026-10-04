@@ -19,7 +19,7 @@
  * its address space for exactly this reason -- finding one is arithmetic in
  * core/pgtable.h, given the base the kernel chose for that mapping. The base
  * is not a constant: it is the variable MmPteBase, whose address the image
- * tells us (see UsPayloadStub.descriptorBaseRva), and the literal the kernel's
+ * tells us (see UsPayloadStub.descriptorBaseRVA), and the literal the kernel's
  * own MiGetPteAddress uses is the x64 one, which on this 47-bit address space
  * does not translate at all
  *
@@ -64,7 +64,7 @@ typedef struct UsRead_t {
  * entry onwards, so the switch is the only thing that has to be right
  */
 typedef struct UsProbeBank_t {
-    uint64_t restoreSp;   /* zero when no switch was made */
+    uint64_t restoreSP;   /* zero when no switch was made */
 } UsProbeBank;
 
 /* How far below the stack in use the probing stack starts. Enough for the few
@@ -85,19 +85,19 @@ static UsProbeBank probeBankEnter(void) {
      * safe before anything is pushed, and no memory is touched in between */
     __asm__ volatile("msr spsel, #1" ::: "memory");
     __asm__ volatile("mov sp, %0" ::"r"(sp - US_PROBE_STACK_BYTES));
-    bank.restoreSp = sp;
+    bank.restoreSP = sp;
     return bank;
 }
 
 static void probeBankLeave(const UsProbeBank *bank) {
-    if (bank->restoreSp == 0) {
+    if (bank->restoreSP == 0) {
         return;
     }
-    __asm__ volatile("mov sp, %0" ::"r"(bank->restoreSp));
+    __asm__ volatile("mov sp, %0" ::"r"(bank->restoreSP));
     __asm__ volatile("msr spsel, #0" ::: "memory");
 }
 
-static uint64_t currentVbar(void) {
+static uint64_t currentVBAR(void) {
     uint64_t vbar;
 
     __asm__ volatile("mrs %0, vbar_el1" : "=r"(vbar));
@@ -124,8 +124,8 @@ static uint64_t readProbed(void *ctx, uint64_t at) {
  */
 static uint64_t descriptorBase(uint64_t *triedOut, uint64_t *valueOut) {
     UsPayloadConfig *cfg = usPayloadConfig();
-    uint64_t vbar = currentVbar();
-    uint64_t tablePa = 0;
+    uint64_t vbar = currentVBAR();
+    uint64_t tablePA = 0;
     uint64_t count = cfg->stubCount;
 
     *triedOut = 0;
@@ -150,16 +150,16 @@ static uint64_t descriptorBase(uint64_t *triedOut, uint64_t *valueOut) {
      * find nothing here, and that is the right answer: the site will trap
      * again, and by then the table will be the kernel's
      */
-    (void)usTranslateAddress(vbar, false, &tablePa);
-    if (tablePa == 0) {
+    (void)usTranslateAddress(vbar, false, &tablePA);
+    if (tablePA == 0) {
         return 0;
     }
     for (uint64_t i = 0; i < count; i++) {
         const UsPayloadStub *stub = &cfg->stubs[i];
-        uint64_t imageVa;
+        uint64_t imageVA;
         uint64_t value = 0;
 
-        if (stub->tablePa != tablePa || stub->descriptorBaseRva == 0
+        if (stub->tablePA != tablePA || stub->descriptorBaseRVA == 0
             || stub->imageAddress == 0
             || stub->tableAddress < stub->imageAddress
             || vbar < stub->tableAddress - stub->imageAddress) {
@@ -172,8 +172,8 @@ static uint64_t descriptorBase(uint64_t *triedOut, uint64_t *valueOut) {
          * is this image's table, so the image's base is that difference below
          * it
          */
-        imageVa = vbar - (stub->tableAddress - stub->imageAddress);
-        *triedOut = imageVa + stub->descriptorBaseRva;
+        imageVA = vbar - (stub->tableAddress - stub->imageAddress);
+        *triedOut = imageVA + stub->descriptorBaseRVA;
         if (!usPayloadProbeRead(*triedOut, &value)) {
             continue;
         }
@@ -231,7 +231,7 @@ static void step(uint64_t site, uint64_t insn, uint64_t where) {
     if (slot->site != site || slot->insn != insn) {
         slot->site = site;
         slot->insn = insn;
-        slot->descriptorVa = 0;
+        slot->descriptorVA = 0;
         slot->descriptor = 0;
     }
     slot->result = where;
@@ -248,7 +248,7 @@ static void record(uint64_t site, uint64_t insn, const UsLeaf *leaf, uint64_t re
     pool = (UsPool *)(uintptr_t)cfg->poolBase;
     slot->site = site;
     slot->insn = insn;
-    slot->descriptorVa = leaf != NULL ? leaf->descriptorVa : slot->descriptorVa;
+    slot->descriptorVA = leaf != NULL ? leaf->descriptorVA : slot->descriptorVA;
     slot->descriptor = leaf != NULL ? leaf->descriptor : slot->descriptor;
     slot->result = result;
     pool->entry.rewriteCount++;
@@ -293,7 +293,7 @@ UsRewriteResult usRewriteSite(uint64_t site) {
      * EL1 does
      */
     bank = probeBankEnter();
-    usPanOff();
+    usPANOff();
 
     /*
      * The instruction as it is now. A site another processor has already
@@ -302,23 +302,23 @@ UsRewriteResult usRewriteSite(uint64_t site) {
      * the instruction has to be fetched again here
      */
     if (!usPayloadProbeRead(site, &now)) {
-        usPanOn();
+        usPANOn();
         probeBankLeave(&bank);
         record(site, 0, NULL, UsRewriteRefused);
         return UsRewriteRefused;
     }
     insn = (uint32_t)now;
-    if (!usLdaprToLdar(insn, &replacement)) {
-        UsLdaprInsn acquire = { 0 };
+    if (!usLDAPRToLDAR(insn, &replacement)) {
+        UsLDAPRInsn acquire = { 0 };
 
-        if (usLdarDecode(insn, &acquire)) {
+        if (usLDARDecode(insn, &acquire)) {
             publishInstruction(site);
-            usPanOn();
+            usPANOn();
             probeBankLeave(&bank);
             record(site, insn, NULL, UsRewriteAlready);
             return UsRewriteAlready;
         }
-        usPanOn();
+        usPANOn();
         probeBankLeave(&bank);
         record(site, insn, NULL, UsRewriteNotRcpc);
         return UsRewriteNotRcpc;
@@ -332,10 +332,10 @@ UsRewriteResult usRewriteSite(uint64_t site) {
         UsPoolRewrite *slot = attemptSlot();
 
         if (slot != NULL) {
-            slot->descriptorVa = baseTried;
+            slot->descriptorVA = baseTried;
             slot->descriptor = baseValue;
         }
-        usPanOn();
+        usPANOn();
         probeBankLeave(&bank);
         record(site, insn, NULL, UsRewriteNoBase);
         return UsRewriteNoBase;
@@ -344,7 +344,7 @@ UsRewriteResult usRewriteSite(uint64_t site) {
     step(site, insn, UsRewriteWalking);
     leaf = usLeafFind(base, readProbed, &state, site);
     if (state.refused || !leaf.found) {
-        usPanOn();
+        usPANOn();
         probeBankLeave(&bank);
         record(site, insn, NULL, UsRewriteUnmapped);
         return UsRewriteUnmapped;
@@ -361,12 +361,12 @@ UsRewriteResult usRewriteSite(uint64_t site) {
      * costs nothing but the rewrite
      */
     {
-        uint64_t hardwarePa = 0;
+        uint64_t hardwarePA = 0;
 
-        if (!usTranslateAddress(site, false, &hardwarePa)
-            || (hardwarePa & ~(uint64_t)(leaf.size - 1U))
+        if (!usTranslateAddress(site, false, &hardwarePA)
+            || (hardwarePA & ~(uint64_t)(leaf.size - 1U))
                != (leaf.pa & ~(uint64_t)(leaf.size - 1U))) {
-            usPanOn();
+            usPANOn();
             probeBankLeave(&bank);
             record(site, insn, &leaf, UsRewriteNoBase);
             return UsRewriteNoBase;
@@ -382,16 +382,16 @@ UsRewriteResult usRewriteSite(uint64_t site) {
      */
     if ((original & US_PTE_AP2) != 0) {
         step(site, insn, UsRewriteProbing);
-        if (!usPayloadProbeWrite(leaf.descriptorVa, original)) {
-            usPanOn();
+        if (!usPayloadProbeWrite(leaf.descriptorVA, original)) {
+            usPANOn();
             probeBankLeave(&bank);
             record(site, insn, &leaf, UsRewriteReadOnly);
             return UsRewriteReadOnly;
         }
         step(site, insn, UsRewriteClearing);
-        if (!usPayloadProbeWrite(leaf.descriptorVa, original & ~US_PTE_AP2)) {
-            (void)usPayloadProbeWrite(leaf.descriptorVa, original);
-            usPanOn();
+        if (!usPayloadProbeWrite(leaf.descriptorVA, original & ~US_PTE_AP2)) {
+            (void)usPayloadProbeWrite(leaf.descriptorVA, original);
+            usPANOn();
             probeBankLeave(&bank);
             record(site, insn, &leaf, UsRewriteReadOnly);
             return UsRewriteReadOnly;
@@ -424,16 +424,16 @@ UsRewriteResult usRewriteSite(uint64_t site) {
         bool ours = true;
 
         step(site, insn, UsRewriteRestoring);
-        if (usPayloadProbeRead(leaf.descriptorVa, &underlying)
+        if (usPayloadProbeRead(leaf.descriptorVA, &underlying)
             && underlying != (original & ~US_PTE_AP2)) {
             ours = false;
         }
         if (ours) {
-            restored = usPayloadProbeWrite(leaf.descriptorVa, original);
+            restored = usPayloadProbeWrite(leaf.descriptorVA, original);
         }
         invalidateTranslation(site);
     }
-    usPanOn();
+    usPANOn();
     probeBankLeave(&bank);
     if (!restored) {
         record(site, insn, &leaf, UsRewriteStuck);

@@ -47,9 +47,9 @@
  * which is the handler the slot originally held
  */
 typedef enum UsStubSlot_e {
-    UsStubSlotEl1t = 0, /* the synchronous slot at offset 0x000 */
-    UsStubSlotEl1h = 1, /* at 0x200, the one the payload itself runs under */
-    UsStubSlotEl0 = 2,  /* at 0x400, the kernel's lower EL entry */
+    UsStubSlotEL1t = 0, /* the synchronous slot at offset 0x000 */
+    UsStubSlotEL1h = 1, /* at 0x200, the one the payload itself runs under */
+    UsStubSlotEL0 = 2,  /* at 0x400, the kernel's lower EL entry */
 } UsStubSlot;
 
 /* How many of those there are, for tables that are indexed by one */

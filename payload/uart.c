@@ -45,21 +45,21 @@ static void writeReg(uint32_t index, uint32_t value) {
     *(volatile uint32_t *)regAt(index) = value;
 }
 
-void usUartInit(uint64_t base, uint32_t kind, uint32_t width) {
+void usUARTInit(uint64_t base, uint32_t kind, uint32_t width) {
     gBase = (uintptr_t)base;
     gKind = kind;
     gWidth = width == 8U ? 8U : 32U;
     gShift = (kind == US_UART_8250 && gWidth == 32U) ? 2U : 0U;
 }
 
-void usUartPutc(char c) {
+void usUARTPutc(char c) {
     uint32_t spins;
 
     if (gBase == 0) {
         return;
     }
     if (c == '\n') {
-        usUartPutc('\r');
+        usUARTPutc('\r');
     }
 
     /*
@@ -79,23 +79,23 @@ void usUartPutc(char c) {
     writeReg(gKind == US_UART_8250 ? US_8250_THR : US_PL011_DR, (uint32_t)(uint8_t)c);
 }
 
-void usUartPuts(const char *s) {
+void usUARTPuts(const char *s) {
     if (s == NULL) {
         return;
     }
     while (*s != '\0') {
-        usUartPutc(*s++);
+        usUARTPutc(*s++);
     }
 }
 
-void usUartPutHex(uint64_t value) {
+void usUARTPutHex(uint64_t value) {
     static const char kDigits[] = "0123456789abcdef";
     char out[16];
     int n = 0;
 
-    usUartPuts("0x");
+    usUARTPuts("0x");
     if (value == 0) {
-        usUartPutc('0');
+        usUARTPutc('0');
         return;
     }
     while (value != 0 && n < (int)sizeof(out)) {
@@ -103,16 +103,16 @@ void usUartPutHex(uint64_t value) {
         value >>= 4;
     }
     while (n > 0) {
-        usUartPutc(out[--n]);
+        usUARTPutc(out[--n]);
     }
 }
 
-void usUartPutDec(uint64_t value) {
+void usUARTPutDec(uint64_t value) {
     char out[20];
     int n = 0;
 
     if (value == 0) {
-        usUartPutc('0');
+        usUARTPutc('0');
         return;
     }
     while (value != 0 && n < (int)sizeof(out)) {
@@ -120,6 +120,6 @@ void usUartPutDec(uint64_t value) {
         value /= 10;
     }
     while (n > 0) {
-        usUartPutc(out[--n]);
+        usUARTPutc(out[--n]);
     }
 }

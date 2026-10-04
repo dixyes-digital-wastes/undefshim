@@ -18,7 +18,7 @@ typedef struct PeFileHeader_t {
 
 typedef struct PeOptionalHeader_t {
     uint16_t magic;
-    uint32_t entryRva;
+    uint32_t entryRVA;
     uint64_t preferredBase;
     uint32_t sectionAlignment;
     uint32_t fileAlignment;
@@ -104,7 +104,7 @@ static bool readHeaders(UsImage *img) {
     if (oh.magic != PE_OPTIONAL_MAGIC_64) {
         return false;
     }
-    oh.entryRva = rd32(b + optOffset + 16);
+    oh.entryRVA = rd32(b + optOffset + 16);
     oh.preferredBase = rd64(b + optOffset + 24);
     oh.sectionAlignment = rd32(b + optOffset + 32);
     oh.sizeOfImage = rd32(b + optOffset + 56);
@@ -125,7 +125,7 @@ static bool readHeaders(UsImage *img) {
             directories = i;
             break;
         }
-        img->dataDirectoryRva[i] = rd32(b + at);
+        img->dataDirectoryRVA[i] = rd32(b + at);
         img->dataDirectorySize[i] = rd32(b + at + 4);
     }
     img->dataDirectoryCount = directories;
@@ -138,7 +138,7 @@ static bool readHeaders(UsImage *img) {
     img->preferredBase = oh.preferredBase;
     img->sizeOfImage = oh.sizeOfImage;
     img->sizeOfHeaders = oh.sizeOfHeaders;
-    img->entryRva = oh.entryRva;
+    img->entryRVA = oh.entryRVA;
     img->subsystem = oh.subsystem;
     img->sectionAlignment = (uint16_t)oh.sectionAlignment;
     img->sectionCount = fh.sectionCount;
@@ -146,7 +146,7 @@ static bool readHeaders(UsImage *img) {
 
     for (uint16_t i = 0; i < fh.sectionCount; i++) {
         const uint8_t *s = b + sectionTable + (size_t)i * 40;
-        UsPeSection *out = &img->sections[i];
+        UsPESection *out = &img->sections[i];
 
         out->nameLen = 0;
         while (out->nameLen < 8 && s[out->nameLen] != '\0') {
@@ -183,7 +183,7 @@ bool usImageInitFile(UsImage *img, const void *data, size_t size) {
     /* In a file view every section must lie inside the bytes we hold,
      * otherwise a later lookup could walk off the end */
     for (uint16_t i = 0; i < img->sectionCount; i++) {
-        const UsPeSection *s = &img->sections[i];
+        const UsPESection *s = &img->sections[i];
         if (s->rawSize == 0) {
             continue;
         }
@@ -217,7 +217,7 @@ bool usImageInitMemory(UsImage *img, const void *data, size_t size) {
     return true;
 }
 
-const uint8_t *usImageRvaSpan(const UsImage *img, uint32_t rva, size_t *available) {
+const uint8_t *usImageRVASpan(const UsImage *img, uint32_t rva, size_t *available) {
     const uint8_t *p = NULL;
     size_t avail = 0;
 
@@ -242,7 +242,7 @@ const uint8_t *usImageRvaSpan(const UsImage *img, uint32_t rva, size_t *availabl
             p = img->base + rva;
             avail = img->size - rva;
         } else {
-            const UsPeSection *s = usImageSectionOfRva(img, rva);
+            const UsPESection *s = usImageSectionOfRVA(img, rva);
             if (s == NULL || s->rawSize == 0) {
                 return NULL;
             }
@@ -269,16 +269,16 @@ const uint8_t *usImageRvaSpan(const UsImage *img, uint32_t rva, size_t *availabl
     return p;
 }
 
-const uint8_t *usImageRvaToPtr(const UsImage *img, uint32_t rva) {
-    return usImageRvaSpan(img, rva, NULL);
+const uint8_t *usImageRVAToPtr(const UsImage *img, uint32_t rva) {
+    return usImageRVASpan(img, rva, NULL);
 }
 
-const UsPeSection *usImageSectionOfRva(const UsImage *img, uint32_t rva) {
+const UsPESection *usImageSectionOfRVA(const UsImage *img, uint32_t rva) {
     if (img == NULL || !img->valid) {
         return NULL;
     }
     for (uint16_t i = 0; i < img->sectionCount; i++) {
-        const UsPeSection *s = &img->sections[i];
+        const UsPESection *s = &img->sections[i];
         uint32_t span = s->virtualSize > s->rawSize ? s->virtualSize : s->rawSize;
         if (rva >= s->virtualAddress && rva - s->virtualAddress < span) {
             return s;
@@ -290,21 +290,21 @@ const UsPeSection *usImageSectionOfRva(const UsImage *img, uint32_t rva) {
 const uint8_t *usImageDataDirectory(const UsImage *img, uint32_t index,
                                     uint32_t *outSize) {
     if (img == NULL || !img->valid || index >= img->dataDirectoryCount
-        || img->dataDirectoryRva[index] == 0) {
+        || img->dataDirectoryRVA[index] == 0) {
         return NULL;
     }
     if (outSize != NULL) {
         *outSize = img->dataDirectorySize[index];
     }
-    return usImageRvaToPtr(img, img->dataDirectoryRva[index]);
+    return usImageRVAToPtr(img, img->dataDirectoryRVA[index]);
 }
 
-const UsPeSection *usImageFindSection(const UsImage *img, const char *name) {
+const UsPESection *usImageFindSection(const UsImage *img, const char *name) {
     if (img == NULL || !img->valid || name == NULL) {
         return NULL;
     }
     for (uint16_t i = 0; i < img->sectionCount; i++) {
-        const UsPeSection *s = &img->sections[i];
+        const UsPESection *s = &img->sections[i];
         if (nameEq(s->name, s->nameLen, name)) {
             return s;
         }
@@ -390,7 +390,7 @@ const char *usImageKindName(UsImageKind kind) {
 /* Images are mapped page aligned, so a header can only ever start on a page */
 #define US_PE_SCAN_STEP 4096U
 
-int usPeScanRegion(const uint8_t *base, size_t size, UsImageVisitor visit, void *ctx) {
+int usPEScanRegion(const uint8_t *base, size_t size, UsImageVisitor visit, void *ctx) {
     int found = 0;
 
     if (base == NULL || visit == NULL || size < 0x40) {

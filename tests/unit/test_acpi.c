@@ -52,8 +52,8 @@ static void eqInt(const char *name, int got, int want) {
 #define LOW_BASE 0x10000000U
 
 static uint8_t *gRoot;
-static uint8_t *gMadt;
-static uint8_t *gRsdp;
+static uint8_t *gMADT;
+static uint8_t *gRSDP;
 
 static void *mapLow(size_t offset, size_t bytes) {
     void *p = mmap((void *)(uintptr_t)(LOW_BASE + offset), bytes,
@@ -67,9 +67,9 @@ static void *mapLow(size_t offset, size_t bytes) {
 }
 
 static void setUpTables(void) {
-    gRsdp = mapLow(0x0000, 0x100);
+    gRSDP = mapLow(0x0000, 0x100);
     gRoot = mapLow(0x1000, 0x1000);
-    gMadt = mapLow(0x2000, 0x1000);
+    gMADT = mapLow(0x2000, 0x1000);
 }
 
 static void put32(uint8_t *p, uint32_t v) {
@@ -100,17 +100,17 @@ typedef struct CpuSpec_t {
     uint32_t uid;
 } CpuSpec;
 
-static size_t gMadtLength;
+static size_t gMADTLength;
 
 /* Builds a MADT with the given GIC CPU Interface entries, and a root table
  * that points at it */
 static void buildTables(const CpuSpec *cpus, size_t count, bool extended) {
     size_t at = 44;
 
-    memset(gMadt, 0, 0x1000);
-    memcpy(gMadt, "APIC", 4);
+    memset(gMADT, 0, 0x1000);
+    memcpy(gMADT, "APIC", 4);
     for (size_t i = 0; i < count; i++) {
-        uint8_t *e = gMadt + at;
+        uint8_t *e = gMADT + at;
 
         e[0] = 0x0B;        /* GICC */
         e[1] = 82;          /* the length ACPI 6.5 gives it */
@@ -120,36 +120,36 @@ static void buildTables(const CpuSpec *cpus, size_t count, bool extended) {
         put64(e + 68, cpus[i].mpidr);
         at += 82;
     }
-    gMadtLength = at;
-    put32(gMadt + 4, (uint32_t)gMadtLength);
-    seal(gMadt, gMadtLength);
+    gMADTLength = at;
+    put32(gMADT + 4, (uint32_t)gMADTLength);
+    seal(gMADT, gMADTLength);
 
     memset(gRoot, 0, 0x1000);
     if (extended) {
         memcpy(gRoot, "XSDT", 4);
         put32(gRoot + 4, 36 + 8);
-        put64(gRoot + 36, (uint64_t)(uintptr_t)gMadt);
+        put64(gRoot + 36, (uint64_t)(uintptr_t)gMADT);
         seal(gRoot, 36 + 8);
     } else {
         memcpy(gRoot, "RSDT", 4);
         put32(gRoot + 4, 36 + 4);
-        put32(gRoot + 36, (uint32_t)(uintptr_t)gMadt);
+        put32(gRoot + 36, (uint32_t)(uintptr_t)gMADT);
         seal(gRoot, 36 + 4);
     }
 
-    memset(gRsdp, 0, 0x100);
-    memcpy(gRsdp, "RSD PTR ", 8);
-    gRsdp[15] = extended ? 2 : 0;
-    put32(gRsdp + 16, (uint32_t)(uintptr_t)gRoot);
-    put64(gRsdp + 24, (uint64_t)(uintptr_t)gRoot);
+    memset(gRSDP, 0, 0x100);
+    memcpy(gRSDP, "RSD PTR ", 8);
+    gRSDP[15] = extended ? 2 : 0;
+    put32(gRSDP + 16, (uint32_t)(uintptr_t)gRoot);
+    put64(gRSDP + 24, (uint64_t)(uintptr_t)gRoot);
     {
         uint8_t sum = 0;
         size_t len = extended ? 36 : 20;
 
         for (size_t i = 0; i < len; i++) {
-            sum = (uint8_t)(sum + gRsdp[i]);
+            sum = (uint8_t)(sum + gRSDP[i]);
         }
-        gRsdp[8] = (uint8_t)(0 - sum);
+        gRSDP[8] = (uint8_t)(0 - sum);
     }
 }
 
@@ -165,13 +165,13 @@ static void testRealShape(void) {
         { 0x100, 4 }, { 0x101, 5 }, { 0x102, 6 }, { 0x103, 7 },
     };
     const void *madt;
-    UsAcpiCpus got;
+    UsACPICPUs got;
 
     buildTables(cpus, 8, true);
-    madt = usAcpiFindMadt(gRsdp);
+    madt = usACPIFindMADT(gRSDP);
     ok("the MADT is found through the XSDT", madt != NULL);
 
-    got = usAcpiCollectCpus(madt);
+    got = usACPICollectCPUs(madt);
     eqInt("eight processors", (int)got.count, 8);
     ok("no overflow", !got.overflow);
 
@@ -187,11 +187,11 @@ static void testOlderRoot(void) {
     static const CpuSpec cpus[] = {
         { 0, 0 }, { 1, 1 },
     };
-    UsAcpiCpus got;
+    UsACPICPUs got;
 
     buildTables(cpus, 2, false);
-    ok("the MADT is found through the RSDT too", usAcpiFindMadt(gRsdp) != NULL);
-    got = usAcpiCollectCpus(usAcpiFindMadt(gRsdp));
+    ok("the MADT is found through the RSDT too", usACPIFindMADT(gRSDP) != NULL);
+    got = usACPICollectCPUs(usACPIFindMADT(gRSDP));
     eqInt("two processors", (int)got.count, 2);
 }
 
@@ -206,21 +206,21 @@ static void testChecksums(void) {
     };
 
     buildTables(cpus, 1, true);
-    ok("a good table is accepted", usAcpiFindMadt(gRsdp) != NULL);
+    ok("a good table is accepted", usACPIFindMADT(gRSDP) != NULL);
 
-    gMadt[20] ^= 0xFF;
-    ok("a damaged MADT is refused", usAcpiFindMadt(gRsdp) == NULL);
-    gMadt[20] ^= 0xFF;
+    gMADT[20] ^= 0xFF;
+    ok("a damaged MADT is refused", usACPIFindMADT(gRSDP) == NULL);
+    gMADT[20] ^= 0xFF;
 
     gRoot[40] ^= 0xFF;
-    ok("a damaged root table is refused", usAcpiFindMadt(gRsdp) == NULL);
+    ok("a damaged root table is refused", usACPIFindMADT(gRSDP) == NULL);
     gRoot[40] ^= 0xFF;
 
-    gRsdp[10] ^= 0xFF;
-    ok("a damaged root pointer is refused", usAcpiFindMadt(gRsdp) == NULL);
-    gRsdp[10] ^= 0xFF;
+    gRSDP[10] ^= 0xFF;
+    ok("a damaged root pointer is refused", usACPIFindMADT(gRSDP) == NULL);
+    gRSDP[10] ^= 0xFF;
 
-    ok("and a good one is accepted again", usAcpiFindMadt(gRsdp) != NULL);
+    ok("and a good one is accepted again", usACPIFindMADT(gRSDP) != NULL);
 }
 
 static void testRobustness(void) {
@@ -228,30 +228,30 @@ static void testRobustness(void) {
         { 0, 0 }, { 1, 1 },
     };
 
-    ok("a null root pointer is refused", usAcpiFindMadt(NULL) == NULL);
+    ok("a null root pointer is refused", usACPIFindMADT(NULL) == NULL);
 
     buildTables(cpus, 2, true);
-    gRsdp[0] = 'X';
-    ok("a wrong signature is refused", usAcpiFindMadt(gRsdp) == NULL);
-    gRsdp[0] = 'R';
+    gRSDP[0] = 'X';
+    ok("a wrong signature is refused", usACPIFindMADT(gRSDP) == NULL);
+    gRSDP[0] = 'R';
 
     /* An entry of an unknown type has to be skipped by its length rather than
      * ending the walk, or a machine with one would report no processors */
     {
-        uint8_t *madt = gMadt;
-        size_t old = gMadtLength;
+        uint8_t *madt = gMADT;
+        size_t old = gMADTLength;
 
         /* Insert a distributor entry before the first GICC */
         memmove(madt + 44 + 24, madt + 44, old - 44);
         memset(madt + 44, 0, 24);
         madt[44] = 0x0C;    /* GICD */
         madt[45] = 24;
-        gMadtLength = old + 24;
-        put32(madt + 4, (uint32_t)gMadtLength);
-        seal(madt, gMadtLength);
+        gMADTLength = old + 24;
+        put32(madt + 4, (uint32_t)gMADTLength);
+        seal(madt, gMADTLength);
 
         {
-            UsAcpiCpus got = usAcpiCollectCpus(madt);
+            UsACPICPUs got = usACPICollectCPUs(madt);
 
             eqInt("an unknown entry is skipped", (int)got.count, 2);
         }

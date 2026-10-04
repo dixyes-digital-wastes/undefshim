@@ -77,8 +77,8 @@ int main(int argc, char **argv) {
     usScreenInit();
 
     result = usConfigLoad(&cfg, msg, sizeof(msg));
-    if (cfg != NULL && cfg->hasUart) {
-        usConsoleUse(cfg->uartType[0] == 'p' ? UsUartPl011 : UsUartUart8250,
+    if (cfg != NULL && cfg->hasUART) {
+        usConsoleUse(cfg->uartType[0] == 'p' ? UsUARTPL011 : UsUART8250,
                      cfg->uartBase, cfg->uartWidth);
     }
 
@@ -129,9 +129,9 @@ int main(int argc, char **argv) {
      * loaded long after this function has returned */
     gSession.config = cfg;
     usConsolePuts("pool: pa=");
-    usConsolePutHex(gSession.poolAlloc.basePa);
+    usConsolePutHex(gSession.poolAlloc.basePA);
     usConsolePuts(" va=");
-    usConsolePutHex(gSession.poolAlloc.baseVa);
+    usConsolePutHex(gSession.poolAlloc.baseVA);
     usConsolePuts(" bytes=");
     usConsolePutHex(gSession.poolAlloc.bytes);
     usConsolePuts(" slots=");
@@ -175,7 +175,7 @@ int main(int argc, char **argv) {
     usConsolePuts("gmm: armed\n");
 
     /* The notification publishes high-VA exception targets before low VAs retire */
-    if (gSession.vamapEnabled && !usVaMapArm(&gSession)) {
+    if (gSession.vamapEnabled && !usVAMapArm(&gSession)) {
         usConsolePuts("vamap: cannot arm\n");
         usConsolePuts("US-M6-FAIL\n");
         return 0;

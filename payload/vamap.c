@@ -13,7 +13,7 @@
 #include "payload/vamap.h"
 #include "payload/early.h"
 
-UsVaMapRecord usVaMapRecord;
+UsVAMapRecord usVAMapRecord;
 
 typedef uint64_t (*UsSetVirtualAddressMapFn)(uint64_t, uint64_t, uint32_t, void *);
 
@@ -26,29 +26,29 @@ typedef uint64_t (*UsSetVirtualAddressMapFn)(uint64_t, uint64_t, uint32_t, void 
  * Forwarded, because forwarding costs one call and not forwarding would leave
  * the machine to finish booting with the change half applied
  */
-uint64_t usVaMapHook(uint64_t mapSize, uint64_t descSize, uint32_t descVersion,
+uint64_t usVAMapHook(uint64_t mapSize, uint64_t descSize, uint32_t descVersion,
                      void *descs) {
-    usVaMapRecord.magic = US_VAMAP_MAGIC;
-    usVaMapRecord.hookFired = 1;
-    usVaMapRecord.hookMapSize = mapSize;
-    usVaMapRecord.hookDescs = (uint64_t)(uintptr_t)descs;
+    usVAMapRecord.magic = US_VAMAP_MAGIC;
+    usVAMapRecord.hookFired = 1;
+    usVAMapRecord.hookMapSize = mapSize;
+    usVAMapRecord.hookDescs = (uint64_t)(uintptr_t)descs;
 
-    if (usVaMapRecord.svmOriginal != 0) {
+    if (usVAMapRecord.svmOriginal != 0) {
         UsSetVirtualAddressMapFn original =
-            (UsSetVirtualAddressMapFn)(uintptr_t)usVaMapRecord.svmOriginal;
+            (UsSetVirtualAddressMapFn)(uintptr_t)usVAMapRecord.svmOriginal;
 
-        usVaMapRecord.hookStatus = original(mapSize, descSize, descVersion, descs);
+        usVAMapRecord.hookStatus = original(mapSize, descSize, descVersion, descs);
     }
-    return usVaMapRecord.hookStatus;
+    return usVAMapRecord.hookStatus;
 }
 
 typedef uint64_t (*UsConvertPointerFn)(uint64_t, void **);
 
-typedef struct UsVaMapTarget_t {
+typedef struct UsVAMapTarget_t {
     uint64_t *before;
     uint64_t *after;
     uint64_t *status;
-} UsVaMapTarget;
+} UsVAMapTarget;
 
 /*
  * Called by the firmware from inside the switch, so the firmware is still
@@ -58,22 +58,22 @@ typedef struct UsVaMapTarget_t {
  * before the next question: a firmware that has no entry for one of them
  * says so, and that must not cost the other its answer
  */
-void usVaMapNotify(void *event, void *context) {
-    UsConvertPointerFn convert = (UsConvertPointerFn)(uintptr_t)usVaMapRecord.convertPointer;
-    UsVaMapTarget targets[] = {
-        { .before = &usVaMapRecord.poolBefore,
-          .after = &usVaMapRecord.poolAfter,
-          .status = &usVaMapRecord.poolStatus },
-        { .before = &usVaMapRecord.payloadBefore,
-          .after = &usVaMapRecord.payloadAfter,
-          .status = &usVaMapRecord.payloadStatus },
+void usVAMapNotify(void *event, void *context) {
+    UsConvertPointerFn convert = (UsConvertPointerFn)(uintptr_t)usVAMapRecord.convertPointer;
+    UsVAMapTarget targets[] = {
+        { .before = &usVAMapRecord.poolBefore,
+          .after = &usVAMapRecord.poolAfter,
+          .status = &usVAMapRecord.poolStatus },
+        { .before = &usVAMapRecord.payloadBefore,
+          .after = &usVAMapRecord.payloadAfter,
+          .status = &usVAMapRecord.payloadStatus },
     };
 
     (void)event;
     (void)context;
 
-    usVaMapRecord.magic = US_VAMAP_MAGIC;
-    usVaMapRecord.fired = 1;
+    usVAMapRecord.magic = US_VAMAP_MAGIC;
+    usVAMapRecord.fired = 1;
 
     if (convert == 0) {
         return;

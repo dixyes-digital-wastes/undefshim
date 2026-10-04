@@ -37,6 +37,6 @@
  * its own: it means nothing we placed will survive the switch, so nothing
  * later may depend on it
  */
-bool usVaMapArm(UsSession *session);
+bool usVAMapArm(UsSession *session);
 
 #endif

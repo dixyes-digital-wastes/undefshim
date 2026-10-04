@@ -9,50 +9,50 @@
 
 bool usPayloadEarly(void) {
     UsPayloadConfig *cfg = usPayloadConfig();
-    uint64_t payloadVa = usVaMapRecord.payloadAfter;
-    uint64_t poolVa = usVaMapRecord.poolAfter;
+    uint64_t payloadVA = usVAMapRecord.payloadAfter;
+    uint64_t poolVA = usVAMapRecord.poolAfter;
 
-    if (usVaMapRecord.fired == 0 || usVaMapRecord.payloadStatus != 0
-        || usVaMapRecord.poolStatus != 0 || payloadVa >> 48 != 0xFFFFU
-        || poolVa >> 48 != 0xFFFFU || cfg->entryOffset >= cfg->selfBytes
-        || payloadVa > UINT64_MAX - cfg->selfBytes
-        || poolVa > UINT64_MAX - US_POOL_BYTES) {
+    if (usVAMapRecord.fired == 0 || usVAMapRecord.payloadStatus != 0
+        || usVAMapRecord.poolStatus != 0 || payloadVA >> 48 != 0xFFFFU
+        || poolVA >> 48 != 0xFFFFU || cfg->entryOffset >= cfg->selfBytes
+        || payloadVA > UINT64_MAX - cfg->selfBytes
+        || poolVA > UINT64_MAX - US_POOL_BYTES) {
         return false;
     }
-    if (cfg->highVa != 0) {
-        return cfg->highVa == payloadVa && cfg->highPoolVa == poolVa;
+    if (cfg->highVA != 0) {
+        return cfg->highVA == payloadVA && cfg->highPoolVA == poolVA;
     }
     for (uint64_t i = 0; i < US_MAX_CPUS; i++) {
-        if (cfg->stackTop[i] < cfg->poolPa
-            || cfg->stackTop[i] - cfg->poolPa > US_POOL_BYTES) {
+        if (cfg->stackTop[i] < cfg->poolPA
+            || cfg->stackTop[i] - cfg->poolPA > US_POOL_BYTES) {
             return false;
         }
     }
 
     UsPool *pool = (UsPool *)(uintptr_t)cfg->poolBase;
     for (uint64_t i = 0; i < US_MAX_CPUS; i++) {
-        cfg->stackTop[i] = poolVa + cfg->stackTop[i] - cfg->poolPa;
+        cfg->stackTop[i] = poolVA + cfg->stackTop[i] - cfg->poolPA;
         pool->stackTop[i] = cfg->stackTop[i];
     }
-    pool->selfVa = poolVa;
-    cfg->poolBase = poolVa;
-    cfg->selfVa = payloadVa;
-    cfg->highPoolVa = poolVa;
-    __atomic_store_n(&cfg->highVa, payloadVa, __ATOMIC_RELEASE);
+    pool->selfVA = poolVA;
+    cfg->poolBase = poolVA;
+    cfg->selfVA = payloadVA;
+    cfg->highPoolVA = poolVA;
+    __atomic_store_n(&cfg->highVA, payloadVA, __ATOMIC_RELEASE);
     return true;
 }
 
 /* What the last successful lookup produced, per slot */
-static uint64_t gLandingVbar[US_STUB_SLOT_COUNT];
+static uint64_t gLandingVBAR[US_STUB_SLOT_COUNT];
 static uint64_t gLanding[US_STUB_SLOT_COUNT];
 
 bool usPayloadSlotTail(uint64_t vbar, uint64_t spsr, uint64_t *tail) {
     UsPayloadConfig *cfg = usPayloadConfig();
-    uint64_t tablePa;
-    uint64_t imageVa;
-    uint64_t stubVa;
+    uint64_t tablePA;
+    uint64_t imageVA;
+    uint64_t stubVA;
     const UsPayloadStub *slot = NULL;
-    UsStubSlot which = usSlotOfSpsr(spsr);
+    UsStubSlot which = usSlotOfSPSR(spsr);
 
     /*
      * Which table VBAR names, asked of the translation - and if that cannot
@@ -61,15 +61,15 @@ bool usPayloadSlotTail(uint64_t vbar, uint64_t spsr, uint64_t *tail) {
      * the kernel sees as a CPU that stopped answering, so a stale-but-known
      * answer is the better one
      */
-    static uint64_t lastTablePa;
+    static uint64_t lastTablePA;
 
     if (tail == NULL || cfg->stubCount == 0 || cfg->stubCount > US_PAYLOAD_MAX_STUBS) {
         return false;
     }
-    if (usTranslateAddress(vbar, false, &tablePa)) {
-        lastTablePa = tablePa;
-    } else if (lastTablePa != 0) {
-        tablePa = lastTablePa;
+    if (usTranslateAddress(vbar, false, &tablePA)) {
+        lastTablePA = tablePA;
+    } else if (lastTablePA != 0) {
+        tablePA = lastTablePA;
     } else {
         return false;
     }
@@ -82,7 +82,7 @@ bool usPayloadSlotTail(uint64_t vbar, uint64_t spsr, uint64_t *tail) {
     for (uint64_t i = 0; i < cfg->stubCount; i++) {
         const UsPayloadStub *stub = &cfg->stubs[i];
 
-        if (stub->tablePa != tablePa || stub->targetIndex != usSlotStubTargetIndex(which)
+        if (stub->tablePA != tablePA || stub->targetIndex != usSlotStubTargetIndex(which)
             || stub->imageAddress == 0 || stub->tableAddress < stub->imageAddress
             || stub->address < stub->imageAddress) {
             continue;
@@ -96,8 +96,8 @@ bool usPayloadSlotTail(uint64_t vbar, uint64_t spsr, uint64_t *tail) {
     if (slot == NULL || vbar < slot->tableAddress - slot->imageAddress) {
         return false;
     }
-    imageVa = vbar - (slot->tableAddress - slot->imageAddress);
-    stubVa = imageVa + (slot->address - slot->imageAddress);
+    imageVA = vbar - (slot->tableAddress - slot->imageAddress);
+    stubVA = imageVA + (slot->address - slot->imageAddress);
     /*
      * Remembered per slot, keyed by the vector table it was worked out for.
      * The landing is a place in the image, and the image does not move: what
@@ -107,8 +107,8 @@ bool usPayloadSlotTail(uint64_t vbar, uint64_t spsr, uint64_t *tail) {
      * answer, so an answer already worked out for it is as good as the one
      * this call could not produce
      */
-    gLandingVbar[which] = vbar;
-    gLanding[which] = stubVa + (uint64_t)usSlotStubTailIndex(which) * 4U;
+    gLandingVBAR[which] = vbar;
+    gLanding[which] = stubVA + (uint64_t)usSlotStubTailIndex(which) * 4U;
     *tail = gLanding[which];
     return true;
 }
@@ -119,9 +119,9 @@ bool usPayloadSlotTail(uint64_t vbar, uint64_t spsr, uint64_t *tail) {
  * has to go somewhere, and the place it went last time is that place
  */
 bool usPayloadSlotTailCached(uint64_t vbar, uint64_t spsr, uint64_t *tail) {
-    UsStubSlot which = usSlotOfSpsr(spsr);
+    UsStubSlot which = usSlotOfSPSR(spsr);
 
-    if (tail == NULL || which > UsStubSlotEl0 || gLandingVbar[which] != vbar
+    if (tail == NULL || which > UsStubSlotEL0 || gLandingVBAR[which] != vbar
         || gLanding[which] == 0) {
         return false;
     }
@@ -140,9 +140,9 @@ bool usPayloadSlotTailCached(uint64_t vbar, uint64_t spsr, uint64_t *tail) {
  * be seen
  */
 bool usPayloadSlotTailLast(uint64_t spsr, uint64_t *tail) {
-    UsStubSlot which = usSlotOfSpsr(spsr);
+    UsStubSlot which = usSlotOfSPSR(spsr);
 
-    if (tail == NULL || which > UsStubSlotEl0 || gLanding[which] == 0) {
+    if (tail == NULL || which > UsStubSlotEL0 || gLanding[which] == 0) {
         return false;
     }
     *tail = gLanding[which];
@@ -151,13 +151,13 @@ bool usPayloadSlotTailLast(uint64_t spsr, uint64_t *tail) {
 
 bool usPayloadPublish(uint64_t vbar) {
     UsPayloadConfig *cfg = usPayloadConfig();
-    uint64_t highVa = __atomic_load_n(&cfg->highVa, __ATOMIC_ACQUIRE);
-    uint64_t tablePa;
+    uint64_t highVA = __atomic_load_n(&cfg->highVA, __ATOMIC_ACQUIRE);
+    uint64_t tablePA;
     const UsPayloadStub *active = NULL;
 
-    if (highVa == 0 || cfg->stubCount == 0
+    if (highVA == 0 || cfg->stubCount == 0
         || cfg->stubCount > US_PAYLOAD_MAX_STUBS
-        || !usTranslateAddress(vbar, false, &tablePa)) {
+        || !usTranslateAddress(vbar, false, &tablePA)) {
         return false;
     }
     /* Physical identity selects the table, not an assumed EFI or ASLR delta */
@@ -165,12 +165,12 @@ bool usPayloadPublish(uint64_t vbar) {
         const UsPayloadStub *stub = &cfg->stubs[i];
         if (stub->imageAddress == 0 || stub->tableAddress < stub->imageAddress
             || stub->address < stub->imageAddress || (stub->address & 3U) != 0
-            || (stub->targetIndex != usSlotStubTargetIndex(UsStubSlotEl1t)
-                && stub->targetIndex != usSlotStubTargetIndex(UsStubSlotEl1h)
-                && stub->targetIndex != usSlotStubTargetIndex(UsStubSlotEl0))) {
+            || (stub->targetIndex != usSlotStubTargetIndex(UsStubSlotEL1t)
+                && stub->targetIndex != usSlotStubTargetIndex(UsStubSlotEL1h)
+                && stub->targetIndex != usSlotStubTargetIndex(UsStubSlotEL0))) {
             return false;
         }
-        if (stub->tablePa == tablePa) {
+        if (stub->tablePA == tablePA) {
             if (active != NULL && (active->imageAddress != stub->imageAddress
                 || active->tableAddress != stub->tableAddress)) {
                 return false;
@@ -181,7 +181,7 @@ bool usPayloadPublish(uint64_t vbar) {
     if (active == NULL || vbar < active->tableAddress - active->imageAddress) {
         return false;
     }
-    uint64_t imageVa = vbar - (active->tableAddress - active->imageAddress);
+    uint64_t imageVA = vbar - (active->tableAddress - active->imageAddress);
     bool complete = true;
 
     for (uint64_t i = 0; i < cfg->stubCount; i++) {
@@ -190,7 +190,7 @@ bool usPayloadPublish(uint64_t vbar) {
         uint32_t branch;
         uint64_t offset = stub->address - stub->imageAddress;
         uint64_t pa;
-        uint64_t lastPa;
+        uint64_t lastPA;
 
         if (stub->imageAddress != active->imageAddress) {
             continue;
@@ -199,15 +199,15 @@ bool usPayloadPublish(uint64_t vbar) {
             continue;
         }
         if (offset > UINT64_MAX - US_SLOT_RUNTIME_BYTES
-            || imageVa > UINT64_MAX - offset - US_SLOT_RUNTIME_BYTES) {
+            || imageVA > UINT64_MAX - offset - US_SLOT_RUNTIME_BYTES) {
             complete = false;
             continue;
         }
-        uint64_t address = imageVa + offset;
+        uint64_t address = imageVA + offset;
         /* This allocation is smaller than a page; endpoints cover all pages */
-        if (!usTranslateAddress(address, true, &pa) || pa != stub->addressPa
-            || !usTranslateAddress(address + US_SLOT_RUNTIME_BYTES - 1, true, &lastPa)
-            || lastPa != pa + US_SLOT_RUNTIME_BYTES - 1) {
+        if (!usTranslateAddress(address, true, &pa) || pa != stub->addressPA
+            || !usTranslateAddress(address + US_SLOT_RUNTIME_BYTES - 1, true, &lastPA)
+            || lastPA != pa + US_SLOT_RUNTIME_BYTES - 1) {
             complete = false;
             continue;
         }
@@ -218,7 +218,7 @@ bool usPayloadPublish(uint64_t vbar) {
         }
         usEncodeBranch(stub->targetIndex * 4U, US_SLOT_STUB_WORDS * 4U, &branch);
         uint32_t *words = (uint32_t *)(uintptr_t)address;
-        usEncodeSlotTarget(words + US_SLOT_STUB_WORDS, highVa + cfg->entryOffset);
+        usEncodeSlotTarget(words + US_SLOT_STUB_WORDS, highVA + cfg->entryOffset);
         usCacheFlushRange(words + US_SLOT_STUB_WORDS, US_SLOT_TARGET_BYTES);
         __atomic_store_n(words + stub->targetIndex, branch, __ATOMIC_RELEASE);
         usCacheFlushRange(words + stub->targetIndex, sizeof(branch));

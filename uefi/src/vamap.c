@@ -21,16 +21,16 @@
  * and may be in use for something else. The blob is memory the OS keeps, and
  * the driver knows where it was placed, so the offset is all it needs
  */
-static UsVaMapRecord *record(UsSession *session) {
+static UsVAMapRecord *record(UsSession *session) {
     if (!session->payloadPlaced) {
         return NULL;
     }
-    return (UsVaMapRecord *)(uintptr_t)
-        (session->payloadPlace.baseVa + US_PAYLOAD_VAMAP_OFFSET);
+    return (UsVAMapRecord *)(uintptr_t)
+        (session->payloadPlace.baseVA + US_PAYLOAD_VAMAP_OFFSET);
 }
 
-bool usVaMapArm(UsSession *session) {
-    UsVaMapRecord *r = record(session);
+bool usVAMapArm(UsSession *session) {
+    UsVAMapRecord *r = record(session);
     efi_event_t change;
     void *notify;
 
@@ -40,7 +40,7 @@ bool usVaMapArm(UsSession *session) {
     }
 
     r->poolBefore = (uint64_t)(uintptr_t)session->pool;
-    r->payloadBefore = session->payloadPlace.baseVa;
+    r->payloadBefore = session->payloadPlace.baseVA;
     r->rt = (uint64_t)(uintptr_t)RT;
     r->convertPointer = (uint64_t)(uintptr_t)RT->ConvertPointer;
 
@@ -50,7 +50,7 @@ bool usVaMapArm(UsSession *session) {
      * and it is registered here because the services that create it are gone
      * by the time the switch happens
      */
-    notify = (void *)(uintptr_t)(session->payloadPlace.baseVa + US_PAYLOAD_VAMAPNOTIFY_OFFSET);
+    notify = (void *)(uintptr_t)(session->payloadPlace.baseVA + US_PAYLOAD_VAMAPNOTIFY_OFFSET);
     if (EFI_ERROR(BS->CreateEvent(EVT_SIGNAL_VIRTUAL_ADDRESS_CHANGE, TPL_NOTIFY,
                                   (efi_event_notify_t)notify, NULL, &change))) {
         usConsolePuts("vamap: no notification\n");

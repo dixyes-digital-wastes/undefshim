@@ -3,8 +3,8 @@
 #include <stddef.h>
 
 uint32_t usGenerateStackLookup(const uint64_t *mpidr, uint32_t cpuCount,
-                               uint32_t codeRva, uint32_t stackTopTableRva,
-                               uint32_t readyRva, uint32_t haltRva,
+                               uint32_t codeRVA, uint32_t stackTopTableRVA,
+                               uint32_t readyRVA, uint32_t haltRVA,
                                uint32_t out[US_STACK_LOOKUP_WORDS]) {
     uint64_t ids[US_MAX_CPUS];
     uint32_t loadWords[US_MAX_CPUS];
@@ -12,10 +12,10 @@ uint32_t usGenerateStackLookup(const uint64_t *mpidr, uint32_t cpuCount,
     uint32_t used = 0;
 
     if (mpidr == NULL || out == NULL || cpuCount == 0 || cpuCount > US_MAX_CPUS
-        || ((codeRva | readyRva | haltRva) & 3U) != 0
-        || (stackTopTableRva & 7U) != 0
-        || (uint64_t)codeRva + US_STACK_LOOKUP_WORDS * 4U > UINT64_C(0x100000000)
-        || (uint64_t)stackTopTableRva + cpuCount * 8U > UINT64_C(0x100000000)) {
+        || ((codeRVA | readyRVA | haltRVA) & 3U) != 0
+        || (stackTopTableRVA & 7U) != 0
+        || (uint64_t)codeRVA + US_STACK_LOOKUP_WORDS * 4U > UINT64_C(0x100000000)
+        || (uint64_t)stackTopTableRVA + cpuCount * 8U > UINT64_C(0x100000000)) {
         return 0;
     }
 
@@ -34,10 +34,10 @@ uint32_t usGenerateStackLookup(const uint64_t *mpidr, uint32_t cpuCount,
         for (uint64_t bits = ids[i]; bits != 0; bits &= bits - 1) {
             bitCount++;
         }
-        uint64_t loadPc = (uint64_t)codeRva + (used + 4U + bitCount) * 4U;
-        int64_t loadDelta = (int64_t)((uint64_t)stackTopTableRva + i * 8U)
-                            - (int64_t)loadPc;
-        int64_t readyDelta = (int64_t)readyRva - (int64_t)(loadPc + 4U);
+        uint64_t loadPC = (uint64_t)codeRVA + (used + 4U + bitCount) * 4U;
+        int64_t loadDelta = (int64_t)((uint64_t)stackTopTableRVA + i * 8U)
+                            - (int64_t)loadPC;
+        int64_t readyDelta = (int64_t)readyRVA - (int64_t)(loadPC + 4U);
         if (loadDelta < -1'048'576 || loadDelta > 1'048'572
             || readyDelta < -134'217'728 || readyDelta > 134'217'724) {
             return 0;
@@ -46,7 +46,7 @@ uint32_t usGenerateStackLookup(const uint64_t *mpidr, uint32_t cpuCount,
         readyWords[i] = 0x14000000U | ((uint32_t)(readyDelta / 4) & 0x03FFFFFFU);
         used += 6U + bitCount;
     }
-    int64_t haltDelta = (int64_t)haltRva - ((int64_t)codeRva + used * 4U);
+    int64_t haltDelta = (int64_t)haltRVA - ((int64_t)codeRVA + used * 4U);
     if (haltDelta < -134'217'728 || haltDelta > 134'217'724
         || used + 1U > US_STACK_LOOKUP_WORDS) {
         return 0;
