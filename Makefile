@@ -284,6 +284,26 @@ $(DRIVER): $(DRIVER_OBJS) posix-uefi
 
 # Deployment. See tests/deploy for the details.
 .PHONY: esp run check check-qemu clean
+# The fake kernel: an ordinary UEFI application, so it can use the firmware's
+# console, built for a processor that has the instructions at issue.
+FAKE_BUILD := $(BUILD_DIR)/fake
+FAKE_CFLAGS := --target=$(TARGET_TRIPLE) -march=armv8.3-a -std=gnu23 -ffreestanding \
+               -fshort-wchar -mno-red-zone -fno-stack-protector -fomit-frame-pointer \
+               -O2 -Wall -Wextra -I. -I$(POSIX_UEFI) -I$(SHIMS)
+FAKE_LDFLAGS := --target=$(TARGET_TRIPLE) -march=armv8.3-a -nostdlib -fuse-ld=lld-link \
+                -Wl,-entry:uefi_init -Wl,-subsystem:efi_application -Wl,-stack:262144 \
+                -Wl,/Brepro
+
+fake: $(FAKE_BUILD)/ntoskrnl.efi
+
+$(FAKE_BUILD)/ntoskrnl.efi: tests/fake/ntoskrnl.c $(POSIX_CRT) $(POSIX_LIB) | $(FAKE_BUILD)
+	$(CC) $(FAKE_CFLAGS) $(FAKE_LDFLAGS) -o $@ $< $(POSIX_CRT) $(POSIX_LIB)
+
+$(FAKE_BUILD):
+	mkdir -p $@
+
+.PHONY: fake
+
 esp: $(DRIVER)
 	@tests/deploy/build_esp.sh
 
