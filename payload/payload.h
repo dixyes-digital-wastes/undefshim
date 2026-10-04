@@ -35,6 +35,23 @@ typedef struct UsFrame_t {
     uint64_t spsr;    /* SPSR_EL1, the state it was in */
     uint64_t esr;     /* ESR_EL1, why it trapped */
     uint64_t far;     /* FAR_EL1, the address it trapped on, if any */
+
+    /*
+     * Where the entry is to go when this exception is not ours to resume but
+     * the kernel's own handler's to finish: the address of the tail of the
+     * slot the exception was taken through, which replays that slot's
+     * original instruction and continues into the handler that was there.
+     *
+     * The payload writes it and says so with its return value; the entry
+     * branches there instead of returning, with every register restored to
+     * what the interrupted code had, which is what those handlers expect.
+     */
+    uint64_t landing;
+
+    /* Keeps the stride a multiple of sixteen, which the ABI requires of the
+     * stack pointer at every call and is what the entry's own alignment
+     * arithmetic assumes. */
+    uint64_t reserved;
 } UsFrame;
 
 /* ESR_EL1's exception class, and the classes that matter here. */
@@ -47,10 +64,26 @@ typedef struct UsFrame_t {
 /*
  * Runs one exception.
  *
- * Returns nonzero to resume the updated frame, zero when it was not handled
- * The synchronous entry halts on an unclaimed frame
+ * 1 resumes the updated frame at its ELR. 2 hands the frame to the kernel's
+ * own handler: the entry restores every register and branches to the frame's
+ * landing, which is where the slot the exception came through used to lead.
+ * 0 means nothing could be worked out and the entry stops.
  */
 int usPayloadHandle(UsFrame *frame);
+
+/*
+ * Runs when an exception arrives while the payload itself is on the stack,
+ * which is what a fault on an emulated access looks like from the entry.
+ *
+ * The emulated access stands in for one instruction of the interrupted code,
+ * so a fault on it is that instruction's fault: the frame being handled is
+ * what the kernel has to be given, and the nested fault's own ESR and FAR
+ * already describe it. A fault anywhere else in the payload is a fault inside
+ * a handler and is reported as one.
+ *
+ * Answers with the frame to restore, or NULL when there is none.
+ */
+UsFrame *usPayloadFault(void);
 
 /*
  * Says hello on the serial port, and nothing else.

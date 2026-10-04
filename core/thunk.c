@@ -47,27 +47,42 @@ void usEncodeSlotTarget(uint32_t out[US_SLOT_TARGET_WORDS], uint64_t target) {
     out[4] = US_BR_OPCODE | (US_STUB_REG << 5);
 }
 
+/*
+ * Where the destination and the tail are, counted out for each of the two
+ * layouts the encoder writes. They differ only by the fault branch, which
+ * only the form used at the EL1h vector carries; neither touches memory.
+ */
 uint32_t usSlotStubTargetIndex(bool save) {
-    return 9U + (save ? 1U : 0U);
+    return save ? 11U : 9U;
 }
 
 uint32_t usSlotStubTailIndex(bool save) {
-    /* Filter: nine words; destination: five; restore: one or two */
-    return (save ? 1U : 0U) + 9U + 5U + (save ? 1U : 2U);
+    return save ? 18U : 16U;
 }
 
 void usEncodeSlotStub(uint32_t *out, uint64_t target, uint32_t tail0,
                       uint32_t tail1, bool save) {
     uint32_t n = 0;
     uint32_t classBranch;
+    uint32_t faultBranch = 0;
     uint32_t instructionBranch;
     uint32_t restore;
+    uint32_t targetAt;
 
-    if (save) {
-        out[n++] = 0xF81F0FF2U; /* str x18, [sp, #-16]! */
-    }
     out[n++] = 0xD5385212U; /* mrs x18, esr_el1 */
     out[n++] = 0xD35AFE52U; /* lsr x18, x18, #26 */
+    if (save) {
+        /*
+         * A data abort taken at this slot is a fault of the payload's own
+         * stack, because this is the slot its code runs under. It is sent to
+         * the payload, which knows whether it was the emulated access and
+         * answers with what to do about it; the handler this slot originally
+         * held is fatal by design and is reached only through the tail below.
+         */
+        out[n++] = 0xF100965FU; /* cmp x18, #0x25 */
+        faultBranch = n;
+        out[n++] = 0; /* b.eq <destination> */
+    }
     classBranch = n;
     out[n++] = 0;
     out[n++] = 0xD5384032U; /* mrs x18, elr_el1 */
@@ -79,16 +94,16 @@ void usEncodeSlotStub(uint32_t *out, uint64_t target, uint32_t tail0,
     out[n++] = 0;
 
     /* Only x18 is borrowed; the filter leaves live NZCV unchanged */
+    targetAt = n;
     usEncodeSlotTarget(out + n, target);
     n += US_SLOT_TARGET_WORDS;
 
+    /* What happens when the exception is not ours: x18 is rebuilt the way
+     * the kernel rebuilds it itself, which costs no stack and is the reason
+     * an entry whose SP_EL1 is stale cannot fault here. */
     restore = n;
-    if (save) {
-        out[n++] = 0xF84107F2U; /* ldr x18, [sp], #16 */
-    } else {
-        out[n++] = 0xD538D092U; /* mrs x18, tpidr_el1 */
-        out[n++] = 0x9274CE52U; /* and x18, x18, #~0xfff */
-    }
+    out[n++] = 0xD538D092U; /* mrs x18, tpidr_el1 */
+    out[n++] = 0x9274CE52U; /* and x18, x18, #~0xfff */
     out[n++] = tail0;
     out[n++] = tail1;
     while (n < US_SLOT_STUB_WORDS) {
@@ -96,4 +111,7 @@ void usEncodeSlotStub(uint32_t *out, uint64_t target, uint32_t tail0,
     }
     out[classBranch] = 0xB5000012U | ((restore - classBranch) << 5);
     out[instructionBranch] = 0xB5000012U | ((restore - instructionBranch) << 5);
+    if (faultBranch != 0) {
+        out[faultBranch] = 0x54000000U | (((targetAt - faultBranch) & 0x7FFFFU) << 5);
+    }
 }

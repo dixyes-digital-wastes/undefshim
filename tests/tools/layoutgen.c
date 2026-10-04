@@ -32,6 +32,9 @@ static int emitFrame(FILE *f) {
     fprintf(f, "#define US_FRAME_SPSR %zu\n", offsetof(UsFrame, spsr));
     fprintf(f, "#define US_FRAME_ESR %zu\n", offsetof(UsFrame, esr));
     fprintf(f, "#define US_FRAME_FAR %zu\n", offsetof(UsFrame, far));
+    /* Where the entry branches instead of returning, when the payload hands
+     * the exception to the kernel's own handler. */
+    fprintf(f, "#define US_FRAME_LANDING %zu\n", offsetof(UsFrame, landing));
 
     fprintf(f, "\n");
     fprintf(f, "#define US_CONFIG_UART %zu\n", offsetof(UsPayloadConfig, uartBase));
@@ -73,13 +76,10 @@ static int emitFrame(FILE *f) {
     fprintf(f, "#define US_MPIDR_MASK 0x%llx\n",
             (unsigned long long)US_MPIDR_AFFINITY_MASK_LOGICAL);
 
-    /*
-     * Where the slot stub leaves the registers the entry spends. A property
-     * of the stub, so it comes from the same header the stub is written
-     * against rather than being written out again in the assembly.
-     */
-    fprintf(f, "#define US_STUB_SAVE_BYTES %u\n", US_STUB_SAVE_BYTES);
-    fprintf(f, "#define US_STUB_SAVE_X18 %u\n", US_STUB_SAVE_X18);
+    /* The entry asks whether the stack pointer it was given is already inside
+     * this CPU's own stack, which is how a fault inside the payload is told
+     * from an exception of the interrupted code's. */
+    fprintf(f, "#define US_STACK_SIZE %u\n", US_STACK_SIZE);
 
     return 0;
 }

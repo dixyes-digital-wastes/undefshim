@@ -42,6 +42,52 @@ bool usPayloadEarly(void) {
     return true;
 }
 
+bool usPayloadSlotTail(uint64_t vbar, uint64_t spsr, uint64_t *tail) {
+    UsPayloadConfig *cfg = usPayloadConfig();
+    uint64_t tablePa;
+    uint64_t imageVa;
+    uint64_t stubVa;
+    uint64_t at;
+    const UsPayloadStub *slot = NULL;
+    bool save = (spsr & 0xFU) == 5U;
+
+    if (tail == NULL || cfg->stubCount == 0 || cfg->stubCount > US_PAYLOAD_MAX_STUBS
+        || !usTranslateAddress(vbar, false, &tablePa)) {
+        return false;
+    }
+    /*
+     * The table is the one VBAR names, told apart by physical address rather
+     * than by an assumed delta, and the slot is the one the interrupted SPSR
+     * selects. Both tables carry both slots, so the pair is what identifies a
+     * stub.
+     */
+    for (uint64_t i = 0; i < cfg->stubCount; i++) {
+        const UsPayloadStub *stub = &cfg->stubs[i];
+
+        if (stub->tablePa != tablePa || stub->targetIndex != usSlotStubTargetIndex(save)
+            || stub->imageAddress == 0 || stub->tableAddress < stub->imageAddress
+            || stub->address < stub->imageAddress) {
+            continue;
+        }
+        if (slot != NULL && (slot->imageAddress != stub->imageAddress
+                             || slot->tableAddress != stub->tableAddress)) {
+            return false;
+        }
+        slot = stub;
+    }
+    if (slot == NULL || vbar < slot->tableAddress - slot->imageAddress) {
+        return false;
+    }
+    imageVa = vbar - (slot->tableAddress - slot->imageAddress);
+    stubVa = imageVa + (slot->address - slot->imageAddress);
+    /* The same page the stub was published into, checked the same way. */
+    if (!usTranslateAddress(stubVa, false, &at) || at != slot->addressPa) {
+        return false;
+    }
+    *tail = stubVa + (uint64_t)usSlotStubTailIndex(save) * 4U;
+    return true;
+}
+
 bool usPayloadPublish(uint64_t vbar) {
     UsPayloadConfig *cfg = usPayloadConfig();
     uint64_t highVa = __atomic_load_n(&cfg->highVa, __ATOMIC_ACQUIRE);
