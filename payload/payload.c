@@ -233,6 +233,8 @@ void usPayloadStuck(uint64_t kind) {
     pool->entry.stuckKind = kind;
     pool->entry.stuckEsr = currentEsr();
     pool->entry.stuckElr = currentElr();
+    pool->entry.stuckSpsr = currentSpsr();
+    pool->entry.stuckVbar = currentVbar();
 }
 
 /*
@@ -576,7 +578,8 @@ int usPayloadHandle(UsFrame *frame) {
     if (cfg->quiet == 0) {
         usUartPuts("US-PAYLOAD not-ours\n");
     }
-    if (usPayloadSlotTail(vbar, frame->spsr, &frame->landing)) {
+    if (usPayloadSlotTail(vbar, frame->spsr, &frame->landing)
+        || usPayloadSlotTailCached(vbar, frame->spsr, &frame->landing)) {
         if (cfg->poolBase != 0) {
             UsPool *pool = (UsPool *)(uintptr_t)cfg->poolBase;
 
@@ -653,7 +656,8 @@ UsFrame *usPayloadFault(void) {
             outer->esr = usEsrAsLowerEl(outer->esr);
         }
         gActive[cpu].loading = false;
-        if (!usPayloadSlotTail(vbar, outer->spsr, &outer->landing)) {
+        if (!usPayloadSlotTail(vbar, outer->spsr, &outer->landing)
+            && !usPayloadSlotTailCached(vbar, outer->spsr, &outer->landing)) {
             return NULL;
         }
     } else {

@@ -42,6 +42,10 @@ bool usPayloadEarly(void) {
     return true;
 }
 
+/* What the last successful lookup produced, per slot. */
+static uint64_t gLandingVbar[US_STUB_SLOT_COUNT];
+static uint64_t gLanding[US_STUB_SLOT_COUNT];
+
 bool usPayloadSlotTail(uint64_t vbar, uint64_t spsr, uint64_t *tail) {
     UsPayloadConfig *cfg = usPayloadConfig();
     uint64_t tablePa;
@@ -105,7 +109,34 @@ bool usPayloadSlotTail(uint64_t vbar, uint64_t spsr, uint64_t *tail) {
      * image and the slot was settled above by physical address and SPSR.
      */
     (void)at;
-    *tail = stubVa + (uint64_t)usSlotStubTailIndex(which) * 4U;
+    /*
+     * Remembered per slot, keyed by the vector table it was worked out for.
+     * The landing is a place in the image, and the image does not move: what
+     * can fail is working out which table VBAR names, and failing there stops
+     * the processor - which the kernel sees as a processor that has stopped
+     * answering, and then waits for it forever. The same VBAR gives the same
+     * answer, so an answer already worked out for it is as good as the one
+     * this call could not produce.
+     */
+    gLandingVbar[which] = vbar;
+    gLanding[which] = stubVa + (uint64_t)usSlotStubTailIndex(which) * 4U;
+    *tail = gLanding[which];
+    return true;
+}
+
+/*
+ * The landing worked out for this table and slot before, if there is one. Used
+ * when the identity of the table cannot be worked out now: the exception still
+ * has to go somewhere, and the place it went last time is that place.
+ */
+bool usPayloadSlotTailCached(uint64_t vbar, uint64_t spsr, uint64_t *tail) {
+    UsStubSlot which = usSlotOfSpsr(spsr);
+
+    if (tail == NULL || which > UsStubSlotEl0 || gLandingVbar[which] != vbar
+        || gLanding[which] == 0) {
+        return false;
+    }
+    *tail = gLanding[which];
     return true;
 }
 
