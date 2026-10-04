@@ -8,32 +8,31 @@
 #include "uefi/src/console.h"
 
 /*
- * The PL011 keeps its registers one word apart, so these are word indices.
- * Its data register is where a byte goes and the flag register says whether
+ * Both kinds are described by byte offsets from the port, which is how the
+ * datasheets state them. The shift below is a separate thing: an 8250 on a 32
+ * bit bus spaces its byte-wide registers a word apart, and nothing else does.
+ *
+ * The PL011's data register is where a byte goes and the flag register says whether
  * there is room, which has to be waited for or bytes are dropped when the
  * receiver is not being read.
  */
-#define US_PL011_DR 0U    /* 0x00 */
-#define US_PL011_FR 6U    /* 0x18 */
-#define US_PL011_IBRD 9U  /* 0x24 */
-#define US_PL011_FBRD 10U /* 0x28 */
-#define US_PL011_LCRH 11U /* 0x2c */
-#define US_PL011_CR 12U   /* 0x30 */
-#define US_PL011_ICR 17U  /* 0x44 */
+#define US_PL011_DR 0x00U
+#define US_PL011_FR 0x18U
+#define US_PL011_IBRD 0x24U
+#define US_PL011_FBRD 0x28U
+#define US_PL011_LCRH 0x2cU
+#define US_PL011_CR 0x30U
+#define US_PL011_ICR 0x44U
 
 #define US_PL011_FR_TXFF (1U << 5)
 
-/*
- * The 8250 keeps its registers a byte apart, and boards that wire it to a
- * 32 bit bus space them a word apart instead - which is what the shift below
- * carries, and the reason the width is a setting rather than an assumption.
- */
-#define US_8250_THR 0U
-#define US_8250_IER 1U
-#define US_8250_FCR 2U
-#define US_8250_LCR 3U
-#define US_8250_MCR 4U
-#define US_8250_LSR 5U
+/* The 8250's registers, a byte apart, or a word apart on a 32 bit bus. */
+#define US_8250_THR 0x00U
+#define US_8250_IER 0x01U
+#define US_8250_FCR 0x02U
+#define US_8250_LCR 0x03U
+#define US_8250_MCR 0x04U
+#define US_8250_LSR 0x05U
 
 #define US_8250_LSR_THRE (1U << 5)
 
