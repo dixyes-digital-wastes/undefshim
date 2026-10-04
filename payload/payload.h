@@ -243,6 +243,16 @@ typedef struct UsPayloadConfig_t {
      */
     uint64_t quiet;
 
+    /*
+     * Whether an instruction EL0 executed may be replaced where it stands.
+     *
+     * The kernel's own instructions are never replaced while it runs: the
+     * integrity check reports that, and a list applied before it starts is
+     * where those belong. User code is somebody else's, and replacing a load
+     * there is what makes the demo run at full speed.
+     */
+    uint64_t el0InPlace;
+
     /* Firmware affinity-to-index mapping used to generate the stack lookup */
     uint64_t cpuCount;
     /* One entry per processor plus the firmware mapping's terminator */
