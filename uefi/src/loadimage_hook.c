@@ -147,7 +147,3 @@ bool usLoadImageHookInstall(UsSession *session) {
     }
     return true;
 }
-
-void usLoadImageHookRemove(void) {
-    usServiceHookRemove(&gHook);
-}

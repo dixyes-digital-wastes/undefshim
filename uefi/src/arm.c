@@ -18,76 +18,6 @@
 #include "uefi/src/payload_place.h"
 #include "uefi/src/registry.h"
 
-bool usArmTransfer(UsSession *s) {
-    UsImage *loader = usRegistryGet(&s->registry, UsImageWinload);
-    UsLeafSite leaf;
-    UsSpareSlot slot;
-    uint32_t branch;
-    uint8_t *slotVa;
-    uint8_t *branchVa;
-    uint64_t payloadEntry;
-
-    if (!s->payloadPlaced) {
-        usConsolePuts("arm: no payload placed\n");
-        return false;
-    }
-    if (loader == NULL) {
-        usConsolePuts("arm: no loader\n");
-        return false;
-    }
-
-    leaf = usLocateTransferLeaf(loader);
-    if (!leaf.found) {
-        usConsolePuts("arm: no handover to take over\n");
-        return false;
-    }
-
-    slot = usLocateSpareSlot(loader, US_TRANSFER_BYTES);
-    if (!slot.found) {
-        usConsolePuts("arm: no slot large enough for ");
-        usConsolePutDec(US_TRANSFER_BYTES);
-        usConsolePuts(" bytes\n");
-        return false;
-    }
-
-    if (!usEncodeBranch(leaf.patchRva, slot.rva, &branch)) {
-        usConsolePuts("arm: the slot is out of branch range\n");
-        return false;
-    }
-    branchVa = (uint8_t *)(uintptr_t)usImageRvaToPtr(loader, leaf.patchRva);
-    slotVa = (uint8_t *)(uintptr_t)usImageRvaToPtr(loader, slot.rva);
-    if (branchVa == NULL || slotVa == NULL) {
-        usConsolePuts("arm: the loader's code is not reachable\n");
-        return false;
-    }
-
-    /*
-     * The stub goes in first, with the address it is to call already in it.
-     * Writing the branch before the stub exists would leave a window, however
-     * short, in which the loader would branch into whatever was there
-     */
-    memcpy(slotVa, kTransferStub, US_TRANSFER_BYTES);
-
-    payloadEntry = s->payloadPlace.baseVa + US_PAYLOAD_TRANSFER_OFFSET;
-    memcpy(slotVa + US_TRANSFER_TARGET_OFFSET, &payloadEntry, sizeof(payloadEntry));
-
-    memcpy(branchVa, &branch, sizeof(branch));
-
-    usCacheFlushRange(slotVa, US_TRANSFER_BYTES);
-    usCacheFlushRange(branchVa, sizeof(branch));
-
-    usConsolePuts("arm: handover +");
-    usConsolePutHex(leaf.patchRva);
-    usConsolePuts(" -> slot +");
-    usConsolePutHex(slot.rva);
-    usConsolePuts(" (");
-    usConsolePutDec(slot.bytes);
-    usConsolePuts(" bytes) calls ");
-    usConsolePutHex(payloadEntry);
-    usConsolePuts("\n");
-    return true;
-}
-
 /*
  * Drawing the exception path into the payload, see arm.h
  *
@@ -144,7 +74,7 @@ static UsStubSlot stubSlotOf(UsVectorSlot slot) {
     }
 }
 
-static bool armSlot(UsSession *s, const UsArmTarget *target, uint32_t next) {
+static bool armSlot(UsSession *s, const UsArmTarget *target) {
     uint32_t stub[US_SLOT_RUNTIME_WORDS];
     UsPayloadConfig *cfg = (UsPayloadConfig *)(uintptr_t)s->payloadPlace.configVa;
     uint8_t *slotAt;
@@ -271,7 +201,6 @@ static bool armSlot(UsSession *s, const UsArmTarget *target, uint32_t next) {
     usConsolePuts(" -> payload ");
     usConsolePutHex(s->payloadPlace.baseVa + entryOffset);
     usConsolePuts("\n");
-    (void)next;
     return true;
 }
 
@@ -355,7 +284,7 @@ static bool armImage(UsSession *s, UsImageKind kind, size_t *armed) {
                                          : 0U,
             };
 
-            if (armSlot(s, &target, 0)) {
+            if (armSlot(s, &target)) {
                 (*armed)++;
             }
         }

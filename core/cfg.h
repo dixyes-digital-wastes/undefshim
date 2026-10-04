@@ -100,7 +100,5 @@ void usConfigFree(UsConfig *c);
  * convention used in the shipped file
  */
 bool usConfigDebugBool(const UsConfig *c, const char *key, bool def);
-int64_t usConfigDebugInt(const UsConfig *c, const char *key, int64_t def);
-const char *usConfigDebugStr(const UsConfig *c, const char *key, const char *def);
 
 #endif

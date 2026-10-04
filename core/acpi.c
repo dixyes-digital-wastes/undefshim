@@ -56,7 +56,6 @@ static bool checksumOk(const uint8_t *p, size_t len) {
 
 /* --- the header every table begins with -------------------------------------- */
 
-#define TABLE_SIGNATURE 0U
 #define TABLE_LENGTH 4U
 #define TABLE_BYTES 36U     /* the header's own size, before any entries */
 
@@ -70,7 +69,6 @@ static bool checksumOk(const uint8_t *p, size_t len) {
 
 /* One GIC CPU Interface entry, offsets from its start */
 #define GICC_LENGTH 1U
-#define GICC_UID 8U
 #define GICC_MPIDR 68U
 #define GICC_MPIDR_END 76U
 
@@ -172,20 +170,4 @@ UsAcpiCpus usAcpiCollectCpus(const void *madt) {
     }
 
     return out;
-}
-
-int usAcpiCpuIndex(const UsAcpiCpus *cpus, uint64_t mpidr) {
-    uint64_t wanted;
-
-    if (cpus == NULL) {
-        return -1;
-    }
-    wanted = mpidr & US_MPIDR_AFFINITY_MASK;
-
-    for (size_t i = 0; i < cpus->count; i++) {
-        if (cpus->mpidr[i] == wanted) {
-            return (int)i;
-        }
-    }
-    return -1;
 }

@@ -29,9 +29,3 @@ usStackRunOn:
     ldp     x21, x22, [sp], #16
     ldp     x19, x20, [sp], #16
     ret
-
-// uint64_t usStackCurrent(void)
-    .globl usStackCurrent
-usStackCurrent:
-    mov     x0, sp
-    ret

@@ -201,17 +201,6 @@ int main(int argc, char **argv) {
            minBytes, totalExec, totalWritable);
 
     {
-        UsVectorTable vt = usLocateVectorTable(&img);
-
-        if (!vt.found) {
-            printf("vector table: none\n");
-        } else {
-            printf("vector table: +0x%x live=%u self=%u candidates=%zu\n", vt.rva,
-                   vt.liveSlots, vt.sameSlots, vt.matches);
-        }
-    }
-
-    {
         UsVbarTables tables = usFindVbarTables(&img);
 
         printf("vbar tables: %zu sites, %zu unresolved\n", tables.sites, tables.unresolved);

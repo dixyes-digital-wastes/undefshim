@@ -33,14 +33,10 @@ bool usScreenInit(void);
 void usScreenUseFrameBuffer(void *pixels, uint32_t width, uint32_t height,
                             uint32_t stride);
 
-bool usScreenReady(void);
-
 /* Also clears what has been written so far */
 void usScreenClear(void);
 
 void usScreenPutc(char c);
 void usScreenPuts(const char *s);
-void usScreenPutHex(uint64_t value);
-void usScreenPutDec(uint64_t value);
 
 #endif

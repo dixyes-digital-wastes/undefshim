@@ -62,30 +62,9 @@ bool usPatchTargetMatches(const UsPatchFile *file, const char *imageName);
  * in place; nothing is written for a site whose bytes are not what the list
  * says, and that is what refused counts
  */
-UsPatchApplyResult usPatchApplyFile(const UsPatchFile *file, const UsPatchSite *sites,
-                                    const char *imageName, uint32_t textRva,
-                                    uint8_t *text, uint32_t textBytes,
-                                    UsPatchStats *stats);
-
-/*
- * The same, with everything the caller knows: a list's matchers are checked
- * against these, and only the ones it carries are asked about
- */
 UsPatchApplyResult usPatchApplyMatched(const UsPatchFile *file, const UsPatchSite *sites,
                                        const UsPatchMatchers *matchers, uint32_t textRva,
                                        uint8_t *text, uint32_t textBytes,
                                        UsPatchStats *stats);
-
-/*
- * The same, with the digest of the text handed in rather than computed here.
- * A loaded image has had its addresses relocated, so the bytes that hold them
- * differ from boot to boot; the caller can leave those out of its digest and
- * still have something that identifies the build
- */
-UsPatchApplyResult usPatchApplyWithDigest(const UsPatchFile *file,
-                                          const UsPatchSite *sites,
-                                          const char *imageName, uint32_t textRva,
-                                          const uint8_t digest[32], uint8_t *text,
-                                          uint32_t textBytes, UsPatchStats *stats);
 
 #endif

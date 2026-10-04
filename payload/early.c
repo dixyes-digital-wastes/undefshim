@@ -51,7 +51,6 @@ bool usPayloadSlotTail(uint64_t vbar, uint64_t spsr, uint64_t *tail) {
     uint64_t tablePa;
     uint64_t imageVa;
     uint64_t stubVa;
-    uint64_t at;
     const UsPayloadStub *slot = NULL;
     UsStubSlot which = usSlotOfSpsr(spsr);
 
@@ -99,16 +98,6 @@ bool usPayloadSlotTail(uint64_t vbar, uint64_t spsr, uint64_t *tail) {
     }
     imageVa = vbar - (slot->tableAddress - slot->imageAddress);
     stubVa = imageVa + (slot->address - slot->imageAddress);
-    /*
-     * A translation attempt is made here only to say so when it disagrees,
-     * not to refuse: the address is inside the page the stub is being
-     * executed from this instant, so it is mapped and executable whatever
-     * the attempt answers, and answering "no destination" stops a processor
-     * the kernel is waiting on. AT has been wrong in this environment
-     * before - see the handover note in status.md - and the identity of the
-     * image and the slot was settled above by physical address and SPSR
-     */
-    (void)at;
     /*
      * Remembered per slot, keyed by the vector table it was worked out for.
      * The landing is a place in the image, and the image does not move: what

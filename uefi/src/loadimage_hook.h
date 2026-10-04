@@ -25,11 +25,4 @@
  */
 bool usLoadImageHookInstall(UsSession *session);
 
-/*
- * Puts the original back. Not needed in normal operation: the hook stays
- * installed for the life of the boot, so that a boot manager loaded later is
- * seen too
- */
-void usLoadImageHookRemove(void);
-
 #endif

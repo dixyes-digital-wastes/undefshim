@@ -30,7 +30,4 @@
  */
 bool usGmmHookInstall(UsSession *session);
 
-/* True once the hook has found what it needed and taken itself out */
-bool usGmmHookDone(void);
-
 #endif

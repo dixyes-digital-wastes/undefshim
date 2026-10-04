@@ -36,9 +36,3 @@ UsPar usParDecode(uint64_t par) {
     out.attributes = (uint32_t)((par >> US_PAR_ATTR_SHIFT) & US_PAR_ATTR_MASK);
     return out;
 }
-
-uint64_t usParPa(uint64_t par) {
-    UsPar decoded = usParDecode(par);
-
-    return decoded.valid ? decoded.pa : 0;
-}

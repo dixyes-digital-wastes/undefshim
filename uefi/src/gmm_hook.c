@@ -217,7 +217,3 @@ bool usGmmHookInstall(UsSession *session) {
     }
     return true;
 }
-
-bool usGmmHookDone(void) {
-    return gDone;
-}

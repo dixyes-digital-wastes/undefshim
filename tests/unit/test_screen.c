@@ -89,7 +89,6 @@ int main(void) {
     usScreenUseFrameBuffer(frame, WIDTH, HEIGHT, WIDTH);
     checkGuards("after starting up");
 
-    printf("ready: %d\n", (int)usScreenReady());
     /* Long enough to wrap, and more lines than fit: the drawer has to clear
      * rather than run off the bottom */
     for (int i = 0; i < 20; i++) {

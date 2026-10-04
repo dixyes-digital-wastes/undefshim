@@ -29,15 +29,6 @@
 #include "uefi/src/session.h"
 
 /*
- * Puts the handover stub in place, with the loader's branch redirected to it
- *
- * Returns false when the loader cannot be prepared, which is a fact worth
- * reporting: nothing later will work, and the boot will otherwise look
- * normal while nothing of ours ever runs
- */
-bool usArmTransfer(UsSession *session);
-
-/*
  * Draws the exception path into the payload
  *
  * The loader's vector table is what is in force when the kernel first

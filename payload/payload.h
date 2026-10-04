@@ -59,10 +59,8 @@ typedef struct UsFrame_t {
 
 /* ESR_EL1's exception class, and the classes that matter here */
 #define US_ESR_EC(esr) (((esr) >> 26) & 0x3FU)
-#define US_ESR_IL(esr) (((esr) >> 25) & 1U)
 
 #define US_EC_UNKNOWN 0x00U  /* an undefined instruction: the case this is for */
-#define US_EC_BRK64 0x3CU    /* a breakpoint, used for probes */
 #define US_EC_DATA_ABORT_SAME_EL 0x25U  /* a fault the handler took itself */
 #define US_EC_DATA_ABORT_LOWER 0x24U    /* the same fault, taken from EL0 */
 
@@ -224,9 +222,6 @@ typedef struct UsPayloadConfig_t {
     /* Address the blob was entered at, written by the boot. The only way the
      * payload can locate its own data */
     uint64_t selfVa;
-
-    /* Reserved forwarding address; the synchronous entry does not use it */
-    uint64_t forwardTarget;
 
     /*
      * The pool, for the trace of what happened. It is reachable at this

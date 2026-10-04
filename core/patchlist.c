@@ -239,7 +239,6 @@ UsPatchStatus usPatchParse(const char *text, uint32_t length, UsPatchSite *sites
                            uint32_t capacity, UsPatchFile *out) {
     Scanner scan = { text, length, 0 };
     Token token;
-    bool haveVersion = false;
     bool seenTarget = false;
     bool seenHash = false;
     bool seenPdb = false;
@@ -258,7 +257,6 @@ UsPatchStatus usPatchParse(const char *text, uint32_t length, UsPatchSite *sites
         out->errorAt = (uint32_t)(token.at != NULL ? token.at - text : 0);
         return UsPatchUnsupported;
     }
-    haveVersion = true;
 
     for (;;) {
         token = next(&scan);
@@ -401,19 +399,9 @@ UsPatchStatus usPatchParse(const char *text, uint32_t length, UsPatchSite *sites
         sites[out->sites++] = site;
     }
 
-    if (!haveVersion) {
-        return UsPatchUnsupported;
-    }
-    /* At least one matcher: a list that carries none would be applied to
-     * whatever image it was pointed at, which is how a list written for one
-     * build ends up in another */
     if (!seenTarget && !seenHash && !seenPdb) {
         return UsPatchNoMatchers;
     }
-    (void)haveVersion;
-    (void)seenTarget;
-    (void)seenHash;
-    (void)seenPdb;
     out->status = UsPatchOk;
     return UsPatchOk;
 }

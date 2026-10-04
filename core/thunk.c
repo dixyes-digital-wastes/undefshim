@@ -5,8 +5,6 @@
 #define US_MOVZ_OPCODE 0xD2800000U
 #define US_MOVK_OPCODE 0xF2800000U
 #define US_BR_OPCODE 0xD61F0000U
-#define US_STR_PRE16_SP_X16 0xF81F0FF0U
-#define US_THUNK_REG 16U
 #define US_STUB_REG 18U
 
 static uint32_t movz(uint32_t value, unsigned shift, unsigned reg) {
@@ -17,15 +15,6 @@ static uint32_t movz(uint32_t value, unsigned shift, unsigned reg) {
 static uint32_t movk(uint32_t value, unsigned shift, unsigned reg) {
     return US_MOVK_OPCODE | (((shift / 16U) & 3U) << 21)
            | ((value & 0xFFFFU) << 5) | (reg & 0x1FU);
-}
-
-void usEncodeThunk(uint32_t out[US_THUNK_WORDS], uint64_t target) {
-    out[0] = US_STR_PRE16_SP_X16;
-    out[1] = movz((uint32_t)target, 0, US_THUNK_REG);
-    out[2] = movk((uint32_t)(target >> 16), 16, US_THUNK_REG);
-    out[3] = movk((uint32_t)(target >> 32), 32, US_THUNK_REG);
-    out[4] = movk((uint32_t)(target >> 48), 48, US_THUNK_REG);
-    out[5] = US_BR_OPCODE | (US_THUNK_REG << 5);
 }
 
 bool usEncodeBranch(uint32_t from, uint32_t to, uint32_t *out) {

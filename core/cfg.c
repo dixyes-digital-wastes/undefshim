@@ -253,7 +253,6 @@ UsConfig *usConfigParse(const char *text, size_t len, char *err, size_t errLen) 
     char errbuf[160];
     UsConfig *cfg;
     const char *s = NULL;
-    int64_t n;
 
     setErr(err, errLen, "");
 
@@ -449,25 +448,4 @@ bool usConfigDebugBool(const UsConfig *c, const char *key, bool def) {
     }
     toml_value_t v = toml_table_bool(t, key);
     return v.ok ? v.u.b : def;
-}
-
-int64_t usConfigDebugInt(const UsConfig *c, const char *key, int64_t def) {
-    const toml_table_t *t = debugTable(c);
-    if (!cfgHas(t, key)) {
-        return def;
-    }
-    toml_value_t v = toml_table_int(t, key);
-    return v.ok ? v.u.i : def;
-}
-
-const char *usConfigDebugStr(const UsConfig *c, const char *key, const char *def) {
-    const toml_table_t *t = debugTable(c);
-    int len = 0;
-    const char *v;
-
-    if (!cfgHas(t, key)) {
-        return def;
-    }
-    v = toml_table_string_ref(t, key, &len);
-    return v != NULL ? v : def;
 }

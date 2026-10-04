@@ -332,8 +332,12 @@ static void testApply(void) {
     eq32("the file parses", usPatchParse(document, (uint32_t)strlen(document), sites,
                                         8U, &parsed), UsPatchOk);
     memset(&stats, 0, sizeof(stats));
-    eq32("it applies", usPatchApplyFile(&parsed, sites, "ntoskrnl.exe", 0U, text,
-                                        sizeof(text), &stats), UsPatchApplied);
+    {
+        UsPatchMatchers matchers = { "ntoskrnl.exe", digest, NULL };
+
+        eq32("it applies", usPatchApplyMatched(&parsed, sites, &matchers, 0U, text,
+                                              sizeof(text), &stats), UsPatchApplied);
+    }
     eq32("one site written", stats.applied, 1U);
     eq32("one site refused for its bytes", stats.refused, 1U);
     eq32("one site past the end", stats.outOfRange, 1U);
@@ -344,17 +348,30 @@ static void testApply(void) {
     /* The same list against another build: the hash says no */
     text[0] = 0xff;
     memset(&stats, 0, sizeof(stats));
-    eq32("another build is refused",
-         usPatchApplyFile(&parsed, sites, "ntoskrnl", 0U, text, sizeof(text), &stats),
-         UsPatchWrongBuild);
+    {
+        uint8_t other[32];
+        UsPatchMatchers matchers = { "ntoskrnl", other, NULL };
+
+        memcpy(other, digest, sizeof(other));
+        other[0] ^= 0xFFU;
+        eq32("another build is refused",
+             usPatchApplyMatched(&parsed, sites, &matchers, 0U, text, sizeof(text),
+                                 &stats),
+             UsPatchWrongBuild);
+    }
     eq32("and nothing is written for it", stats.applied, 0U);
     text[0] = 1;
 
     /* Another image entirely */
     memset(&stats, 0, sizeof(stats));
-    eq32("another image is not this list's",
-         usPatchApplyFile(&parsed, sites, "winload.efi", 0U, text, sizeof(text), &stats),
-         UsPatchNotThisImage);
+    {
+        UsPatchMatchers matchers = { "winload.efi", digest, NULL };
+
+        eq32("another image is not this list's",
+             usPatchApplyMatched(&parsed, sites, &matchers, 0U, text, sizeof(text),
+                                 &stats),
+             UsPatchNotThisImage);
+    }
     ok("the stem decides", usPatchTargetMatches(&parsed, "NTOSKRNL.EFI"));
     ok("and a different stem does not", !usPatchTargetMatches(&parsed, "ntoskrnl2"));
 }

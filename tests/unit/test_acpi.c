@@ -175,22 +175,12 @@ static void testRealShape(void) {
     eqInt("eight processors", (int)got.count, 8);
     ok("no overflow", !got.overflow);
 
-    /* Every processor gets its own index, including the two that share a low
-     * byte. This is the whole point */
-    eqInt("the first core of the first cluster", usAcpiCpuIndex(&got, 0x80000000ULL), 0);
-    eqInt("the first core of the second cluster", usAcpiCpuIndex(&got, 0x80000100ULL), 4);
-    eqInt("and the low byte is the same for both",
-          (int)((0x80000000ULL & 0xFF) == (0x80000100ULL & 0xFF)), 1);
-
-    /* The extra bits MPIDR_EL1 carries are not part of a processor's
-     * identity, and ACPI does not describe them */
-    eqInt("a set U bit does not change the answer",
-          usAcpiCpuIndex(&got, 0xC0000100ULL), 4);
-    eqInt("nor does a set MT bit",
-          usAcpiCpuIndex(&got, 0x80000000ULL | (1ULL << 24)), 0);
-
-    eqInt("a processor that is not there has no index",
-          usAcpiCpuIndex(&got, 0x80000200ULL), -1);
+    ok("the first core of the first cluster is the first entry",
+       got.mpidr[0] == 0);
+    ok("the first core of the second cluster is the fifth",
+       got.mpidr[4] == 0x100);
+    ok("and the low byte is the same for both",
+       (got.mpidr[0] & 0xFF) == (got.mpidr[4] & 0xFF));
 }
 
 static void testOlderRoot(void) {

@@ -30,7 +30,4 @@
  */
 void usStackRunOn(uint64_t stackTop, void (*fn)(void *), void *arg);
 
-/* The stack pointer, for checking that a switch really happened */
-uint64_t usStackCurrent(void);
-
 #endif

@@ -51,9 +51,6 @@ void usScanRegion(const uint8_t *buf, size_t len, uint32_t rvaAt,
 /* Searches every executable section of an image */
 UsMatchList usScanImage(UsImage *img, const UsPattern *pat);
 
-/* Searching only the bytes, with no image: for classifying a blob */
-bool usScanContains(const uint8_t *buf, size_t len, const UsPattern *pat);
-
 /* --- the signatures this project knows about ---------------------------- */
 
 /*
@@ -96,18 +93,11 @@ typedef struct UsLeafSite_t {
     uint32_t rva;          /* start of the leaf */
     uint32_t patchRva;     /* first sixteen bytes of it, the patch point */
     size_t   matches;      /* how many the locator saw; only 1 is usable */
-    /*
-     * True when the exception directory confirms the match is a function
-     * start. A pattern that is not at a boundary is a coincidence, and
-     * hooking it would corrupt whatever function it sits inside
-     */
-    bool     isFunctionStart;
 } UsLeafSite;
 
 /*
  * Locates the transfer leaf. Reports the count so the caller can refuse a
- * result that is not unique, and whether the exception directory agrees it is
- * a function entry
+ * result that is not unique
  */
 UsLeafSite usLocateTransferLeaf(UsImage *img);
 
@@ -180,36 +170,6 @@ typedef struct UsSpareSlot_t {
 UsSpareSlot usLocateSpareSlot(UsImage *img, uint32_t minBytes);
 
 /*
- * An exception vector table: sixteen slots of 0x80 bytes, each starting with
- * a branch
- *
- * This is what VBAR_EL1 points at, and therefore what has to be rewritten for
- * an exception to reach us instead of whoever installed the table. It is
- * found structurally because the address it ends up at is a runtime one: the
- * table is installed by the image and the register that holds it is only
- * written once the image runs
- *
- * The check is deliberately about shape rather than about contents. Every
- * slot starts with a branch, and unused slots branch to themselves; which
- * targets are live is reported rather than required, because a table that is
- * still being filled in is a table, and the caller is the one that knows when
- * it is complete
- *
- * A table has to be inside a section that carries data. A section that is
- * only an entry in the section table is not mapped, so a table found there
- * could not be executed and is not the one in use
- */
-typedef struct UsVectorTable_t {
-    bool     found;
-    uint32_t rva;
-    uint32_t liveSlots;   /* slots that branch somewhere other than themselves */
-    uint32_t sameSlots;   /* slots that are `b .`, which is what an unused one holds */
-    size_t   matches;     /* tables seen; more than one means a choice was made */
-} UsVectorTable;
-
-UsVectorTable usLocateVectorTable(UsImage *img);
-
-/*
  * The tables an image actually installs, found by following the register that
  * each `msr vbar_el1, xN` writes
  *
@@ -256,19 +216,6 @@ typedef enum UsVectorSlot_e {
     UsVectorSlotEl1hSync = 4,  /* +0x200 */
     UsVectorSlotEl0Sync32 = 8, /* +0x400, the kernel's lower EL entry */
 } UsVectorSlot;
-
-/*
- * Whether a slot still holds the branch to itself that an unused one is
- * filled with, and can therefore be taken over without losing a handler
- *
- * An image is free to leave a slot unset, and one does: the table winload
- * installs has its interrupt entries written out while its synchronous entry
- * is still a branch to itself. That is why this is asked rather than assumed
- * -- the same table in another build, or another table in this one, may have
- * something there, and overwriting it would replace a handler that was
- * working
- */
-bool usVectorSlotIsFree(UsImage *img, uint32_t tableRva, UsVectorSlot slot);
 
 /*
  * Whether a slot holds a branch, and if so where it goes

@@ -81,8 +81,6 @@ static void testDefaults(void) {
     eqInt("default debug.enabled", c->debugEnabled, 0);
     eqInt("default patch count", c->patchCount, 0);
     eqInt("debug bag fallback", usConfigDebugBool(c, "nope", true), 1);
-    eqInt("debug bag int fallback", usConfigDebugInt(c, "nope", 42), 42);
-    eqStr("debug bag str fallback", usConfigDebugStr(c, "nope", "def"), "def");
     usConfigFree(c);
 }
 
@@ -123,8 +121,6 @@ static void testShippedShape(void) {
     eqInt("debug.enabled", c->debugEnabled, 1);
 
     eqInt("debug.flag1", usConfigDebugBool(c, "flag1", false), 1);
-    eqInt("debug.answer", usConfigDebugInt(c, "answer", 0), 42);
-    eqStr("debug.label", usConfigDebugStr(c, "label", ""), "hello");
 
     eqInt("patch count", c->patchCount, 2);
     if (c->patchCount == 2) {
