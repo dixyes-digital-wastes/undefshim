@@ -63,9 +63,6 @@ static void testAFailure(void) {
     eqU64("with the reason it gives", p.fault, 0x07);
     eqU64("and no address", p.pa, 0);
 
-    /* The shorthand agrees */
-    eqU64("the address helper says nothing", usParPa(par), 0);
-
     /* A fault status must not be mistaken for an address, which is what a
      * decoder that used the whole register would do */
     par = 1ULL | (0x3FULL << 1);

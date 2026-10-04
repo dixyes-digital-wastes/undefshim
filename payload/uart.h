@@ -20,7 +20,6 @@
  * up before the kernel ran, and the handler runs on someone else's stack with
  * no business writing to a UART's control registers
  */
-#define US_UART_PL011 1U
 #define US_UART_8250 2U
 
 void usUartInit(uint64_t base, uint32_t kind, uint32_t width);

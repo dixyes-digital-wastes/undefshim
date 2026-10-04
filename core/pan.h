@@ -27,9 +27,6 @@
 /* SPSR_EL1.PAN: the state the interrupted code was in */
 #define US_SPSR_PAN (UINT64_C(1) << 22)
 
-#define US_PAN_SET_ON 0xD500419FU
-#define US_PAN_SET_OFF 0xD500409FU
-
 static inline void usPanOn(void) {
     __asm__ volatile(".inst " "0xd500419f" ::: "memory");
 }

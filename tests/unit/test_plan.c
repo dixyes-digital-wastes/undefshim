@@ -467,15 +467,18 @@ static void testVbarDiscovery(void) {
     ok("the first is the one adrp points at", tables.rvas[0] == 0x2000);
     ok("the second is the one the other adrp points at", tables.rvas[1] == 0x3000);
 
-    ok("the first table's synchronous slot is free",
-       usVectorSlotIsFree(&kernel, tables.rvas[0], UsVectorSlotEl1hSync));
-    ok("the second table's is not",
-       !usVectorSlotIsFree(&kernel, tables.rvas[1], UsVectorSlotEl1hSync));
+    {
+        int32_t displacement = 0;
 
-    /* A table that is not there reads as occupied, which is the safe answer:
-     * refusing to write costs a shim, writing into nothing costs the boot */
-    ok("a missing table is not free",
-       !usVectorSlotIsFree(&kernel, 0x7000, UsVectorSlotEl1hSync));
+        ok("the first table's synchronous slot is a branch to itself",
+           usVectorSlotBranch(&kernel, tables.rvas[0], UsVectorSlotEl1hSync,
+                              &displacement) && displacement == 0);
+    }
+
+    /* A slot holding anything else is a handler written out in place, and
+     * there is nothing there to keep for the exceptions that are not ours */
+    ok("the second table's is not a branch",
+       !usVectorSlotBranch(&kernel, tables.rvas[1], UsVectorSlotEl1hSync, NULL));
 }
 
 int main(void) {

@@ -52,13 +52,4 @@ const void *usAcpiFindMadt(const void *rsdp);
 /* Collects the processors the MADT describes, in the order it lists them */
 UsAcpiCpus usAcpiCollectCpus(const void *madt);
 
-/*
- * The position of a processor in that list, or -1
- *
- * This is what the payload indexes everything per CPU by. The value is masked
- * before it is compared, because MPIDR_EL1 and ACPI do not agree about the
- * bits that are not affinity
- */
-int usAcpiCpuIndex(const UsAcpiCpus *cpus, uint64_t mpidr);
-
 #endif

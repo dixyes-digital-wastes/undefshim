@@ -58,12 +58,6 @@ static void writeConfig(const UsPayloadPlace *place, const UsSession *session) {
     cfg->selfBytes = place->bytes;
     cfg->poolPa = session->pool->selfPa;
     cfg->entryOffset = US_PAYLOAD_ENTRY_OFFSET;
-    /*
-     * Nothing to forward to yet. A zero here means an exception the payload
-     * will not claim stops rather than being handed on, which is the right
-     * answer until there is somewhere to hand it to
-     */
-    cfg->forwardTarget = 0;
 
     /* The trace of what happened goes here, and it has to survive the address
      * space being rebuilt, which the pool does and the payload does not */

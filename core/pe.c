@@ -7,7 +7,6 @@
 /* File offsets of the few header fields that have to be read before the
  * section table is known */
 #define PE_OFF_DOS_PE_RVA 0x3CU
-#define PE_SIG_LEN 4U
 
 typedef struct PeFileHeader_t {
     uint16_t machine;
@@ -315,70 +314,6 @@ const UsPeSection *usImageFindSection(const UsImage *img, const char *name) {
 
 bool usImageHasSection(const UsImage *img, const char *name) {
     return usImageFindSection(img, name) != NULL;
-}
-
-/*
- * The exception directory. AArch64 RUNTIME_FUNCTION is two uint32 fields,
- * start RVA and unwind data RVA, and the table is sorted by start address,
- * which is what lets the lookup below be a binary search rather than a scan
- * of tens of thousands of entries
- */
-#define US_PDATA_ENTRY_SIZE 8U
-
-size_t usImageFunctionCount(UsImage *img) {
-    const UsPeSection *s;
-
-    if (img == NULL || !img->valid) {
-        return 0;
-    }
-    s = usImageFindSection(img, ".pdata");
-    if (s == NULL) {
-        return 0;
-    }
-    return s->virtualSize / US_PDATA_ENTRY_SIZE;
-}
-
-bool usImageIsFunctionStart(UsImage *img, uint32_t rva) {
-    const UsPeSection *s;
-    const uint8_t *table;
-    size_t available = 0;
-    size_t count;
-    size_t lo = 0;
-    size_t hi;
-
-    if (img == NULL || !img->valid) {
-        return false;
-    }
-    s = usImageFindSection(img, ".pdata");
-    if (s == NULL) {
-        return false;
-    }
-
-    table = usImageRvaSpan(img, s->virtualAddress, &available);
-    if (table == NULL) {
-        return false;
-    }
-
-    count = s->virtualSize / US_PDATA_ENTRY_SIZE;
-    if (count * US_PDATA_ENTRY_SIZE > available) {
-        count = available / US_PDATA_ENTRY_SIZE;
-    }
-    hi = count;
-
-    while (lo < hi) {
-        size_t mid = lo + (hi - lo) / 2;
-        uint32_t start = rd32(table + mid * US_PDATA_ENTRY_SIZE);
-
-        if (start == rva) {
-            return true;
-        }
-        if (start < rva) {
-            lo = mid + 1;
-        } else {
-            hi = mid;
-        }
-    }
-    return false;
 }
 
 /* Byte search inside the image, used by the classifier */

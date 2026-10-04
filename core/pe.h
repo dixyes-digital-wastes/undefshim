@@ -23,7 +23,6 @@
 #define US_PE_MACHINE_ARM64 0xAA64U
 
 #define US_PE_SUBSYSTEM_EFI_APPLICATION 10U
-#define US_PE_SUBSYSTEM_EFI_BOOT_DRIVER 11U
 #define US_PE_SUBSYSTEM_NATIVE 1U
 
 #define US_PE_SECTION_EXECUTABLE 0x20000000U
@@ -113,24 +112,6 @@ const UsPeSection *usImageFindSection(const UsImage *img, const char *name);
 const uint8_t *usImageDataDirectory(const UsImage *img, uint32_t index,
                                     uint32_t *outSize);
 bool usImageHasSection(const UsImage *img, const char *name);
-
-/*
- * Is this RVA the start of a function, according to the exception directory?
- *
- * AArch64 PE images carry a .pdata section holding one 8 byte RUNTIME_FUNCTION
- * per function, sorted by start address. That makes it the authoritative
- * answer to "is this a function boundary", which is what turns a byte pattern
- * into a located function: the transfer leaf is a 36 byte sequence, and the
- * same sequence could in principle appear inside a larger function, where
- * hooking its first bytes would be wrong
- *
- * Returns false when the image has no exception directory, so callers that
- * require the check will refuse to act rather than assume
- */
-bool usImageIsFunctionStart(UsImage *img, uint32_t rva);
-
-/* Number of functions listed in the exception directory, 0 when absent */
-size_t usImageFunctionCount(UsImage *img);
 
 /*
  * Identifies an image from its content alone, for the images that arrive

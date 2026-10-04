@@ -1,8 +1,6 @@
 #include <stddef.h>
 
 #include "core/patchapply.h"
-#include "core/sha256.h"
-#include "core/sha256.h"
 
 static uint32_t stemLength(const char *name) {
     uint32_t i = 0;
@@ -117,19 +115,4 @@ UsPatchApplyResult usPatchApplyMatched(const UsPatchFile *file, const UsPatchSit
         stats->applied++;
     }
     return UsPatchApplied;
-}
-
-UsPatchApplyResult usPatchApplyFile(const UsPatchFile *file, const UsPatchSite *sites,
-                                    const char *imageName, uint32_t textRva,
-                                    uint8_t *text, uint32_t textBytes,
-                                    UsPatchStats *stats) {
-    uint8_t digest[32];
-    UsPatchMatchers matchers = { imageName, digest, NULL };
-
-    if (text == NULL || textBytes == 0U) {
-        stats->files++;
-        return UsPatchNoText;
-    }
-    usSha256(text, textBytes, digest);
-    return usPatchApplyMatched(file, sites, &matchers, textRva, text, textBytes, stats);
 }

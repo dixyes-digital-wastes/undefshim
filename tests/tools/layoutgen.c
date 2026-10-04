@@ -43,7 +43,6 @@ static int emitFrame(FILE *f) {
     fprintf(f, "#define US_CONFIG_MAX_CPUS %zu\n",
             sizeof(((UsPayloadConfig *)0)->stackTop) / sizeof(uint64_t));
     fprintf(f, "#define US_CONFIG_SELF_VA %zu\n", offsetof(UsPayloadConfig, selfVa));
-    fprintf(f, "#define US_CONFIG_FORWARD %zu\n", offsetof(UsPayloadConfig, forwardTarget));
     fprintf(f, "#define US_CONFIG_POOL %zu\n", offsetof(UsPayloadConfig, poolBase));
     fprintf(f, "#define US_CONFIG_QUIET %zu\n", offsetof(UsPayloadConfig, quiet));
     fprintf(f, "#define US_CONFIG_CPU_COUNT %zu\n", offsetof(UsPayloadConfig, cpuCount));

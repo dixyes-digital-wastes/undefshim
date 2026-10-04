@@ -132,10 +132,6 @@ static void newline(void) {
     }
 }
 
-bool usScreenReady(void) {
-    return gReady;
-}
-
 void usScreenClear(void) {
     if (!gReady) {
         return;
@@ -226,41 +222,5 @@ void usScreenPutc(char c) {
 void usScreenPuts(const char *s) {
     for (; s != NULL && *s != '\0'; s++) {
         usScreenPutc(*s);
-    }
-}
-
-void usScreenPutHex(uint64_t value) {
-    char digits[16];
-    int n = 0;
-
-    usScreenPuts("0x");
-    if (value == 0) {
-        usScreenPutc('0');
-        return;
-    }
-    while (value != 0 && n < (int)sizeof(digits)) {
-        uint32_t nibble = (uint32_t)(value & 0xF);
-        digits[n++] = (char)(nibble < 10 ? '0' + nibble : 'a' + (nibble - 10));
-        value >>= 4;
-    }
-    while (n > 0) {
-        usScreenPutc(digits[--n]);
-    }
-}
-
-void usScreenPutDec(uint64_t value) {
-    char digits[20];
-    int n = 0;
-
-    if (value == 0) {
-        usScreenPutc('0');
-        return;
-    }
-    while (value != 0 && n < (int)sizeof(digits)) {
-        digits[n++] = (char)('0' + (int)(value % 10));
-        value /= 10;
-    }
-    while (n > 0) {
-        usScreenPutc(digits[--n]);
     }
 }

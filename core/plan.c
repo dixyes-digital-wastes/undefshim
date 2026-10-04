@@ -22,7 +22,7 @@ bool usPlanBuild(UsPlan *plan, UsImage *winload, UsImage *ntoskrnl) {
         plan->ntoskrnlSizeOfImage = ntoskrnl->sizeOfImage;
         plan->ldapr = usCountLdapr(ntoskrnl);
         usCollectSites(&plan->sites, ntoskrnl, UsImageNtoskrnl);
-        plan->thunk = usLocateSpareSlot(ntoskrnl, US_THUNK_BYTES);
+        plan->thunk = usLocateSpareSlot(ntoskrnl, US_SLOT_RUNTIME_BYTES);
     }
 
     if (winload != NULL && winload->valid) {

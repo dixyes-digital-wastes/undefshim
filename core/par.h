@@ -50,10 +50,4 @@ typedef struct UsPar_t {
  */
 UsPar usParDecode(uint64_t par);
 
-/*
- * The physical address a translation attempt reported, or 0 when it failed.
- * Provided because most callers want only this
- */
-uint64_t usParPa(uint64_t par);
-
 #endif

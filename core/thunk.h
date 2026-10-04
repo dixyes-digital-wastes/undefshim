@@ -20,18 +20,6 @@
 #include <stdint.h>
 
 /*
- * str x16,[sp,#-16]!, then the target built into x16 by movz and three movk,
- * then br x16
- *
- * Every one of them works on a register or an immediate, and none of them
- * touches memory except the push that keeps the interrupted x16
- */
-#define US_THUNK_WORDS 6U
-#define US_THUNK_BYTES (US_THUNK_WORDS * 4U)
-
-void usEncodeThunk(uint32_t out[US_THUNK_WORDS], uint64_t target);
-
-/*
  * Which synchronous vector slot a stub is for
  *
  * The three differ in two ways that decide the shape of the stub: where the

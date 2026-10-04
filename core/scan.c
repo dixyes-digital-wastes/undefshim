@@ -150,19 +150,6 @@ void usScanRegion(const uint8_t *buf, size_t len, uint32_t rvaAt,
     }
 }
 
-bool usScanContains(const uint8_t *buf, size_t len, const UsPattern *pat) {
-    if (buf == NULL || pat == NULL || pat->len == 0 || len < pat->len) {
-        return false;
-    }
-    size_t limit = len - pat->len;
-    for (size_t i = 0; i <= limit; i++) {
-        if (patMatchAt(buf + i, pat)) {
-            return true;
-        }
-    }
-    return false;
-}
-
 UsMatchList usScanImage(UsImage *img, const UsPattern *pat) {
     UsMatchList all = { 0 };
 
@@ -223,9 +210,6 @@ UsLeafSite usLocateTransferLeaf(UsImage *img) {
      * does with the kernel's entry point before using it
      */
     site.patchRva = m.matches[0].rva + (uint32_t)(sizeof(kTransferLeaf) - sizeof(uint32_t));
-    /* This is a branch inside a function, not a function entry, so the
-     * exception directory has nothing to say about it. */
-    site.isFunctionStart = false;
     return site;
 }
 
@@ -444,18 +428,9 @@ UsSpareSlot usLocateSpareSlot(UsImage *img, uint32_t minBytes) {
 }
 
 /*
- * The exception vector table, found by its shape
- *
- * Sixteen slots of 0x80 bytes, each starting with a branch. That layout is
- * fixed by the architecture, so recognising it needs nothing about the image
- * it is in, and the address it will live at is a runtime one anyway: the
- * image installs it and only then writes the register
- *
- * Slots that branch to themselves are counted rather than rejected. An
- * unused slot holds `b .`, and a table that is still being filled in is still
- * a table; the caller knows whether the slots it cares about are live
+ * A synchronous slot, and the layout of the table it lives in: sixteen slots
+ * of 0x80 bytes, fixed by the architecture
  */
-#define US_VECTOR_TABLE_BYTES 0x800U
 #define US_VECTOR_SLOT_BYTES 0x80U
 #define US_VECTOR_SLOTS 16U
 
@@ -470,65 +445,6 @@ static bool isBranch(uint32_t word) {
 /* The offset a branch encodes, sign extended */
 static int64_t branchOffset(uint32_t word) {
     return (int64_t)((int32_t)(word << 6) >> 6) * 4;
-}
-
-UsVectorTable usLocateVectorTable(UsImage *img) {
-    UsVectorTable best = { 0 };
-
-    if (img == NULL || !img->valid) {
-        return best;
-    }
-
-    for (uint16_t i = 0; i < img->sectionCount; i++) {
-        const UsPeSection *s = &img->sections[i];
-        uint32_t end;
-        uint32_t rva;
-
-        if ((s->characteristics & US_PE_SECTION_EXECUTABLE) == 0 || s->rawSize == 0) {
-            continue;
-        }
-        if (s->virtualSize < US_VECTOR_TABLE_BYTES) {
-            continue;
-        }
-        end = s->virtualAddress + s->virtualSize;
-
-        /* Only aligned positions can hold one, so only those are tried */
-        for (rva = (s->virtualAddress + US_VECTOR_TABLE_BYTES - 1)
-                   & ~(US_VECTOR_TABLE_BYTES - 1);
-             rva + US_VECTOR_TABLE_BYTES <= end;
-             rva += US_VECTOR_TABLE_BYTES) {
-            uint32_t live = 0;
-            uint32_t same = 0;
-            bool ok = true;
-
-            for (uint32_t slot = 0; slot < US_VECTOR_SLOTS; slot++) {
-                uint32_t word = readInsn(img, rva + slot * US_VECTOR_SLOT_BYTES);
-
-                if (!isBranch(word)) {
-                    ok = false;
-                    break;
-                }
-                if (branchOffset(word) == 0) {
-                    same++;
-                } else {
-                    live++;
-                }
-            }
-            if (!ok) {
-                continue;
-            }
-
-            best.matches++;
-            if (!best.found) {
-                best.found = true;
-                best.rva = rva;
-                best.liveSlots = live;
-                best.sameSlots = same;
-            }
-        }
-    }
-
-    return best;
 }
 
 /*
@@ -677,12 +593,6 @@ UsLdaprCounts usCountLdapr(UsImage *img) {    UsLdaprCounts c = { 0 };    c.word
     c.half = usScanImage(img, &usPatLdaprH).total;
     c.total = c.word + c.xword + c.byte + c.half;
     return c;
-}
-
-bool usVectorSlotIsFree(UsImage *img, uint32_t tableRva, UsVectorSlot slot) {
-    int32_t displacement = 0;
-
-    return usVectorSlotBranch(img, tableRva, slot, &displacement) && displacement == 0;
 }
 
 bool usVectorSlotBranch(UsImage *img, uint32_t tableRva, UsVectorSlot slot,
