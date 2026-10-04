@@ -20,6 +20,9 @@
  * block and the pool have to agree about it, and the pool's layout is the
  * one that says. */
 #include "common/layout.h"
+/* For the shape of the stub at each synchronous slot, which is what the SPSR
+ * of the exception being handled says to look for. */
+#include "core/thunk.h"
 
 /*
  * Interrupted state, saved on the CPU's own stack
@@ -60,6 +63,41 @@ typedef struct UsFrame_t {
 
 #define US_EC_UNKNOWN 0x00U  /* an undefined instruction: the case this is for */
 #define US_EC_BRK64 0x3CU    /* a breakpoint, used for probes */
+#define US_EC_DATA_ABORT_SAME_EL 0x25U  /* a fault the handler took itself */
+#define US_EC_DATA_ABORT_LOWER 0x24U    /* the same fault, taken from EL0 */
+
+/*
+ * The exception class a fault really belongs to.
+ *
+ * An emulated access is carried out at EL1 even when the instruction it stands
+ * in for was EL0's, so a fault on it arrives as EC 0x25. The kernel decides
+ * what to do with a fault from the exception class, and for an access the user
+ * made the answer is 0x24; the rest of the syndrome - the fault status, and
+ * the direction - is the same in both.
+ */
+static inline uint64_t usEsrAsLowerEl(uint64_t esr) {
+    return (esr & ~(UINT64_C(0x3F) << 26))
+           | ((uint64_t)US_EC_DATA_ABORT_LOWER << 26);
+}
+
+/*
+ * Which synchronous slot an interrupted SPSR names.
+ *
+ * An exception is taken through the slot that matches the stack pointer in use
+ * at the time, so the SPSR says which one it was: EL1h is the entry at 0x200,
+ * EL0 the one at 0x400, and EL1t - like anything unexpected - the entry at
+ * zero.
+ */
+static inline UsStubSlot usSlotOfSpsr(uint64_t spsr) {
+    switch (spsr & 0xFU) {
+    case 5U:
+        return UsStubSlotEl1h;
+    case 0U:
+        return UsStubSlotEl0;
+    default:
+        return UsStubSlotEl1t;
+    }
+}
 
 /*
  * Runs one exception.

@@ -98,16 +98,22 @@ class Machine:
         self.expectedSpsr = self.system["spsr_el1"]
         self.expectedSp = self.entrySp if mode == 5 else self.system["sp_el0"]
 
-        # x18 is the per-CPU block in kernel mode and is rebuilt from
-        # TPIDR_EL1, so that is what the interrupted code is taken to have
-        # had, and what the restore has to put back.
-        self.original["x18"] = self.system["tpidr_el1"] & ~0xFFF
+        # In kernel mode x18 is the per-CPU block, which is rebuilt from
+        # TPIDR_EL1 rather than saved, so that is what the interrupted code is
+        # taken to have had. At EL0 it is user state, and the stub for that
+        # vector pushed it below the entry SP_EL1 - a kernel stack there, as
+        # the kernel's own entry for the vector also assumes.
+        if mode != 0:
+            self.original["x18"] = self.system["tpidr_el1"] & ~0xFFF
         self.expectedGpr = dict(self.original)
         self.regs = dict(self.original, sp=self.entrySp, x18=self.stackTop)
         if faulted:
             # The payload's own stack: the nesting test is what sends the
             # entry here.
             self.regs["sp"] = self.stackTop - 0x40
+        elif mode == 0:
+            self.regs["sp"] -= 16
+            self.memory[self.regs["sp"]] = self.original["x18"]
         self.pc = self.labels["usSyncFaultInside"] if faulted else self.labels["usSyncStackReady"]
 
     def value(self, operand):
@@ -266,9 +272,7 @@ def check(text):
         ("msr", ["daifset", "#0xF"]), ("b", ["usStackLookup"])], "entry spends GPRs before the lookup"
     assert code[labels["usSyncNoStack"]:labels["usSyncNoStack"] + 2] == [
         ("wfi", [""]), ("b", ["usSyncNoStack"])], "unknown CPU does not halt quietly"
-    # Only the two vectors that are wired: EL0 is a separate piece of work,
-    # and its x18 is user state, which this entry does not keep yet.
-    for mode in (4, 5):
+    for mode in (0, 4, 5):
         for destination in [None] + list(range(31)):
             roundTrip(code, labels, offsets, mode, destination)
         for ret in (0, 1, 2):
@@ -284,7 +288,7 @@ def main():
     except (AssertionError, KeyError, ValueError, IndexError) as exc:
         print("FAIL %s: %s" % (path, exc))
         return 1
-    print("PASS %s: all 31 register slots, both SP paths, the fault entry, "
+    print("PASS %s: all 31 register slots, three SP paths, the fault entry, "
           "and both exits" % path)
     return 0
 
