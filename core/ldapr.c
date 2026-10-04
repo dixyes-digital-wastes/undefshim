@@ -7,6 +7,8 @@
  * opcodes would go wrong.
  */
 
+#include <stddef.h>
+
 #include "core/ldapr.h"
 
 /*
@@ -20,32 +22,36 @@
 #define US_LDAPR_FIXED 0x38BFC000U
 #define US_LDAPR_MASK 0x3FFFFC00U
 
-UsLdaprInsn usLdaprDecode(uint32_t insn) {
-    UsLdaprInsn out = { 0 };
-
-    if ((insn & US_LDAPR_MASK) != US_LDAPR_FIXED) {
-        return out;
-    }
-
-    /* Bits 31..30 are the size, and they are the only thing that differs. */
+/* Bits 31..30 are the size, and they are the only thing that differs between
+ * the four widths, in both families. */
+static UsLdaprKind sizeOf(uint32_t insn) {
     switch ((insn >> 30) & 3U) {
     case 0:
-        out.kind = UsLdaprByte;
-        break;
+        return UsLdaprByte;
     case 1:
-        out.kind = UsLdaprHalf;
-        break;
+        return UsLdaprHalf;
     case 2:
-        out.kind = UsLdaprWord;
-        break;
+        return UsLdaprWord;
     default:
-        out.kind = UsLdaprXword;
-        break;
+        return UsLdaprXword;
     }
+}
 
+/* The two register fields sit in the same place in both families. */
+static UsLdaprInsn fieldsOf(uint32_t insn, UsLdaprKind kind) {
+    UsLdaprInsn out = { 0 };
+
+    out.kind = kind;
     out.rt = (uint8_t)(insn & 0x1FU);
     out.rn = (uint8_t)((insn >> 5) & 0x1FU);
     return out;
+}
+
+UsLdaprInsn usLdaprDecode(uint32_t insn) {
+    if ((insn & US_LDAPR_MASK) != US_LDAPR_FIXED) {
+        return fieldsOf(0, UsLdaprNone);
+    }
+    return fieldsOf(insn, sizeOf(insn));
 }
 
 /*
@@ -56,9 +62,19 @@ UsLdaprInsn usLdaprDecode(uint32_t insn) {
  * across and replaces only what is between them. Doing it this way rather
  * than by table means a width cannot be paired with the wrong replacement.
  */
-#define US_LDAR_FIXED 0x08DFFC00U
 #define US_LDAPR_SIZE_MASK 0xC0000000U
 #define US_LDAPR_REG_MASK 0x3FFU
+
+#define US_LDAR_FIXED 0x08DFFC00U
+#define US_LDAR_MASK 0x3FFFFC00U
+
+bool usLdarDecode(uint32_t insn, UsLdaprInsn *out) {
+    if (out == NULL || (insn & US_LDAR_MASK) != US_LDAR_FIXED) {
+        return false;
+    }
+    *out = fieldsOf(insn, sizeOf(insn));
+    return true;
+}
 
 bool usLdaprToLdar(uint32_t insn, uint32_t *out) {
     if (usLdaprDecode(insn).kind == UsLdaprNone) {

@@ -25,7 +25,7 @@ def layoutConstants():
     header = Path(__file__).resolve().parents[2] / "common/layout.h"
     text = header.read_text()
     out = {}
-    for name in ("US_STACK_SIZE",):
+    for name in ("US_STACK_SIZE", "US_FAULT_SPILL_BYTES"):
         m = re.search(r"#define\s+%s\s+(0[xX][0-9a-fA-F]+|\d+)" % name, text)
         assert m, "missing " + name
         out[name] = int(m.group(1), 0)
@@ -91,6 +91,10 @@ class Machine:
         self.below = False
         self.called = None
         self.ret = None
+        self.stuckFor = None
+        self.faultRet = None
+        self.resumed = False
+        self.faultSp = None
         self.landing = LANDING
         self.destination = None
         self.originalElr = self.system["elr_el1"]
@@ -111,9 +115,13 @@ class Machine:
             # The payload's own stack: the nesting test is what sends the
             # entry here.
             self.regs["sp"] = self.stackTop - 0x40
+            self.faultSp = self.regs["sp"]
         elif mode == 0:
             self.regs["sp"] -= 16
             self.memory[self.regs["sp"]] = self.original["x18"]
+        # The payload's own registers, as they are when its own access faults:
+        # what the probe answer has to give back untouched.
+        self.ownGpr = dict(self.regs)
         self.pc = self.labels["usSyncFaultInside"] if faulted else self.labels["usSyncStackReady"]
 
     def value(self, operand):
@@ -128,6 +136,14 @@ class Machine:
             self.regs["x%d" % i] = 0xDEAD0000 + i
 
     def enterHandler(self, name, ret, faultFrame):
+        if name == "usPayloadStuck":
+            # The entry cannot answer and is about to halt. It is reached after
+            # a handler that could not answer, so it is not a second entry:
+            # what it knew is written down, and that is all this path does.
+            assert self.regs["x0"] in (1, 2), "the stuck kind is 1 or 2"
+            self.stuckFor = self.regs["x0"]
+            self.clobber()
+            return
         assert self.called is None, "the handler is entered twice"
         self.called = name
         self.ret = ret
@@ -160,6 +176,17 @@ class Machine:
             self.regs["x0"] = ret
         else:
             assert name == "usPayloadFault"
+            if self.faultRet == 1:
+                # An access the payload asked about was refused. The handler
+                # has moved ELR past the instruction that faulted, and the
+                # answer says the payload carries on with its own registers -
+                # which the call itself has already clobbered.
+                self.resumed = True
+                self.system["elr_el1"] = self.originalElr + 4
+                self.system["spsr_el1"] = self.expectedSpsr
+                self.clobber()
+                self.regs["x0"] = 1
+                return
             frame = faultFrame
             for i in range(31):
                 self.memory[frame + self.offsets["US_FRAME_X%d" % i]] = self.expectedGpr["x%d" % i]
@@ -233,19 +260,37 @@ class Machine:
         assert self.system["spsr_el1"] == self.expectedSpsr, "SPSR was not restored"
 
 
-def roundTrip(code, labels, offsets, mode, destination, ret=1, faulted=False):
+def roundTrip(code, labels, offsets, mode, destination, ret=1, faulted=False,
+              faultRet=None):
     m = Machine(code, labels, offsets, mode, faulted)
     m.destination = destination
+    m.faultRet = faultRet
     for _ in range(512):
         outcome = m.step(ret, FAULT_FRAME)
         if outcome is None:
             continue
         if outcome == "halt":
-            assert m.called is not None, "halted before any handler ran"
-            assert not faulted and ret == 0, "unexpected halt"
-            assert code[m.pc] == ("b", ["usSyncNoForward"]), "halt does not loop quietly"
+            # A halt is reached through usPayloadStuck, which says why; the
+            # entry loops on the instruction after the wfi.
+            assert m.stuckFor is not None, "halted without saying why"
+            assert m.pc > 0 and m.code[m.pc - 1][0] == "wfi", "halt is not a wfi"
+            loopTo = m.code[m.pc][1][0]
+            assert loopTo in ("usSyncNoStack", "usSyncNoForward"), \
+                "halt does not loop quietly"
             return
         if outcome == "eret":
+            if m.resumed:
+                # The probe answer: the payload's own registers again, the
+                # spill undone, and the handler's own ELR.
+                assert m.called == "usPayloadFault", "resumed without the fault handler"
+                for register, expected in m.ownGpr.items():
+                    if register == "sp":
+                        continue
+                    assert m.regs[register] == expected, "resume lost " + register
+                assert m.regs["sp"] == m.faultSp, "the spill was not undone"
+                assert m.system["elr_el1"] == m.originalElr + 4, "ELR not moved past the access"
+                assert m.system["spsr_el1"] == m.expectedSpsr, "resume changed SPSR"
+                return
             assert m.called == "usPayloadHandle" and ret == 1, "eret on a frame that was not resumed"
             m.checkRestored()
             return
@@ -270,15 +315,19 @@ def check(text):
     assert labels["usSyncEntry"] == labels["usSyncEntrySp0"], "entries do not share the checked path"
     assert code[labels["usSyncEntry"]:labels["usSyncStackReady"]] == [
         ("msr", ["daifset", "#0xF"]), ("b", ["usStackLookup"])], "entry spends GPRs before the lookup"
-    assert code[labels["usSyncNoStack"]:labels["usSyncNoStack"] + 2] == [
-        ("wfi", [""]), ("b", ["usSyncNoStack"])], "unknown CPU does not halt quietly"
+    assert code[labels["usSyncNoStack"]:labels["usSyncNoStack"] + 4] == [
+        ("mov", ["x0", "#2"]), ("bl", ["usPayloadStuck"]), ("wfi", [""]),
+        ("b", ["usSyncNoStack"])], "unknown CPU does not halt quietly"
     for mode in (0, 4, 5):
         for destination in [None] + list(range(31)):
             roundTrip(code, labels, offsets, mode, destination)
         for ret in (0, 1, 2):
             roundTrip(code, labels, offsets, mode, None, ret=ret)
-        # The path taken when the payload's own access faulted.
+        # The path taken when the payload's own access faulted, both answers
+        # it can give: the frame goes to the kernel, or the payload carries on
+        # because the access was one it had asked about.
         roundTrip(code, labels, offsets, mode, None, faulted=True)
+        roundTrip(code, labels, offsets, mode, None, faulted=True, faultRet=1)
 
 
 def main():

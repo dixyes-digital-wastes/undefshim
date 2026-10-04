@@ -68,12 +68,44 @@ uint32_t usSlotStubTailWords(UsStubSlot slot) {
 void usEncodeSlotStub(uint32_t *out, uint64_t target, uint32_t tail0,
                       uint32_t tail1, UsStubSlot slot) {
     uint32_t n = 0;
-    uint32_t classBranch;
+    uint32_t classBranch = 0;
     uint32_t faultBranch = 0;
-    uint32_t instructionBranch;
     uint32_t restore;
     uint32_t targetAt;
 
+    if (slot == UsStubSlotEl1h) {
+        /*
+         * Everything taken at this slot goes to the payload first.
+         *
+         * This is the slot the payload's own code runs under, so its faults
+         * arrive here, and they are not all data aborts: a read of a device
+         * answers with an external abort, an instruction fetch that cannot be
+         * translated with an instruction abort, and the payload has to be told
+         * about any of them, because it is the only thing that knows whether
+         * the access was one it asked about. The handler this slot originally
+         * held is the fatal one, so looking at the exception first costs
+         * nothing: the payload hands it straight back through the tail below
+         * when it is not its own.
+         *
+         * So this form is one branch, and the words the other two spend on
+         * filters are padding up to the destination, which keeps the layout
+         * the same shape for every slot: the destination at its own index, the
+         * restore before the tail, the tail last.
+         */
+        faultBranch = n;
+        out[n++] = 0;
+        while (n < usSlotStubTargetIndex(UsStubSlotEl1h)) {
+            out[n++] = US_NOP;
+        }
+        targetAt = n;
+        usEncodeSlotTarget(out + n, target);
+        n += US_SLOT_TARGET_WORDS;
+        /* An unconditional branch carries its destination in the low 26 bits,
+         * unlike the conditional forms whose fields start higher up. */
+        out[faultBranch] = US_BRANCH_OPCODE
+                           | ((targetAt - faultBranch) & 0x03FFFFFFU);
+        goto tail;
+    }
     if (slot == UsStubSlotEl0) {
         /*
          * User x18 cannot be rebuilt, and this vector's SP_EL1 is the
@@ -85,32 +117,32 @@ void usEncodeSlotStub(uint32_t *out, uint64_t target, uint32_t tail0,
     }
     out[n++] = 0xD5385212U; /* mrs x18, esr_el1 */
     out[n++] = 0xD35AFE52U; /* lsr x18, x18, #26 */
-    if (slot == UsStubSlotEl1h) {
-        /*
-         * A data abort taken at this slot is a fault of the payload's own
-         * stack, because this is the slot its code runs under. It is sent to
-         * the payload, which knows whether it was the emulated access and
-         * answers with what to do about it; the handler this slot originally
-         * held is fatal by design and is reached only through the tail below.
-         */
-        out[n++] = 0xF100965FU; /* cmp x18, #0x25 */
-        faultBranch = n;
-        out[n++] = 0; /* b.eq <destination> */
-    }
     classBranch = n;
     out[n++] = 0;
-    out[n++] = 0xD5384032U; /* mrs x18, elr_el1 */
-    out[n++] = 0xB9400252U; /* ldr w18, [x18] */
-    out[n++] = 0xD34A7652U; /* ubfx x18, x18, #10, #20 */
-    out[n++] = 0xD1438A52U; /* sub x18, x18, #0xe2, lsl #12 */
-    out[n++] = 0xD13FC252U; /* sub x18, x18, #0xff0 */
-    instructionBranch = n;
-    out[n++] = 0;
-
-    /* Only x18 is borrowed; the filter leaves live NZCV unchanged */
+    /*
+     * Everything undefined comes to the payload, and it is the payload that
+     * decides: it reads the instruction itself, and it is the only side that
+     * can tell an RCpc load from the acquire load that has replaced one. A
+     * filter here would have to accept both - a site that has been replaced
+     * still traps on a processor whose caches have not caught up with the
+     * write, and what the stub reads then is the acquire load - and getting
+     * that wrong sends the exception to the kernel's own handler, which on a
+     * kernel address is a bugcheck. Unrelated undefined instructions do reach
+     * the payload this way and are handed straight back, which is what the
+     * handler did with them anyway.
+     *
+     * The words the filter took are padding, so that every slot keeps the same
+     * shape and the destination stays at the index the payload and the boot
+     * both know.
+     */
+    while (n < usSlotStubTargetIndex(slot)) {
+        out[n++] = US_NOP;
+    }
     targetAt = n;
     usEncodeSlotTarget(out + n, target);
     n += US_SLOT_TARGET_WORDS;
+
+tail:
 
     /*
      * What happens when the exception is not ours. In kernel mode x18 is
@@ -140,9 +172,11 @@ void usEncodeSlotStub(uint32_t *out, uint64_t target, uint32_t tail0,
     while (n < US_SLOT_STUB_WORDS) {
         out[n++] = US_NOP;
     }
-    out[classBranch] = 0xB5000012U | ((restore - classBranch) << 5);
-    out[instructionBranch] = 0xB5000012U | ((restore - instructionBranch) << 5);
-    if (faultBranch != 0) {
-        out[faultBranch] = 0x54000000U | (((targetAt - faultBranch) & 0x7FFFFU) << 5);
+    /* The two filters exist only in the forms that have them, and the fault
+     * branch of the kernel-mode form is patched where it is written. */
+    /* The kernel-mode form has no class filter: its first word is the branch
+     * to the destination, written where it stands. */
+    if (slot != UsStubSlotEl1h) {
+        out[classBranch] = 0xB5000012U | ((restore - classBranch) << 5);
     }
 }

@@ -10,6 +10,7 @@
 #include "core/pan.h"
 #include "payload/payload.h"
 #include "payload/early.h"
+#include "payload/rewrite.h"
 #include "payload/selfmap.h"
 #include "payload/uart.h"
 #include "payload/us_mem.h"
@@ -46,10 +47,22 @@ typedef struct UsActive_t {
     UsFrame *frame;    /* the exception the handler was given */
     uint64_t address;  /* what the emulated access is about to read */
     bool     loading;  /* whether one is in flight at all */
+
+    /*
+     * An access the handler is making that it expects may be refused.
+     *
+     * The rewrite has to try a store that the mapping might not allow, and
+     * learning that from a fault is only useful if the fault comes back here
+     * instead of being reported as a fault in a handler. While this is set,
+     * a fault on exactly this address is the answer "no", and the handler
+     * carries on at the instruction after the one that faulted.
+     */
+    uint64_t probeAt;
+    bool     probing;
+    bool     probeRefused;
 } UsActive;
 
 static UsActive gActive[US_MAX_CPUS];
-
 
 static uint64_t currentEsr(void) {
     uint64_t esr;
@@ -63,6 +76,10 @@ static uint64_t currentFar(void) {
 
     __asm__ volatile("mrs %0, far_el1" : "=r"(far));
     return far;
+}
+
+static void usSetElr(uint64_t elr) {
+    __asm__ volatile("msr elr_el1, %0" ::"r"(elr));
 }
 
 static uint64_t currentSpsr(void) {
@@ -125,8 +142,90 @@ static int currentCpu(void) {
     return -1;
 }
 
+/*
+ * Says that a fault on this address is an answer rather than a fault.
+ *
+ * Only one access at a time, and only on the processor making it, which is
+ * what a nested fault on this path already is. The flag is read by the
+ * handler the entry reaches, so nothing here can be kept in a register across
+ * the access: the store is volatile for that reason.
+ */
+static bool probeArm(int cpu, uint64_t at) {
+    if (cpu < 0 || cpu >= (int)US_MAX_CPUS) {
+        return false;
+    }
+    gActive[cpu].probeAt = at;
+    gActive[cpu].probeRefused = false;
+    gActive[cpu].probing = true;
+    return true;
+}
+
+static bool probeDisarm(int cpu) {
+    bool refused = gActive[cpu].probeRefused;
+
+    gActive[cpu].probing = false;
+    return !refused;
+}
+
+/*
+ * Reads a word, saying whether the read happened. A read that faults leaves
+ * the value alone rather than zeroing it, so a caller that ignores the answer
+ * gets an old value rather than a plausible one.
+ */
+bool usPayloadProbeRead(uint64_t at, uint64_t *value) {
+    int cpu = currentCpu();
+    uint64_t got;
+
+    if (value == NULL || !probeArm(cpu, at)) {
+        return false;
+    }
+    got = *(const volatile uint64_t *)(uintptr_t)at;
+    if (!probeDisarm(cpu)) {
+        return false;
+    }
+    *value = got;
+    return true;
+}
+
+/* Writes a word, saying whether the store happened. */
+bool usPayloadProbeWrite(uint64_t at, uint64_t value) {
+    int cpu = currentCpu();
+
+    if (!probeArm(cpu, at)) {
+        return false;
+    }
+    *(volatile uint64_t *)(uintptr_t)at = value;
+    return probeDisarm(cpu);
+}
+
+/* The same, one instruction wide: a site is four bytes, and writing eight
+ * would take the instruction after it with it. */
+bool usPayloadProbeWriteWord(uint64_t at, uint32_t value) {
+    int cpu = currentCpu();
+
+    if (!probeArm(cpu, at)) {
+        return false;
+    }
+    *(volatile uint32_t *)(uintptr_t)at = value;
+    return probeDisarm(cpu);
+}
+
 UsPayloadConfig *usPayloadConfig(void) {
     return &usPayloadConfigBlock;
+}
+
+void usPayloadStuck(uint64_t kind) {
+    UsPayloadConfig *cfg = usPayloadConfig();
+    UsPool *pool;
+
+    if (cfg->poolBase == 0) {
+        return;
+    }
+    pool = (UsPool *)(uintptr_t)cfg->poolBase;
+    pool->entry.stuck++;
+    pool->entry.stuckKind = kind;
+    pool->entry.stuckEsr = currentEsr();
+    pool->entry.stuckElr = currentElr();
 }
 
 /*
@@ -216,8 +315,16 @@ static bool emulateLdapr(UsFrame *frame, int cpu) {
     uint64_t value;
     bool pan;
     bool user = (frame->spsr & 0xFU) == 0U;
+    /*
+     * A site that has already been replaced still traps on a processor whose
+     * caches have not caught up with the write. The exception is the old
+     * instruction's, the memory holds the new one, and what it means is the
+     * same load: reading it here is how the two are told apart, and refusing
+     * it would hand the kernel an exception it cannot explain.
+     */
+    bool replaced = decoded.kind == UsLdaprNone;
 
-    if (decoded.kind == UsLdaprNone) {
+    if (replaced && !usLdarDecode(insn, &decoded)) {
         return false;
     }
 
@@ -297,6 +404,14 @@ static bool emulateLdapr(UsFrame *frame, int cpu) {
         }
     }
     gEmulated++;
+
+    /*
+     * This site will not be visited again if it can be helped: the load has
+     * been carried out, so replacing the instruction costs one pass and saves
+     * every later one. Doing it here, before the ELR moves, is what makes the
+     * address the instruction's.
+     */
+    (void)usRewriteSite(frame->elr);
 
     /* The value is in the frame, and the frame is what the entry restores, so
      * moving past the instruction is all that is left to do. Doing it here
@@ -455,6 +570,13 @@ int usPayloadHandle(UsFrame *frame) {
         usUartPuts("US-PAYLOAD not-ours\n");
     }
     if (usPayloadSlotTail(vbar, frame->spsr, &frame->landing)) {
+        if (cfg->poolBase != 0) {
+            UsPool *pool = (UsPool *)(uintptr_t)cfg->poolBase;
+
+            pool->entry.handedBack++;
+            pool->entry.handbackEsr = frame->esr;
+            pool->entry.handbackElr = frame->elr;
+        }
         usPayloadLeave(cpu);
         recordHandback(frame);
         return 2;
@@ -500,6 +622,19 @@ UsFrame *usPayloadFault(void) {
     outer->esr = currentEsr();
     outer->far = currentFar();
 
+    /*
+     * An access the handler asked to be told about. ELR still names the
+     * instruction that faulted, so moving past it is the whole recovery: the
+     * entry puts the handler's own registers back and returns to it. What was
+     * refused is recorded, and the caller reads that rather than the fault.
+     */
+    if (gActive[cpu].probing && outer->far == gActive[cpu].probeAt) {
+        usSetElr(currentElr() + 4);
+        gActive[cpu].probeRefused = true;
+        gActive[cpu].probing = false;
+        return US_PAYLOAD_RESUME;
+    }
+
     if (gActive[cpu].loading && outer->far == gActive[cpu].address) {
         /* The emulated access: the kernel's handler for the slot the
          * exception was taken through is where its instruction's fault
@@ -521,8 +656,18 @@ UsFrame *usPayloadFault(void) {
          * reported where it happened - at our code - rather than blamed on
          * the instruction the handler was standing in for.
          */
+        UsPayloadConfig *cfg = usPayloadConfig();
+
         outer->elr = currentElr();
         outer->spsr = currentSpsr();
+        if (cfg->poolBase != 0) {
+            UsPool *pool = (UsPool *)(uintptr_t)cfg->poolBase;
+
+            pool->entry.nestedFaults++;
+            pool->entry.nestedEsr = outer->esr;
+            pool->entry.nestedFar = outer->far;
+            pool->entry.nestedElr = outer->elr;
+        }
         gActive[cpu].loading = false;
         if (!usPayloadSlotTail(vbar, outer->spsr, &outer->landing)) {
             return NULL;

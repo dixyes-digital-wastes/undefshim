@@ -267,7 +267,10 @@ static void runStub(const uint32_t *stub, uint64_t esr, uint32_t insn,
         uint32_t w = stub[pc];
         unsigned shift = HW(w) * 16U;
 
-        if (w == STUB_PUSH_X18) {
+        if (w == US_NOP) {
+            /* Padding: the kernel-mode form pads its way to the destination
+             * so that every slot has the same shape. */
+        } else if (w == STUB_PUSH_X18) {
             out->pushed = true;
         } else if (w == STUB_MRS_ESR) {
             x18 = esr;
@@ -335,16 +338,16 @@ static void testSlotStub(void) {
     }
     ok("it reads ESR_EL1", stub[0] == STUB_MRS_ESR);
     ok("it shifts the class down", stub[1] == STUB_LSR_EC);
-    ok("and branches on it", IS_CBNZ_X18(stub[2]));
+    ok("and branches on the class", IS_CBNZ_X18(stub[2]));
+    for (uint32_t i = 3; i < usSlotStubTargetIndex(UsStubSlotEl1t); i++) {
+        eq64("the words a filter would take are padding", stub[i], US_NOP);
+    }
 
-    /* Both decisions land on the restore that precedes the tail, and the
-     * tail is the two words it was given, in order. */
+    /* The decision lands on the restore that precedes the tail, and the tail
+     * is the two words it was given, in order. */
     eq64("the tail is where the index says", (uint64_t)tailIndex, 16U);
     eq64("the class branch lands on the restore",
          (uint64_t)(2 + branch19(stub[2])), (uint64_t)(tailIndex - 2U));
-    ok("the instruction branch is conditional", IS_CBNZ_X18(stub[8]));
-    eq64("and it lands on the restore too",
-         (uint64_t)(8 + branch19(stub[8])), (uint64_t)(tailIndex - 2U));
     eq64("the tail's first word is the slot's own", stub[tailIndex], tail0);
     eq64("and the second follows it", stub[tailIndex + 1], tail1);
 
@@ -352,19 +355,25 @@ static void testSlotStub(void) {
     eq64("the tail path rebuilds x18", stub[tailIndex - 2U], STUB_MRS_TPIDR);
     eq64("masked to its page", stub[tailIndex - 1U], STUB_AND_TPIDR);
 
-    /* The behaviour: an RCpc load leaves for the payload, anything else --
-     * another undefined instruction, or another class entirely -- goes to
-     * the tail. */
+    /*
+     * The behaviour: everything undefined goes to the payload, which is the
+     * only side that can tell an RCpc load from the acquire load that has
+     * replaced one, and anything of another class goes to the tail, which is
+     * where the kernel's own handler is.
+     */
     runStub(stub, 0, 0xF8BFC22AU /* ldapr x10, [x17] */, &run);
     ok("an RCpc load reaches the payload", run.reachedPayload);
     eq64("at the address it was given", run.payloadTarget, target);
 
+    runStub(stub, 0, 0xC8DFFF76U /* ldar x22, [x27], its substitute */, &run);
+    ok("and so does the substitute it is replaced with", run.reachedPayload);
+
     runStub(stub, 0, 0x00000000U /* an undefined word that is not ours */, &run);
-    ok("another undefined instruction reaches the tail", run.reachedTail);
+    ok("another undefined instruction reaches the payload too", run.reachedPayload);
     ok("without a push", !run.pushed);
 
     runStub(stub, 0x3CULL << 26, 0, &run);
-    ok("a breakpoint reaches the tail too", run.reachedTail);
+    ok("a breakpoint of another class reaches the tail", run.reachedTail);
 
     /* A data abort is the payload's own only where the payload runs; this
      * slot is not that one, so it stays the kernel's. */
@@ -382,9 +391,6 @@ static void testSlotStubKeepingRegisters(void) {
     uint64_t target = 0x13bc00bb0ULL;
     uint32_t tailIndex = usSlotStubTailIndex(UsStubSlotEl1h);
     uint32_t targetIndex = usSlotStubTargetIndex(UsStubSlotEl1h);
-    uint32_t classAt = 4U;
-    uint32_t faultAt = 3U;
-    uint32_t instructionAt = 10U;
     StubRun run;
 
     memset(stub, 0xA5, sizeof(stub));
@@ -395,50 +401,47 @@ static void testSlotStubKeepingRegisters(void) {
      * instructions. Touching memory on the way in would fault there, with the
      * faulting store's address unchanged, which is an endless loop. */
     for (uint32_t i = 0; i < US_SLOT_STUB_WORDS; i++) {
-        ok("the saving form never touches the stack",
+        ok("the kernel-mode form never touches the stack",
            stub[i] != STUB_PUSH_X18 && stub[i] != STUB_POP_X18);
     }
     eq64("the tail is where the index says", (uint64_t)tailIndex, 18U);
     eq64("the destination is too", (uint64_t)targetIndex, 11U);
+    eq64("the way in is a branch to the destination",
+         (uint64_t)(branchOffset(stub[0]) / 4), (uint64_t)targetIndex);
+    for (uint32_t i = 1; i < targetIndex; i++) {
+        eq64("and the words between are padding", stub[i], US_NOP);
+    }
 
     /* x18 is rebuilt the way the kernel rebuilds it, on the way to the tail. */
     eq64("the tail path reads TPIDR_EL1", stub[tailIndex - 2U], STUB_MRS_TPIDR);
     eq64("and masks it to its page", stub[tailIndex - 1U], STUB_AND_TPIDR);
 
-    /* The three branches land where the indices say. */
-    eq64("the class branch lands on the rebuild",
-         (uint64_t)(classAt + branch19(stub[classAt])), (uint64_t)(tailIndex - 2U));
-    eq64("so does the instruction branch",
-         (uint64_t)(instructionAt + branch19(stub[instructionAt])),
-         (uint64_t)(tailIndex - 2U));
-    eq64("and the fault branch lands on the destination",
-         (uint64_t)(faultAt + branch19(stub[faultAt])), (uint64_t)targetIndex);
-
-    /* The way in still reaches the payload, with x18 spent on the way. */
-    runStub(stub, 0, 0xF8BFC22AU, &run);
-    ok("an RCpc load still reaches the payload", run.reachedPayload);
-    eq64("at the address it was given", run.payloadTarget, target);
-
-    /* And so does a fault of the payload's own: this is the slot its code
-     * runs under, so a data abort taken here is the payload's to explain. */
-    runStub(stub, US_EC_DATA_ABORT_SAME_EL, 0xF8BFC22AU, &run);
-    ok("a data abort reaches the payload from this slot", run.reachedPayload);
-    eq64("with the same destination", run.payloadTarget, target);
-
-    runStub(stub, 0, 0x00000000U, &run);
-    ok("another undefined instruction reaches the tail", run.reachedTail);
-
-    runStub(stub, 0x3CULL << 26, 0, &run);
-    ok("another class reaches the tail as well", run.reachedTail);
+    /*
+     * Every class of synchronous exception reaches the payload, including the
+     * ones its own accesses raise: a read of a device answers with an external
+     * abort and not a data abort, and an instruction fetch that cannot be
+     * translated with an instruction abort. The payload is the only thing that
+     * knows whether the access was one it asked about, and the handler this
+     * slot originally held is the fatal one, so nothing is lost by looking
+     * first.
+     */
+    for (uint32_t ec = 0; ec < 0x40U; ec++) {
+        runStub(stub, (uint64_t)ec << 26, 0xF8BFC22AU, &run);
+        checks++;
+        if (!run.reachedPayload) {
+            failures++;
+            printf("FAIL ec 0x%02x reached %s instead of the payload\n", ec,
+                   run.reachedTail ? "the tail" : "nothing");
+        } else if (run.reachedTail) {
+            failures++;
+            checks++;
+            printf("FAIL ec 0x%02x reached the tail as well\n", ec);
+        }
+        eq64("at the address it was given", run.payloadTarget, target);
+    }
 }
 
-/*
- * The form for the vector whose x18 is user state. The kernel's own entry there
- * uses SP_EL1 as the interrupted thread's kernel stack, so the word below it is
- * somewhere to keep x18, and neither the fault branch nor a fault of our own
- * belongs at this slot: an emulated access runs at EL1 and faults at the EL1h
- * entry.
- */
+
 static void testSlotStubUserMode(void) {
     uint32_t stub[US_SLOT_STUB_WORDS];
     uint64_t target = 0x13bc00bb0ULL;
@@ -466,13 +469,18 @@ static void testSlotStubUserMode(void) {
 
     eq64("the class branch lands on the pop",
          (uint64_t)(3 + branch19(stub[3])), (uint64_t)(tailIndex - 1U));
-    eq64("so does the instruction branch",
-         (uint64_t)(9 + branch19(stub[9])), (uint64_t)(tailIndex - 1U));
+    for (uint32_t i = 4; i < targetIndex; i++) {
+        eq64("the words a filter would take are padding", stub[i], US_NOP);
+    }
 
     runStub(stub, 0, 0xF8BFC22AU, &run);
     ok("an RCpc load reaches the payload", run.reachedPayload);
     eq64("at the address it was given", run.payloadTarget, target);
     ok("with x18 kept where the entry reads it", run.pushed);
+
+    runStub(stub, 0, 0xC8DFFF76U, &run);
+    ok("and so does the substitute it is replaced with", run.reachedPayload);
+    ok("with x18 kept there too", run.pushed);
 
     runStub(stub, US_EC_DATA_ABORT_SAME_EL, 0xF8BFC22AU, &run);
     ok("a data abort from this slot still reaches the tail", run.reachedTail);
@@ -578,8 +586,13 @@ static void testSlotTargetPublication(void) {
                                       target[staged - 1U], memory_order_relaxed);
             }
             runPublishedStub(runtime, 0, 0xF8BFC22AU, &run);
-            ok("staging still enters the low-VA payload", run.reachedPayload);
-            eq64("staging cannot expose a partial target", run.payloadTarget, lowTarget);
+            checks++;
+            if (!run.reachedPayload || run.payloadTarget != lowTarget) {
+                failures++;
+                printf("FAIL shape %u staged %u: reached %#llx (payload=%d, tail=%d)\n",
+                       shape, staged, (unsigned long long)run.payloadTarget,
+                       (int)run.reachedPayload, (int)run.reachedTail);
+            }
             ok("staging keeps x18 handling as it was",
                slot == UsStubSlotEl0 ? run.pushed : !run.pushed);
         }
@@ -597,12 +610,24 @@ static void testSlotTargetPublication(void) {
             }
         }
 
+        /* What the stub does with an exception that is not ours depends on
+         * the form: the kernel-mode one sends everything to the payload, which
+         * hands back what it cannot claim, and the other two send anything but
+         * an RCpc load straight to the tail. Both are the same answer reached
+         * two ways, and which form this is comes from the slot. */
         runPublishedStub(runtime, 0, 0, &run);
-        ok("published stub still rejects unrelated undefined instructions", run.reachedTail);
-        ok("the rejected instruction takes the same path",
+        ok("an undefined instruction the payload cannot claim still reaches it",
+           run.reachedPayload);
+        ok("and the same path out is kept",
            slot == UsStubSlotEl0 ? run.pushed : !run.pushed);
         runPublishedStub(runtime, 0x3CULL << 26, 0xF8BFC22AU, &run);
-        ok("published stub still rejects unrelated exception classes", run.reachedTail);
+        if (slot == UsStubSlotEl1h) {
+            ok("the kernel-mode form sends every class to the payload",
+               run.reachedPayload);
+        } else {
+            ok("the other forms still leave other classes to the kernel",
+               run.reachedTail);
+        }
         ok("the rejected class takes the same path",
            slot == UsStubSlotEl0 ? run.pushed : !run.pushed);
     }

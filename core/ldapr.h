@@ -50,6 +50,17 @@ typedef struct UsLdaprInsn_t {
 UsLdaprInsn usLdaprDecode(uint32_t insn);
 
 /*
+ * Identifies the acquire load, which is what the four above are replaced with.
+ *
+ * A site that has been replaced still traps on a processor whose caches have
+ * not caught up with the write: the exception is the old instruction's, but
+ * the memory holds the new one, and reading it is the only way to tell. What
+ * that case means is the same load, carried out once more, so it decodes into
+ * the same shape.
+ */
+bool usLdarDecode(uint32_t insn, UsLdaprInsn *out);
+
+/*
  * The acquire load that does the same job, more strongly.
  *
  * An RCpc load orders releases; the acquire loads order everything, so a
