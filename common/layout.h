@@ -177,6 +177,13 @@ typedef struct UsPoolEntry_t {
     uint64_t nestedEsr;
     uint64_t nestedFar;
     uint64_t nestedElr;
+    /* Where the payload and its pool were when that happened, so the two
+     * addresses above can be read as offsets into code and data that exist
+     * somewhere to be looked at. */
+    uint64_t nestedSelfVa;
+    uint64_t nestedPoolBase;
+    uint64_t nestedStackTop;
+    uint64_t nestedCpu;
     uint64_t lastEsr;
     uint64_t lastElr;
     uint64_t lastFar;
@@ -237,10 +244,6 @@ typedef struct UsPoolEntry_t {
     uint64_t rewriteWritten;  /* sites that now hold the substitute */
     UsPoolRewrite rewrite[US_POOL_REWRITE_SLOTS];
 
-    /* TEMPORARY, for bringing the rewrite up: what the handler saw.
-     * [0] the stack bank it was entered on, [1] the stack it switched from,
-     * [2] the last step reached, [3] the address last read. */
-    uint64_t rewriteDiag[4];
 } UsPoolEntry;
 
 typedef struct UsPool_t {

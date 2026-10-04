@@ -51,8 +51,23 @@ bool usPayloadSlotTail(uint64_t vbar, uint64_t spsr, uint64_t *tail) {
     const UsPayloadStub *slot = NULL;
     UsStubSlot which = usSlotOfSpsr(spsr);
 
-    if (tail == NULL || cfg->stubCount == 0 || cfg->stubCount > US_PAYLOAD_MAX_STUBS
-        || !usTranslateAddress(vbar, false, &tablePa)) {
+    /*
+     * Which table VBAR names, asked of the translation - and if that cannot
+     * answer, the answer it gave last time. The vector table does not move,
+     * and AT has been wrong in this environment before: refusing here stops a
+     * processor on the payload's own halt, which the kernel sees as a CPU that
+     * stopped answering, so a stale-but-known answer is the better one.
+     */
+    static uint64_t lastTablePa;
+
+    if (tail == NULL || cfg->stubCount == 0 || cfg->stubCount > US_PAYLOAD_MAX_STUBS) {
+        return false;
+    }
+    if (usTranslateAddress(vbar, false, &tablePa)) {
+        lastTablePa = tablePa;
+    } else if (lastTablePa != 0) {
+        tablePa = lastTablePa;
+    } else {
         return false;
     }
     /*

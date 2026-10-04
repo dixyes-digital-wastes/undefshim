@@ -30,6 +30,7 @@ MAGIC = 0x5952544E55504355  # "UCPUNTRY"
 PUBLIC = ["magic", "entries", "handled", "handedBack", "handbackEsr", "handbackElr",
           "stuck", "stuckKind", "stuckEsr", "stuckElr",
           "nestedFaults", "nestedEsr", "nestedFar", "nestedElr",
+          "nestedSelfVa", "nestedPoolBase", "nestedStackTop", "nestedCpu",
           "lastEsr", "lastElr", "lastFar",
           "lastCpu", "lastSp", "lastInsn", "emuInsn", "emuAddr", "emuValue",
           "emuElr", "emuX0", "emuX9"]
@@ -141,7 +142,7 @@ def main():
     cmd(f, {"execute": "qmp_capabilities"})
 
     total = (PUBLIC_WORDS + TRACE_SLOTS * TRACE_WORDS + 1 + EMU_SLOTS * EMU_WORDS
-             + TRACE_SLOTS * TRACE_WORDS + 2 + REWRITE_SLOTS * REWRITE_WORDS + 4)
+             + TRACE_SLOTS * TRACE_WORDS + 2 + REWRITE_SLOTS * REWRITE_WORDS)
     words = readAll(f, pool + 8, total)
     if len(words) < total:
         print("only %d of %d words could be read at 0x%x"
@@ -169,9 +170,6 @@ def main():
     at += 2
     rewrites = words[at:at + REWRITE_SLOTS * REWRITE_WORDS]
     at += REWRITE_SLOTS * REWRITE_WORDS
-    diag = words[at:at + 4]
-    print("  what the handler saw: bank %d, switched from 0x%x, last step %d, "
-          "last address read 0x%x" % tuple(diag))
 
     # The rewrites are the difference between a boot that finishes and one that
     # only looks busy, so they are printed even when there are none.

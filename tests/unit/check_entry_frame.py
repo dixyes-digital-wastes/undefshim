@@ -275,7 +275,7 @@ def roundTrip(code, labels, offsets, mode, destination, ret=1, faulted=False,
             assert m.stuckFor is not None, "halted without saying why"
             assert m.pc > 0 and m.code[m.pc - 1][0] == "wfi", "halt is not a wfi"
             loopTo = m.code[m.pc][1][0]
-            assert loopTo in ("usSyncNoStack", "usSyncNoForward"), \
+            assert loopTo in ("usSyncNoStackHalt", "usSyncNoForwardHalt"), \
                 "halt does not loop quietly"
             return
         if outcome == "eret":
@@ -317,7 +317,7 @@ def check(text):
         ("msr", ["daifset", "#0xF"]), ("b", ["usStackLookup"])], "entry spends GPRs before the lookup"
     assert code[labels["usSyncNoStack"]:labels["usSyncNoStack"] + 4] == [
         ("mov", ["x0", "#2"]), ("bl", ["usPayloadStuck"]), ("wfi", [""]),
-        ("b", ["usSyncNoStack"])], "unknown CPU does not halt quietly"
+        ("b", ["usSyncNoStackHalt"])], "unknown CPU does not halt quietly"
     for mode in (0, 4, 5):
         for destination in [None] + list(range(31)):
             roundTrip(code, labels, offsets, mode, destination)

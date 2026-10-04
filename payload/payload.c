@@ -56,10 +56,17 @@ typedef struct UsActive_t {
      * instead of being reported as a fault in a handler. While this is set,
      * a fault on exactly this address is the answer "no", and the handler
      * carries on at the instruction after the one that faulted.
+     *
+     * These are volatile because the handler writes them at a moment the
+     * compiler cannot see - between the two halves of the call that armed
+     * them, with an exception taken in between. Left plain, the value the
+     * arming wrote is forwarded to the reading half, and a store the mapping
+     * refused comes back as one that happened: measured on a site whose block
+     * was read-only, the refused store was reported as written.
      */
-    uint64_t probeAt;
-    bool     probing;
-    bool     probeRefused;
+    volatile uint64_t probeAt;
+    volatile bool     probing;
+    volatile bool     probeRefused;
 } UsActive;
 
 static UsActive gActive[US_MAX_CPUS];
@@ -657,16 +664,20 @@ UsFrame *usPayloadFault(void) {
          * the instruction the handler was standing in for.
          */
         UsPayloadConfig *cfg = usPayloadConfig();
+        UsPool *pool;
 
         outer->elr = currentElr();
         outer->spsr = currentSpsr();
-        if (cfg->poolBase != 0) {
-            UsPool *pool = (UsPool *)(uintptr_t)cfg->poolBase;
-
+        pool = cfg->poolBase != 0 ? (UsPool *)(uintptr_t)cfg->poolBase : NULL;
+        if (pool != NULL) {
             pool->entry.nestedFaults++;
             pool->entry.nestedEsr = outer->esr;
             pool->entry.nestedFar = outer->far;
             pool->entry.nestedElr = outer->elr;
+            pool->entry.nestedSelfVa = cfg->selfVa;
+            pool->entry.nestedPoolBase = cfg->poolBase;
+            pool->entry.nestedStackTop = cfg->stackTop[cpu];
+            pool->entry.nestedCpu = (uint64_t)(int64_t)cpu;
         }
         gActive[cpu].loading = false;
         if (!usPayloadSlotTail(vbar, outer->spsr, &outer->landing)) {
