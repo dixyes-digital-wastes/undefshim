@@ -1,12 +1,12 @@
 /*
- * Checks for the thunk that carries a branch out of an image.
+ * Checks for the thunk that carries a branch out of an image
  *
  * The encoder is checked by running what it produced, not by comparing it
  * against constants. The instructions are few and their meaning is exactly
  * what the payload needs, so a small interpreter over the three forms is both
  * shorter than a table of expected words and a stronger statement: it says
  * the thunk loads the address it was given and branches to it, whatever the
- * encoding happens to be.
+ * encoding happens to be
  */
 
 #include <stdatomic.h>
@@ -41,7 +41,7 @@ static void eq64(const char *name, uint64_t got, uint64_t want) {
  * The fixed bits of each form. The shift of a movz/movk and the register of
  * any of them are fields, so they are deliberately outside the masks: a mask
  * that included them would only accept the one encoding the test happens to
- * build, which is the opposite of what running the code is for.
+ * build, which is the opposite of what running the code is for
  */
 #define MASK_MOVZ 0xFF800000U
 #define MASK_MOVK 0xFF800000U
@@ -51,7 +51,7 @@ static void eq64(const char *name, uint64_t got, uint64_t want) {
 #define OP_BR 0xD61F0000U
 
 /* str x16, [sp, #-16]! as the assembler encodes it, checked against the
- * toolchain rather than written from the manual. */
+ * toolchain rather than written from the manual */
 #define US_STR_PRE 0xF81F0FF0U
 
 #define IMM16(insn) (((insn) >> 5) & 0xFFFFU)
@@ -62,7 +62,7 @@ static void eq64(const char *name, uint64_t got, uint64_t want) {
 /*
  * Returns the address the thunk branches to, or 0 when it is not a thunk:
  * either an instruction that is not one of the three forms, or a branch that
- * does not go through a scratch register.
+ * does not go through a scratch register
  */
 static uint64_t runThunk(const uint32_t *code, size_t words) {
     uint64_t reg = 0;
@@ -74,7 +74,7 @@ static uint64_t runThunk(const uint32_t *code, size_t words) {
         unsigned shift = HW(insn) * 16U;
 
         if (insn == US_STR_PRE) {
-            /* The push that keeps x16's value for the entry to read back. */
+            /* The push that keeps x16's value for the entry to read back */
             pushed = 0xCAFE'0000'0000'0000ULL;
             continue;
         }
@@ -94,7 +94,7 @@ static uint64_t runThunk(const uint32_t *code, size_t words) {
                 return 0;
             }
             /* The entry uses what was pushed; a thunk that pushed nothing has
-             * destroyed the register the interrupted code was using. */
+             * destroyed the register the interrupted code was using */
             return pushed == 0 ? 0 : reg;
         } else {
             return 0;
@@ -106,7 +106,7 @@ static uint64_t runThunk(const uint32_t *code, size_t words) {
 /*
  * The offset a branch encodes, sign extended. The field is 26 bits and counts
  * instructions, so the sign lives in bit 25 and has to be carried up before
- * the scale is applied.
+ * the scale is applied
  */
 static int64_t branchOffset(uint32_t insn) {
     return (int64_t)((int32_t)(insn << 6) >> 6) * 4;
@@ -143,12 +143,12 @@ static void testThunkShape(void) {
     usEncodeThunk(thunk, 0x13bc00000ULL);
 
     /* x16 is pushed first, because the code that was interrupted is entitled
-     * to it and the entry reads it back from the stack. An earlier version
-     * branched through x16 without saving it, which replaced a register of
-     * the interrupted code with the payload's address. */
+     * to it and the entry reads it back from the stack. Branching through x16
+     * without saving it would replace a register of the interrupted code with
+     * the payload's address */
     ok("the first instruction saves x16", thunk[0] == US_STR_PRE);
     /* A movz clears the register, so it has to come next; a br has to be
-     * last, or the instructions after it are never reached. */
+     * last, or the instructions after it are never reached */
     ok("then a movz", (thunk[1] & MASK_MOVZ) == OP_MOVZ);
     ok("then three movk", (thunk[2] & MASK_MOVK) == OP_MOVK
                           && (thunk[3] & MASK_MOVK) == OP_MOVK
@@ -157,12 +157,12 @@ static void testThunkShape(void) {
 
     /* The shifts are the point of the encoding: two halves at the same place
      * would leave the address short and the error would be a branch to a
-     * plausible wrong address. */
+     * plausible wrong address */
     ok("the shifts are 0, 16, 32, 48",
        HW(thunk[1]) == 0 && HW(thunk[2]) == 1 && HW(thunk[3]) == 2 && HW(thunk[4]) == 3);
 
     /* A one bit address is the case that tells movz from itself: a rule that
-     * left the register uninitialised would still pass for zero. */
+     * left the register uninitialised would still pass for zero */
     {
         uint32_t one[US_THUNK_WORDS];
 
@@ -188,7 +188,7 @@ static void testBranchRange(void) {
     eq64("and the offset is negative",
          (uint64_t)branchOffset(word), (uint64_t)(int64_t)-0x1000);
 
-    /* The two ends of the reach, and just past them. */
+    /* The two ends of the reach, and just past them */
     ok("the positive limit is reachable",
        usEncodeBranch(0, (uint32_t)(US_BRANCH_RANGE - 4), &word));
     eq64("and it decodes back",
@@ -208,7 +208,7 @@ static void testBranchAlignment(void) {
 
     /* A branch is a word offset, so an unaligned target cannot be expressed.
      * Refusing is the only honest answer: rounding would branch somewhere
-     * else and the fault would surface in unrelated code. */
+     * else and the fault would surface in unrelated code */
     ok("an unaligned target is refused", !usEncodeBranch(0x1000, 0x1002, &word));
     ok("an unaligned source is refused", !usEncodeBranch(0x1002, 0x1000, &word));
 }
@@ -219,7 +219,7 @@ static void testBranchAlignment(void) {
  * The stub decides between two exits using x18 alone. Everything it can be
  * handed is run through a small interpreter, because the decision -- payload
  * or the slot's own tail -- is the behaviour, and the behaviour is what has
- * to be checked rather than the words that encode it.
+ * to be checked rather than the words that encode it
  */
 #define STUB_MRS_ESR   0xD5385212U  /* mrs x18, esr_el1            */
 #define STUB_LSR_EC    0xD35AFE52U  /* lsr x18, x18, #26           */
@@ -245,7 +245,7 @@ static int32_t branch19(uint32_t insn) {
     return (int32_t)(((insn >> 5) & 0x7FFFFU) << 13) >> 13;
 }
 
-/* What the stub did with one exception, as the next code would see it. */
+/* What the stub did with one exception, as the next code would see it */
 typedef struct StubRun_t {
     bool     reachedPayload;
     uint64_t payloadTarget;
@@ -269,7 +269,7 @@ static void runStub(const uint32_t *stub, uint64_t esr, uint32_t insn,
 
         if (w == US_NOP) {
             /* Padding: the kernel-mode form pads its way to the destination
-             * so that every slot has the same shape. */
+             * so that every slot has the same shape */
         } else if (w == STUB_PUSH_X18) {
             out->pushed = true;
         } else if (w == STUB_MRS_ESR) {
@@ -311,7 +311,7 @@ static void runStub(const uint32_t *stub, uint64_t esr, uint32_t insn,
             out->payloadTarget = x18;
             return;
         } else {
-            /* The first word the interpreter does not know is the tail. */
+            /* The first word the interpreter does not know is the tail */
             out->reachedTail = true;
             return;
         }
@@ -331,7 +331,7 @@ static void testSlotStub(void) {
     usEncodeSlotStub(stub, target, tail0, tail1, UsStubSlotEl1t);
 
     /* No stack word anywhere: at this vector the SP the CPU left is not a
-     * stack the interrupted code was using. */
+     * stack the interrupted code was using */
     for (uint32_t i = 0; i < US_SLOT_STUB_WORDS; i++) {
         ok("the stub never pushes but the saving form",
            stub[i] != STUB_PUSH_X18);
@@ -344,14 +344,14 @@ static void testSlotStub(void) {
     }
 
     /* The decision lands on the restore that precedes the tail, and the tail
-     * is the two words it was given, in order. */
+     * is the two words it was given, in order */
     eq64("the tail is where the index says", (uint64_t)tailIndex, 16U);
     eq64("the class branch lands on the restore",
          (uint64_t)(2 + branch19(stub[2])), (uint64_t)(tailIndex - 2U));
     eq64("the tail's first word is the slot's own", stub[tailIndex], tail0);
     eq64("and the second follows it", stub[tailIndex + 1], tail1);
 
-    /* x18 is rebuilt from TPIDR on the way to the tail, never popped. */
+    /* x18 is rebuilt from TPIDR on the way to the tail, never popped */
     eq64("the tail path rebuilds x18", stub[tailIndex - 2U], STUB_MRS_TPIDR);
     eq64("masked to its page", stub[tailIndex - 1U], STUB_AND_TPIDR);
 
@@ -359,7 +359,7 @@ static void testSlotStub(void) {
      * The behaviour: everything undefined goes to the payload, which is the
      * only side that can tell an RCpc load from the acquire load that has
      * replaced one, and anything of another class goes to the tail, which is
-     * where the kernel's own handler is.
+     * where the kernel's own handler is
      */
     runStub(stub, 0, 0xF8BFC22AU /* ldapr x10, [x17] */, &run);
     ok("an RCpc load reaches the payload", run.reachedPayload);
@@ -376,7 +376,7 @@ static void testSlotStub(void) {
     ok("a breakpoint of another class reaches the tail", run.reachedTail);
 
     /* A data abort is the payload's own only where the payload runs; this
-     * slot is not that one, so it stays the kernel's. */
+     * slot is not that one, so it stays the kernel's */
     runStub(stub, US_EC_DATA_ABORT_SAME_EL, 0, &run);
     ok("a data abort from this slot reaches the tail", run.reachedTail);
 }
@@ -384,7 +384,7 @@ static void testSlotStub(void) {
 /*
  * The saving form, for the one vector with a stack to spend a word on: EL1h.
  * Its single job the other form cannot do is carry x18 through the filter,
- * which destroys it, and give it back on the way to the tail.
+ * which destroys it, and give it back on the way to the tail
  */
 static void testSlotStubKeepingRegisters(void) {
     uint32_t stub[US_SLOT_STUB_WORDS];
@@ -399,7 +399,7 @@ static void testSlotStubKeepingRegisters(void) {
     /* This form is reached at the EL1h vector, where an entry can arrive with
      * a stale SP_EL1 - the kernel's own EL1t handler runs there for its first
      * instructions. Touching memory on the way in would fault there, with the
-     * faulting store's address unchanged, which is an endless loop. */
+     * faulting store's address unchanged, which is an endless loop */
     for (uint32_t i = 0; i < US_SLOT_STUB_WORDS; i++) {
         ok("the kernel-mode form never touches the stack",
            stub[i] != STUB_PUSH_X18 && stub[i] != STUB_POP_X18);
@@ -412,7 +412,7 @@ static void testSlotStubKeepingRegisters(void) {
         eq64("and the words between are padding", stub[i], US_NOP);
     }
 
-    /* x18 is rebuilt the way the kernel rebuilds it, on the way to the tail. */
+    /* x18 is rebuilt the way the kernel rebuilds it, on the way to the tail */
     eq64("the tail path reads TPIDR_EL1", stub[tailIndex - 2U], STUB_MRS_TPIDR);
     eq64("and masks it to its page", stub[tailIndex - 1U], STUB_AND_TPIDR);
 
@@ -423,7 +423,7 @@ static void testSlotStubKeepingRegisters(void) {
      * translated with an instruction abort. The payload is the only thing that
      * knows whether the access was one it asked about, and the handler this
      * slot originally held is the fatal one, so nothing is lost by looking
-     * first.
+     * first
      */
     for (uint32_t ec = 0; ec < 0x40U; ec++) {
         runStub(stub, (uint64_t)ec << 26, 0xF8BFC22AU, &run);
@@ -460,7 +460,7 @@ static void testSlotStubUserMode(void) {
     /*
      * The tail puts the interrupted x18 back before the slot's own
      * instruction runs, because the entry hands the frame over in x18 and the
-     * kernel's entry for this vector saves x18 as user state.
+     * kernel's entry for this vector saves x18 as user state
      */
     eq64("the tail starts by restoring x18", stub[tailIndex], STUB_LDUR_X18);
     eq64("and is one word longer for it", usSlotStubTailWords(UsStubSlotEl0), 3U);
@@ -545,7 +545,7 @@ static void testSlotTargetEncoding(void) {
     }
 }
 
-/* Host model only: runtime cache maintenance is outside the encoder. */
+/* Host model only: runtime cache maintenance is outside the encoder */
 static void runPublishedStub(const _Atomic uint32_t *runtime, uint64_t esr,
                              uint32_t insn, StubRun *run) {
     uint32_t snapshot[US_SLOT_RUNTIME_WORDS];
@@ -579,7 +579,7 @@ static void testSlotTargetPublication(void) {
         eq64("the branch lands exactly after the old tail",
              index * 4U + branchOffset(branch), US_SLOT_STUB_BYTES);
 
-        /* No prefix of the staged sequence is reachable before publication. */
+        /* No prefix of the staged sequence is reachable before publication */
         for (unsigned staged = 0; staged <= US_SLOT_TARGET_WORDS; staged++) {
             if (staged != 0) {
                 atomic_store_explicit(runtime + US_SLOT_STUB_WORDS + staged - 1U,
@@ -614,7 +614,7 @@ static void testSlotTargetPublication(void) {
          * the form: the kernel-mode one sends everything to the payload, which
          * hands back what it cannot claim, and the other two send anything but
          * an RCpc load straight to the tail. Both are the same answer reached
-         * two ways, and which form this is comes from the slot. */
+         * two ways, and which form this is comes from the slot */
         runPublishedStub(runtime, 0, 0, &run);
         ok("an undefined instruction the payload cannot claim still reaches it",
            run.reachedPayload);

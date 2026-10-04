@@ -1,15 +1,15 @@
 /*
- * holes - report the runs of zero words inside an image's sections.
+ * holes - report the runs of zero words inside an image's sections
  *
  * Where the payload goes is a question about space, and space is something an
  * image can answer about itself. A run of zero words inside an executable
  * section is a candidate place to put code: it is mapped executable, so it
  * runs, and it is unreferenced, which is a judgement about the image rather
- * than something readable off it.
+ * than something readable off it
  *
  * Runs are reported rather than just the longest one, because the useful
  * question is not "is there a hole" but "is there a hole big enough", and the
- * answer changes with the size of what has to fit.
+ * answer changes with the size of what has to fit
  *
  * Usage: holes <image> [minBytes]
  */
@@ -24,7 +24,7 @@
  * Runs are summarised by size rather than listed. An image has thousands of
  * short runs and a handful of long ones, so a list is unreadable and the
  * useful question -- is there a run of the size something needs -- is a
- * question about sizes.
+ * question about sizes
  */
 #define MAX_BUCKETS 7U
 static const uint32_t kBuckets[MAX_BUCKETS] = { 16, 32, 64, 128, 256, 1024, 4096 };
@@ -61,12 +61,12 @@ static uint8_t *readWhole(const char *path, size_t *outLen) {
 }
 
 /*
- * A word inside a section.
+ * A word inside a section
  *
  * Beyond the raw data the loader zero fills, so those bytes are zeros here
  * too: that is what the image will look like in memory, and the sections that
  * are only virtual are exactly the ones with room. Reading the file alone
- * would report nothing for them, which is the opposite of the answer wanted.
+ * would report nothing for them, which is the opposite of the answer wanted
  */
 static bool wordAt(const UsImage *img, const UsPeSection *s, uint32_t rva,
                    uint32_t *out) {
@@ -137,7 +137,7 @@ int main(int argc, char **argv) {
          * that excess is mapped is not something the headers say: a section
          * with no raw data at all is only in the table, while one that has
          * some is mapped and the rest of it is zero filled. The distinction
-         * matters because code can only go where something is mapped.
+         * matters because code can only go where something is mapped
          */
         printf("  %-9s va=0x%-8x vsize=0x%-7x raw=0x%-7x %s%s%s%s\n", s->name,
                s->virtualAddress, s->virtualSize, s->rawSize,

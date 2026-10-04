@@ -1,5 +1,5 @@
 /*
- * Building and printing the plan, see plan.h for the contract.
+ * Building and printing the plan, see plan.h for the contract
  */
 
 #include "core/plan.h"
@@ -30,7 +30,7 @@ bool usPlanBuild(UsPlan *plan, UsImage *winload, UsImage *ntoskrnl) {
         plan->winloadSizeOfImage = winload->sizeOfImage;
 
         /* The loader's own LDAPR instructions matter as much as the kernel's:
-         * it runs on the same CPU before the kernel does. */
+         * it runs on the same CPU before the kernel does */
         UsLdaprCounts l = usCountLdapr(winload);
         plan->ldapr.word += l.word;
         plan->ldapr.xword += l.xword;
@@ -56,7 +56,7 @@ bool usPlanBuild(UsPlan *plan, UsImage *winload, UsImage *ntoskrnl) {
      * Complete means everything the boot cannot proceed without is there. The
      * vector table writes are not part of it: they are needed before an
      * exception can arrive, but the kernel is what installs the table, and by
-     * then the plan has already been acted on.
+     * then the plan has already been acted on
      */
     plan->complete = leaf && handoff && ntoskrnl != NULL && ntoskrnl->valid
                      && plan->thunk.found;
@@ -151,7 +151,7 @@ void usPlanEmit(const UsPlan *plan, const UsSink *sink) {
         emitHex(sink, plan->vbar.rvas[i]);
         /* Whether the slot can be taken over, and where it goes now. A slot
          * that is a branch to somewhere is still usable: the stub keeps the
-         * branch and only diverts what this project exists for. */
+         * branch and only diverts what this project exists for */
         emitPuts(sink, plan->vbar.syncUsable[i] ? " sync=" : " sync-inline=");
         emitHex(sink, (uint64_t)((int32_t)(plan->vbar.syncWord[i] << 6) >> 6) * 4);
         emitPuts(sink, "\n");

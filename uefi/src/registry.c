@@ -1,5 +1,5 @@
 /*
- * The image registry, see registry.h for the contract.
+ * The image registry, see registry.h for the contract
  */
 
 #include <string.h>
@@ -13,7 +13,7 @@ void usRegistryInit(UsRegistry *reg) {
 bool usRegistryAddBootmgfw(UsRegistry *reg, const void *base, size_t size) {
     /* The firmware may load the same image twice; the second registration
      * would overwrite a view that is already being referred to, so keep the
-     * first. */
+     * first */
     if (reg->bootmgfwPresent) {
         return false;
     }
@@ -25,7 +25,7 @@ bool usRegistryAddBootmgfw(UsRegistry *reg, const void *base, size_t size) {
 }
 
 /* The scan itself lives in core/pe.c, where it can be tested without a
- * firmware; this only decides what to do with what it finds. */
+ * firmware; this only decides what to do with what it finds */
 static UsImageVisit recordImage(const UsImage *img, UsImageKind kind, void *ctx) {
     UsRegistry *reg = ctx;
 
@@ -37,7 +37,7 @@ static UsImageVisit recordImage(const UsImage *img, UsImageKind kind, void *ctx)
         reg->winloadPresent = true;
     }
 
-    /* Both are wanted, so the scan only stops once it cannot help. */
+    /* Both are wanted, so the scan only stops once it cannot help */
     return UsImageVisitContinue;
 }
 
@@ -66,7 +66,7 @@ UsImage *usRegistryByName(UsRegistry *reg, const char *name) {
         return NULL;
     }
     /* A table written by hand will use the spellings from the documentation,
-     * which are the short ones. */
+     * which are the short ones */
     if (strcmp(name, "bootmgfw") == 0) {
         return usRegistryGet(reg, UsImageBootmgfw);
     }

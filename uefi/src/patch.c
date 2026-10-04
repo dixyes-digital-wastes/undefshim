@@ -1,5 +1,5 @@
 /*
- * The debug patch table, see patch.h for why it works this way.
+ * The debug patch table, see patch.h for why it works this way
  */
 
 #include <uefi.h>
@@ -37,7 +37,7 @@ int usPatchApplyPending(UsSession *s) {
         UsImage *img;
 
         if (i >= US_PATCH_MAX) {
-            /* Reported once by usPatchReportPending. */
+            /* Reported once by usPatchReportPending */
             break;
         }
         if (isApplied(s, i)) {
@@ -49,7 +49,7 @@ int usPatchApplyPending(UsSession *s) {
         if (img == NULL) {
             /* Its stage has not been loaded yet, or the name is wrong. Both
              * look the same from here, and both are answered by the report at
-             * the end of the boot. */
+             * the end of the boot */
             continue;
         }
 
@@ -66,14 +66,14 @@ int usPatchApplyPending(UsSession *s) {
             usConsolePuts(" failed: ");
             usConsolePuts(usPatchResultName(r));
             usConsolePuts("\n");
-            /* The image is here, so retrying would fail the same way. */
+            /* The image is here, so retrying would fail the same way */
             markApplied(s, i);
             continue;
         }
 
         /*
          * The image the patch lands in is about to run, and on AArch64 a
-         * store does not reach the instruction fetcher by itself.
+         * store does not reach the instruction fetcher by itself
          */
         usCacheFlushRange(range.addr, range.bytes);
 
@@ -94,7 +94,7 @@ int usPatchApplyPending(UsSession *s) {
     /*
      * Printed once everything has been said. The deployment checks stop the
      * machine the moment they see this, and stopping on the report itself
-     * would cut the report in half.
+     * would cut the report in half
      */
     if (applied > 0) {
         usConsolePuts("US-M4-PATCH\n");

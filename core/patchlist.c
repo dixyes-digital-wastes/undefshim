@@ -65,7 +65,7 @@ static bool sameWord(const Token *token, const char *word) {
 
 /*
  * Comments run to the end of the line and, like whitespace, may stand between
- * any two tokens: nothing below looks at line structure.
+ * any two tokens: nothing below looks at line structure
  */
 static Token next(Scanner *scan) {
     Token token = { TokenEnd, NULL, 0, 0 };
@@ -98,7 +98,7 @@ static Token next(Scanner *scan) {
             i++;
         }
         if (i == 2U) {
-            /* "0x" with nothing after it: refuse the whole file. */
+            /* "0x" with nothing after it: refuse the whole file */
             token.kind = TokenWord;
         }
         scan->at += i;
@@ -113,7 +113,7 @@ static Token next(Scanner *scan) {
         run++;
     }
     if (run == 0) {
-        /* A character the grammar has no use for. */
+        /* A character the grammar has no use for */
         token.kind = TokenWord;
         token.length = 1;
         scan->at++;
@@ -127,7 +127,7 @@ static Token next(Scanner *scan) {
 
         for (uint32_t i = 0; i < run; i++) {
             /* A hyphen is part of a token that carries one, as a uuid does;
-             * runBytes rejects them where a field is meant to be digits. */
+             * runBytes rejects them where a field is meant to be digits */
             if (!isHex(token.at[i]) && token.at[i] != '-') {
                 hex = false;
                 break;
@@ -141,7 +141,7 @@ static Token next(Scanner *scan) {
 }
 
 /* How many bytes a run of hexadecimal digits describes, or 0 if it cannot.
- * A field is digits only: the hyphens a uuid is written with belong to it. */
+ * A field is digits only: the hyphens a uuid is written with belong to it */
 static uint32_t runBytes(const Token *token) {
     if (token->kind != TokenHexRun || (token->length % 2U) != 0
         || token->length == 0 || token->length > US_PATCH_MAX_WIDTH * 2U) {
@@ -158,14 +158,14 @@ static uint32_t runBytes(const Token *token) {
 /*
  * A field is written the way an instruction is written, most significant byte
  * first, and stored the way the machine keeps it, least significant first: a
- * site reads f8bfc3ea and the four bytes at its address are ea c3 bf f8.
+ * site reads f8bfc3ea and the four bytes at its address are ea c3 bf f8
  */
 /*
  * A uuid as a debugger writes it, with the age after it: 8-4-4-4-12
  * hexadecimal digits, hyphens between the groups, then another hyphen and the
  * age in decimal. All of that is one token, because that is how it is
  * written; the bytes keep the order they are written in, unlike a site's
- * fields.
+ * fields
  */
 static bool readIdentity(const Token *token, uint8_t *out, uint32_t bytes,
                          uint32_t *outAge) {
@@ -252,7 +252,7 @@ UsPatchStatus usPatchParse(const char *text, uint32_t length, UsPatchSite *sites
     out->skipped = 0;
     out->errorAt = 0;
 
-    /* The version has to be the first thing in the file. */
+    /* The version has to be the first thing in the file */
     token = next(&scan);
     if (token.kind != TokenWord || !sameWord(&token, "USPATCHV1")) {
         out->errorAt = (uint32_t)(token.at != NULL ? token.at - text : 0);
@@ -299,7 +299,7 @@ UsPatchStatus usPatchParse(const char *text, uint32_t length, UsPatchSite *sites
                     return UsPatchNoHash;
                 }
                 /* The hash is a byte string, not a value: it keeps the order
-                 * it is written in, unlike the fields below it. */
+                 * it is written in, unlike the fields below it */
                 for (uint32_t i = 0; i < 32U; i++) {
                     out->hash[i] = (uint8_t)((hexValue(digits.at[i * 2]) << 4)
                                              | hexValue(digits.at[i * 2 + 1]));
@@ -325,7 +325,7 @@ UsPatchStatus usPatchParse(const char *text, uint32_t length, UsPatchSite *sites
                 out->hasPdbIdentity = true;
                 continue;
             }
-            /* An instruction from a newer format, or a typo: refuse it. */
+            /* An instruction from a newer format, or a typo: refuse it */
             out->errorAt = (uint32_t)(token.at - text);
             return UsPatchSyntax;
         }
@@ -336,7 +336,7 @@ UsPatchStatus usPatchParse(const char *text, uint32_t length, UsPatchSite *sites
 
         /*
          * A site: the address, then up to three field runs, ending where the
-         * next address or instruction begins.
+         * next address or instruction begins
          */
         UsPatchSite site;
         Token field[3];
@@ -349,7 +349,7 @@ UsPatchStatus usPatchParse(const char *text, uint32_t length, UsPatchSite *sites
             Token peek = next(&scan);
 
             if (peek.kind != TokenHexRun) {
-                /* Not a field: put it back for the outer loop. */
+                /* Not a field: put it back for the outer loop */
                 scan.at = (uint32_t)(peek.at != NULL ? peek.at - text : scan.at);
                 break;
             }
@@ -370,7 +370,7 @@ UsPatchStatus usPatchParse(const char *text, uint32_t length, UsPatchSite *sites
          * No alignment rule: a field is a byte array, and an array of three
          * or five bytes has no meaningful alignment. What keeps a site safe
          * is the match check against the memory it lands on, and that is
-         * decided when it is applied, not here.
+         * decided when it is applied, not here
          */
         if (shaped && overlaps(sites, out->sites, site.rva, width)) {
             shaped = false;
@@ -406,7 +406,7 @@ UsPatchStatus usPatchParse(const char *text, uint32_t length, UsPatchSite *sites
     }
     /* At least one matcher: a list that carries none would be applied to
      * whatever image it was pointed at, which is how a list written for one
-     * build ends up in another. */
+     * build ends up in another */
     if (!seenTarget && !seenHash && !seenPdb) {
         return UsPatchNoMatchers;
     }

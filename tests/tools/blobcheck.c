@@ -1,20 +1,20 @@
 /*
- * blobcheck - catch a leaked address in the payload blob.
+ * blobcheck - catch a leaked address in the payload blob
  *
  * The blob is copied to an address the linker never knew about, so any word
  * in it that holds a link time address is a bug: it will still be that
  * address after the copy, and the payload will jump or read somewhere that
- * has nothing to do with it.
+ * has nothing to do with it
  *
  * This is not caught by looking for relocations. A GOT entry, or a constant
  * pool filled in by the linker, is resolved at link time and leaves no
  * relocation behind; the address simply appears in the bytes. So the bytes are
- * what get checked.
+ * what get checked
  *
  * The test is a heuristic and is used as one: a word that points inside the
  * blob is reported. A legitimate constant could in principle land there by
  * accident, and if that ever happens the fix is to say so here rather than to
- * weaken the check.
+ * weaken the check
  *
  * Usage: blobcheck <payload.bin> <payload.elf>
  */
@@ -85,7 +85,7 @@ int main(int argc, char **argv) {
 
     /*
      * The range the payload believes it occupies has to be exactly the file,
-     * or a section was left outside it and the copy misses that section.
+     * or a section was left outside it and the copy misses that section
      */
     {
         char cmd[1024];
@@ -111,7 +111,7 @@ int main(int argc, char **argv) {
     /*
      * Every aligned word, against the blob's own range. An address into the
      * blob that is not relative to anything is exactly the shape of the bug
-     * this exists to catch.
+     * this exists to catch
      */
     for (size_t off = 0; off + 8 <= len; off += 8) {
         uint64_t word;

@@ -1,10 +1,10 @@
 /*
- * Checks for the pool layout.
+ * Checks for the pool layout
  *
  * The layout is the one thing the driver, the payload and the page table
  * injector all have to agree on, so it is worth checking the arithmetic here
  * rather than discovering it is wrong when the payload takes an exception on a
- * misaligned stack.
+ * misaligned stack
  */
 
 #include <stdio.h>
@@ -34,7 +34,7 @@ static void eqU64(const char *name, uint64_t got, uint64_t want) {
 
 static void testShape(void) {
     /* The pool has to be a whole number of pages, or the firmware cannot hand
-     * it over and the stacks would start mid page. */
+     * it over and the stacks would start mid page */
     ok("pool bytes are page sized", US_POOL_BYTES % US_PAGE_SIZE == 0);
     ok("pages match bytes", US_POOL_PAGES * US_PAGE_SIZE == US_POOL_BYTES);
     ok("header fits in a page", US_POOL_HEADER_SIZE >= sizeof(UsPool));
@@ -42,7 +42,7 @@ static void testShape(void) {
     ok("stack size is page sized", US_STACK_SIZE % US_PAGE_SIZE == 0);
     ok("stack size is at least a page", US_STACK_SIZE >= US_PAGE_SIZE);
 
-    /* Every stack sits after the header, and they do not overlap. */
+    /* Every stack sits after the header, and they do not overlap */
     for (uint32_t i = 0; i < US_MAX_CPUS; i++) {
         uint64_t start = US_POOL_STACK_OFFSET(i);
         ok("stack starts after the header", start >= US_POOL_HEADER_SIZE);
@@ -56,7 +56,7 @@ static void testShape(void) {
 
 static void testInit(void) {
     /* A deliberately unaligned base: both addresses are page aligned in
-     * practice, so anything else is a bug worth refusing. */
+     * practice, so anything else is a bug worth refusing */
     UsPool pool;
     ok("rejects an unaligned base",
        !usPoolInitLayout(&pool, 0x1000 + 1, 0x1000 + 1));
@@ -69,7 +69,7 @@ static void testInit(void) {
     eqU64("self va", pool.selfVa, 0x40000000);
     ok("valid after init", usPoolIsValid(&pool));
 
-    /* Alignment is what the CPU requires, not a nicety. */
+    /* Alignment is what the CPU requires, not a nicety */
     for (uint32_t i = 0; i < US_MAX_CPUS; i++) {
         uint64_t top = usPoolStackTop(&pool, i);
         ok("stack top is aligned", (top & (US_STACK_ALIGN - 1)) == 0);
@@ -79,7 +79,7 @@ static void testInit(void) {
               top, 0x40000000 + US_POOL_STACK_OFFSET(i) + US_STACK_SIZE);
     }
 
-    /* Stacks are one per CPU and each has room for at least a page of frame. */
+    /* Stacks are one per CPU and each has room for at least a page of frame */
     ok("stacks are distinct", usPoolStackTop(&pool, 0) != usPoolStackTop(&pool, 1));
     ok("gap between stacks holds a stack",
        usPoolStackTop(&pool, 1) - usPoolStackTop(&pool, 0) == US_STACK_SIZE);
@@ -92,7 +92,7 @@ static void testValidation(void) {
     UsPool pool;
     ok("setup", usPoolInitLayout(&pool, 0x80000000, 0x80000000));
 
-    /* The checks have to actually reject, or they are decoration. */
+    /* The checks have to actually reject, or they are decoration */
     {
         UsPool bad = pool;
         bad.magic = 0;
@@ -120,7 +120,7 @@ static void testValidation(void) {
     }
     {
         /* The layout follows selfVa, so relocating the pool has to relocate
-         * the stacks with it or the payload would jump to the old address. */
+         * the stacks with it or the payload would jump to the old address */
         UsPool moved = pool;
         uint64_t delta = 0x100000000ULL;
         moved.selfVa += delta;
@@ -137,13 +137,13 @@ static void testValidation(void) {
 }
 
 /*
- * The two spellings of the processor mask.
+ * The two spellings of the processor mask
  *
  * They are different words, deliberately: the one that says which fields are
  * wanted is not a logical immediate an `and` can carry, so the entry takes a
  * generated one that is. What has to hold is that the two agree on every
  * value the registers can produce, and that is a statement about the bits
- * where they differ rather than about the words.
+ * where they differ rather than about the words
  */
 static void testMpidrMask(void) {
     static const uint64_t registers[] = {
@@ -162,14 +162,14 @@ static void testMpidrMask(void) {
     /*
      * The fields that are not part of a processor's identity have to be gone
      * from both, or two names for one processor compare unequal. That is the
-     * whole reason the mask exists.
+     * whole reason the mask exists
      */
     for (int bit = 24; bit <= 31; bit++) {
         ok("neither keeps a non identity bit",
            ((US_MPIDR_AFFINITY_MASK >> bit) & 1U) == 0
                && ((US_MPIDR_AFFINITY_MASK_LOGICAL >> bit) & 1U) == 0);
     }
-    /* And the affinity fields have to survive in both. */
+    /* And the affinity fields have to survive in both */
     for (int bit = 0; bit < 24; bit++) {
         ok("both keep the low affinity fields",
            ((US_MPIDR_AFFINITY_MASK >> bit) & 1U) == 1

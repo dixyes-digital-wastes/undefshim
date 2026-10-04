@@ -1,5 +1,5 @@
 /*
- * Carrying out the RCpc loads by replacing them, see rewrite.h.
+ * Carrying out the RCpc loads by replacing them, see rewrite.h
  */
 
 #include <uefi.h>
@@ -14,15 +14,15 @@
 #include "uefi/src/session.h"
 
 /*
- * Walks the executable sections of one image and replaces each RCpc load.
+ * Walks the executable sections of one image and replaces each RCpc load
  *
  * The scan is over sections that carry data, for the same reason the other
  * locators use that rule: a section that is only an entry in the section table
- * is not mapped, and reading it produces zeros rather than code.
+ * is not mapped, and reading it produces zeros rather than code
  *
  * The whole section is flushed once rather than each instruction: this is a
  * boot time pass over a large image, and per-instruction flushes would spend
- * all of their time on barrier overhead.
+ * all of their time on barrier overhead
  */
 static size_t rewriteImage(UsImage *img) {
     size_t changed = 0;
@@ -50,7 +50,7 @@ static size_t rewriteImage(UsImage *img) {
         span = s->virtualSize;
         /* Anything past the file's own bytes is zero fill, which cannot be an
          * instruction, but it is still inside the section and the read has to
-         * be bounded by the image rather than by the section. */
+         * be bounded by the image rather than by the section */
         if (s->rawSize < span) {
             span = s->rawSize;
         }
@@ -109,7 +109,7 @@ size_t usRewriteLdapr(UsSession *session) {
         }
         /* How many instructions the image carried, whether or not any were
          * replaced: a scan that found nothing and a scan that did not run
-         * look the same otherwise, and they mean opposite things. */
+         * look the same otherwise, and they mean opposite things */
         usConsolePuts("rewrite: ");
         usConsolePuts(usImageKindName(kinds[i]));
         usConsolePuts(" holds ");

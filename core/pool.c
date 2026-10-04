@@ -1,5 +1,5 @@
 /*
- * Laying out the runtime pool, see pool.h for why this is separate.
+ * Laying out the runtime pool, see pool.h for why this is separate
  */
 
 #include <string.h>
@@ -24,7 +24,7 @@ bool usPoolInitLayout(UsPool *pool, uint64_t baseVa, uint64_t basePa) {
         /*
          * The top is the first byte past the stack, which is where a full
          * descending stack starts. Stacks grow down, so the top is aligned and
-         * the first push lands inside the slot.
+         * the first push lands inside the slot
          */
         uint64_t top = baseVa + US_POOL_STACK_OFFSET(i) + US_STACK_SIZE;
         pool->stackTop[i] = top & ~(uint64_t)(US_STACK_ALIGN - 1);
@@ -58,7 +58,7 @@ bool usPoolIsValid(const UsPool *pool) {
      * Every advertised slot has to be exactly where the layout says it is.
      * Checking against the pool's own address rather than against each other
      * means a partially written or misrelocated header is caught rather than
-     * accepted as long as it is monotonic.
+     * accepted as long as it is monotonic
      */
     for (uint32_t i = 0; i < pool->stackSlots; i++) {
         uint64_t want = (pool->selfVa + US_POOL_STACK_OFFSET(i) + US_STACK_SIZE)
@@ -69,7 +69,7 @@ bool usPoolIsValid(const UsPool *pool) {
         }
     }
 
-    /* No stack may cover the header it is described by. */
+    /* No stack may cover the header it is described by */
     if (pool->stackTop[0] < pool->selfVa + US_POOL_HEADER_SIZE) {
         return false;
     }

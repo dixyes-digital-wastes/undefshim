@@ -1,14 +1,14 @@
 /*
- * Checks for the translation table walk.
+ * Checks for the translation table walk
  *
  * What is being checked is that a walk over a table finds the mapping that is
  * actually there, and reports the right advice about the ones that are not.
  * The tables are built here in memory, so the test says exactly which shape
- * of table produces which answer, and no kernel is involved.
+ * of table produces which answer, and no kernel is involved
  *
  * The cases that matter are the ones a real table has: a mapping split across
  * levels, a large block standing in for many pages, an entry that is present
- * but not the target, and a table that points somewhere unrelated.
+ * but not the target, and a table that points somewhere unrelated
  */
 
 #include <stdio.h>
@@ -42,14 +42,14 @@ static void eqU64(const char *name, uint64_t got, uint64_t want) {
  * The walk reads physical addresses, so a table is an array indexed by
  * address. The base is chosen page aligned and the arrays are placed at
  * offsets that look like real allocations, which is what makes an address
- * arithmetic mistake show up here rather than on the target.
+ * arithmetic mistake show up here rather than on the target
  */
 #define TABLE_POOL_BYTES (16 * 4096)
 #define TABLE_BASE 0x10000000ULL
 
 static uint8_t gTables[TABLE_POOL_BYTES];
 
-/* The kernel's virtual half, at the layout the walk assumes. */
+/* The kernel's virtual half, at the layout the walk assumes */
 #define KVA_BASE 0xFFFF000000000000ULL
 
 static uint64_t physRead(void *ctx, uint64_t address) {
@@ -71,7 +71,7 @@ static void writeEntry(uint64_t address, uint64_t value) {
 
 /*
  * Builds a four level table that maps pages of a physical range at a virtual
- * address, one page per entry.
+ * address, one page per entry
  */
 #define L0_AT 0x10000000ULL
 #define L1_AT 0x10001000ULL
@@ -86,7 +86,7 @@ static void buildTable(uint64_t va, uint64_t pa, size_t pages) {
 
     memset(gTables, 0, sizeof(gTables));
 
-    /* The table descriptors, each pointing at the next level down. */
+    /* The table descriptors, each pointing at the next level down */
     writeEntry(L0_AT + i0 * 8, L1_AT | 3);
     writeEntry(L1_AT + i1 * 8, L2_AT | 3);
     writeEntry(L2_AT + i2 * 8, L3_AT | 3);
@@ -119,7 +119,7 @@ static void testFindsAPage(void) {
     ok("without exhausting the budget", !w.budgetExhausted);
 
     /* An address that is not mapped anywhere is not found, and that is a
-     * definite answer rather than a truncated one. */
+     * definite answer rather than a truncated one */
     w = findIn(va, pa, 4, 0xDEADB0000ULL, US_GRANULE_4K);
     ok("an unmapped address is not found", !w.found);
     ok("and the walk ran to completion", !w.budgetExhausted);
@@ -129,7 +129,7 @@ static void testFindsAPage(void) {
 /*
  * A region mapped as one large block has to be found too: the pool could be
  * covered by a 2MB block, and a walk that only understood page descriptors
- * would report nothing while the mapping sat right there.
+ * would report nothing while the mapping sat right there
  */
 static void testFindsABlock(void) {
     const uint64_t va = KVA_BASE + 0x40000000ULL;
@@ -143,7 +143,7 @@ static void testFindsABlock(void) {
     writeEntry(L0_AT + i0 * 8, L1_AT | 3);
     writeEntry(L1_AT + i1 * 8, L2_AT | 3);
     /* A block descriptor: bits [1:0] are 0b01, and the address lives higher
-     * up than it does in a page descriptor. */
+     * up than it does in a page descriptor */
     writeEntry(L2_AT + i2 * 8, (pa & 0x0000FFFFFFE00000ULL) | 1);
 
     w = usPageWalkFind(physRead, NULL, L0_AT, KVA_BASE, KVA_BASE + (1ULL << 40),
@@ -158,7 +158,7 @@ static void testFindsABlock(void) {
 
 /*
  * The range being searched has to be respected. A caller looking only at the
- * kernel's half must not be handed a mapping from the other one.
+ * kernel's half must not be handed a mapping from the other one
  */
 static void testRespectsTheRange(void) {
     const uint64_t va = KVA_BASE + 0x8000000ULL;
@@ -167,13 +167,13 @@ static void testRespectsTheRange(void) {
 
     buildTable(va, pa, 4);
 
-    /* Searching a range that does not contain the mapping finds nothing. */
+    /* Searching a range that does not contain the mapping finds nothing */
     w = usPageWalkFind(physRead, NULL, L0_AT, KVA_BASE + (1ULL << 39),
                        KVA_BASE + (1ULL << 40), pa, US_GRANULE_4K);
     ok("a mapping outside the range is not found", !w.found);
     ok("but the walk completed", !w.budgetExhausted);
 
-    /* Searching the range that does contain it finds it. */
+    /* Searching the range that does contain it finds it */
     w = usPageWalkFind(physRead, NULL, L0_AT, KVA_BASE, KVA_BASE + (1ULL << 39),
                        pa, US_GRANULE_4K);
     ok("a mapping inside the range is found", w.found);
@@ -187,7 +187,7 @@ static void testRespectsTheRange(void) {
  */
 static void testBudgetStopsARunaway(void) {
     /* Every level 3 entry points at another table, so the walk never reaches
-     * a leaf and keeps going until the budget runs out. */
+     * a leaf and keeps going until the budget runs out */
     memset(gTables, 0, sizeof(gTables));
     for (uint64_t i = 0; i <= 0x1FF; i++) {
         writeEntry(L0_AT + i * 8, L1_AT | 3);
@@ -225,7 +225,7 @@ static void testBadArguments(void) {
 /*
  * The base arrives straight from a translation base register, so it has flags
  * in the low bits, and possibly an address space identifier above. Neither
- * may end up in the address that gets read.
+ * may end up in the address that gets read
  */
 static void testBaseFlagsAreMasked(void) {
     const uint64_t va = KVA_BASE + 0x1000ULL;
@@ -235,7 +235,7 @@ static void testBaseFlagsAreMasked(void) {
     buildTable(va, pa, 1);
 
     /* The same base, with the low bits set the way a register would have
-     * them, and an identifier in the top half. */
+     * them, and an identifier in the top half */
     w = usPageWalkFind(physRead, NULL, L0_AT | 0xABCD000000000FFFULL, KVA_BASE,
                        KVA_BASE + (1ULL << 39), pa, US_GRANULE_4K);
     ok("flags in the base are ignored", w.found);
@@ -243,7 +243,7 @@ static void testBaseFlagsAreMasked(void) {
 }
 
 /* A 47-bit high VA uses only eight L0 index bits. The root is the second
- * 2KB allocation in the same 4KB page as the low-half root. */
+ * 2KB allocation in the same 4KB page as the low-half root */
 static void test47BitRoot(void) {
     const uint64_t prefix = 0xFFFF800000000000ULL;
     const uint64_t root = L0_AT + 0x800;
@@ -277,7 +277,7 @@ static void test47BitRoot(void) {
 
         /* With this particular shared-page layout the 48-bit high-half
          * index happens to add back the root's lost 0x800. The compatibility
-         * entry point must still behave exactly like an explicit 48-bit walk. */
+         * entry point must still behave exactly like an explicit 48-bit walk */
         w = usPageWalkFind(physRead, NULL, root, va, va + 0xFFF,
                            pa, US_GRANULE_4K);
         UsPageWalk explicit48 = usPageWalkFindBits(physRead, NULL, root,
@@ -346,13 +346,13 @@ static void testDescriptorAndPxn(void) {
     ok("leaf PXN is reported", w.found && w.pxn);
     eqU64("raw PXN leaf is preserved", w.descriptor, pa | 3 | pxn);
 
-    /* UXN alone is not privileged execute-never. */
+    /* UXN alone is not privileged execute-never */
     writeEntry(leafAt, pa | 3 | (1ULL << 54));
     w = usPageWalkFind(physRead, NULL, L0_AT, va, va + 0xFFF,
                        pa, US_GRANULE_4K);
     ok("leaf UXN alone is not PXN", w.found && !w.pxn);
 
-    /* A rejected earlier subtree must not poison an executable sibling. */
+    /* A rejected earlier subtree must not poison an executable sibling */
     buildTable(va + US_GRANULE_1G, pa, 1);
     writeEntry(L1_AT, (L0_AT + 0x4000) | 3 | pxnTable);
     w = usPageWalkFind(physRead, NULL, L0_AT, KVA_BASE,
@@ -373,7 +373,7 @@ static void testBlockDescriptorAndPxn(void) {
 
         /* First an executable block, then leaf PXN, then PXNTable at each
          * possible ancestor. Address bits below block size are legal RES0
-         * in the ordinary descriptor, not evidence of a runtime bug. */
+         * in the ordinary descriptor, not evidence of a runtime bug */
         for (unsigned mode = 0; mode <= level + 1; mode++) {
             uint64_t descriptor = pa | 1 | (1ULL << 10);
             UsPageWalk w;
@@ -401,7 +401,7 @@ static void testBlockDescriptorAndPxn(void) {
 
     /* Exercise bits [29:22] explicitly: an L1 address mask clears all thirty
      * low bits. Ignore them when extracting an address, without treating
-     * ordinary (zero) RES0 bits as a reason to reject a valid descriptor. */
+     * ordinary (zero) RES0 bits as a reason to reject a valid descriptor */
     memset(gTables, 0, sizeof(gTables));
     writeEntry(L0_AT, L1_AT | 3);
     writeEntry(L1_AT + 8, 0x140000001ULL | 0x3FC00000ULL);
@@ -446,7 +446,7 @@ static void testBitsBadArguments(void) {
                            pa, US_GRANULE_4K, 47);
     eqU64("noncanonical range endpoint performs no reads", w.entriesRead, 0);
 
-    /* The largest nonoverflowing endpoint is allowed. */
+    /* The largest nonoverflowing endpoint is allowed */
     w = usPageWalkFindBits(physRead, NULL, L0_AT, prefix, prefix + 0xFFF,
                            UINT64_MAX - 0x1000, 0x1000, 47);
     ok("nonoverflowing target ending at UINT64_MAX walks", w.entriesRead > 0);
@@ -473,7 +473,7 @@ static void testReadFailureContext(void) {
  * The self map is addressed the same way at every level, so a table is a
  * planted answer per address and the reader records where it was asked. That
  * makes the arithmetic the thing under test: if the implementation computed a
- * different address, the answer it gets back is nothing.
+ * different address, the answer it gets back is nothing
  */
 #define FAKE_SLOTS 8
 static struct {
@@ -506,14 +506,14 @@ static uint64_t leafRead(void *ctx, uint64_t at) {
 }
 
 /* Where the four descriptors are, written the long way: this is what the
- * implementation has to compute, so writing it out again is the check. */
+ * implementation has to compute, so writing it out again is the check */
 static uint64_t slot(uint64_t base, uint64_t va, unsigned shift) {
     return base + ((va >> shift) & ((1ULL << (48 - shift)) - 1)) * 8;
 }
 
 /* The level bases as the payload will see them: the kernel's own value, which
  * the image's literal is not. Called before any planting, so the test does not
- * depend on the implementation's internals. */
+ * depend on the implementation's internals */
 static void levelBases(uint64_t base, uint64_t out[4]) {
     out[3] = base;
     for (int i = 3; i > 0; i--) {
@@ -528,10 +528,10 @@ static void resetPlant(void) {
 
 /* The base the image's literal names, which everything below can be checked
  * against because the image also carries the descriptors that come out of it.
- * The kernel this runs under uses a different one, passed in at runtime. */
+ * The kernel this runs under uses a different one, passed in at runtime */
 #define IMAGE_BASE US_PTE_SELFMAP_BASE
 /* The value MmPteBase held on the machine this was measured on: a 47-bit
- * kernel half address, which is why the image's literal cannot be used. */
+ * kernel half address, which is why the image's literal cannot be used */
 #define KERNEL_BASE 0xFFFFAE0000000000ULL
 
 static void testSelfMapBases(void) {
@@ -549,12 +549,12 @@ static void testSelfMapBases(void) {
         eqU64("and for the level above it", literal[1], US_PPE_SELFMAP_BASE);
         eqU64("and for the top", literal[0], US_PXE_SELFMAP_BASE);
         /* The same arithmetic on the kernel's base has to give a different
-         * answer, or the base would not matter and this would all be moot. */
+         * answer, or the base would not matter and this would all be moot */
         levelBases(KERNEL_BASE, runtime);
         ok("the kernel's base gives different levels", runtime[0] != literal[0]);
         /* Both are canonical in a 47-bit kernel half; what tells them apart is
          * which of the top level's regions each one names, and only the
-         * kernel's own variable names a region this kernel maps. */
+         * kernel's own variable names a region this kernel maps */
         ok("both bases are canonical in the kernel half",
            (IMAGE_BASE >> 47) == 0x1FFFF && (KERNEL_BASE >> 47) == 0x1FFFF);
         ok("and they name different top level entries",
@@ -575,7 +575,7 @@ static void testSelfMapBases(void) {
 
 /* The three plants a page needs, from a base the test computes the levels
  * for. Both the image's literal and the kernel's own base are used, because
- * the arithmetic has to hold for whichever one the machine is running with. */
+ * the arithmetic has to hold for whichever one the machine is running with */
 static void plantLevels(uint64_t base, uint64_t va, uint64_t leafValue,
                         unsigned leafLevel) {
     const unsigned shifts[4] = { 39, 30, 21, 12 };
@@ -584,7 +584,7 @@ static void plantLevels(uint64_t base, uint64_t va, uint64_t leafValue,
     levelBases(base, bases);
     /* Every level above the leaf points at the next table down; the leaf
      * level holds what the test wants the walk to stop on. Nothing below the
-     * leaf is planted, because the walk must not read it. */
+     * leaf is planted, because the walk must not read it */
     for (unsigned i = 0; i <= leafLevel && i < 4; i++) {
         uint64_t value = (i == leafLevel) ? leafValue
                                           : ((0x10002000ULL + i * 0x1000) | 3);
@@ -622,7 +622,7 @@ static void testLeafFindsAPage(void) {
  * The case the image is in: a 2MB block, so the page level holds nothing.
  * What makes this worth its own check is that reading one level too far would
  * not fault and would not come back empty either: it would read the block's
- * own memory, and eight bytes of that can look like a descriptor.
+ * own memory, and eight bytes of that can look like a descriptor
  */
 static void testLeafStopsAtABlock(void) {
     const uint64_t va = KVA_BASE + 0x40012345ULL;
@@ -631,7 +631,7 @@ static void testLeafStopsAtABlock(void) {
 
     resetPlant();
     plantLevels(KERNEL_BASE, va, (pa & 0x0000FFFFFFE00000ULL) | 1, 2);
-    /* Something that would pass for a page descriptor, if it were read. */
+    /* Something that would pass for a page descriptor, if it were read */
     {
         uint64_t levels[4];
 
@@ -646,7 +646,7 @@ static void testLeafStopsAtABlock(void) {
           (pa & 0x0000FFFFFFE00000ULL) + (va & (US_GRANULE_2M - 1)));
     eqU64("and nothing was read below it", gAskedCount, 3);
 
-    /* A 1GB block, with plausible entries underneath it as well. */
+    /* A 1GB block, with plausible entries underneath it as well */
     resetPlant();
     plantLevels(KERNEL_BASE, va, (pa & 0x0000FFFFC0000000ULL) | 1, 1);
     {
@@ -668,14 +668,14 @@ static void testLeafUnmappedAndReserved(void) {
     const uint64_t va = KVA_BASE + 0x2000;
     UsLeaf leaf;
 
-    /* Nothing at all: the walk stops at the first level, without reading on. */
+    /* Nothing at all: the walk stops at the first level, without reading on */
     resetPlant();
     leaf = usLeafFind(KERNEL_BASE, leafRead, NULL, va);
     ok("an unmapped address has no leaf", !leaf.found);
     eqU64("and only the top level was read", gAskedCount, 1);
 
     /* A table that leads to an empty page level: the address is not mapped
-     * even though three levels of it are. */
+     * even though three levels of it are */
     resetPlant();
     plantLevels(KERNEL_BASE, va, 0, 3);
     leaf = usLeafFind(KERNEL_BASE, leafRead, NULL, va);
@@ -684,7 +684,7 @@ static void testLeafUnmappedAndReserved(void) {
 
     /* A block where a block is not allowed: at the page level it is reserved,
      * and treating it as a mapping would be reading a descriptor that is not
-     * one. */
+     * one */
     resetPlant();
     plantLevels(KERNEL_BASE, va, 0x10000000ULL | 1, 3);
     leaf = usLeafFind(KERNEL_BASE, leafRead, NULL, va);

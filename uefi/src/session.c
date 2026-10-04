@@ -1,5 +1,5 @@
 /*
- * The per boot state, see session.h.
+ * The per boot state, see session.h
  */
 
 #include "core/pool.h"
@@ -14,10 +14,10 @@ bool usSessionInit(UsSession *s) {
     s->armEnabled = false;
     s->vamapEnabled = false;
     /* On unless the configuration says otherwise: this is the mechanism the
-     * kernel depends on, and the driver sets it from the file afterwards. */
+     * kernel depends on, and the driver sets it from the file afterwards */
     s->ldaprRewrite = true;
 
-    /* Read once: the tables are the boot's and are gone with it. */
+    /* Read once: the tables are the boot's and are gone with it */
     s->cpus = usAcpiProbeCpus();
     if (s->cpus.count == 0) {
         uint64_t mpidr;
@@ -35,7 +35,7 @@ bool usSessionInit(UsSession *s) {
     /*
      * Slot zero is the boot CPU. The pool has a stack per possible CPU and the
      * payload maps them by MPIDR when it takes over; at this point only one
-     * CPU is running, and it is the one whose stack this is.
+     * CPU is running, and it is the one whose stack this is
      */
     s->bootStackTop = usPoolStackTop(s->pool, 0);
     return s->bootStackTop != 0;

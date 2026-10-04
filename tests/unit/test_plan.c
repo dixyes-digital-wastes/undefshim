@@ -1,14 +1,14 @@
 /*
- * Checks for the plan and the sites it is built from.
+ * Checks for the plan and the sites it is built from
  *
  * Two things are being checked. One is that the collection finds what is
  * there: sites have to be found, and a locator that matches twice has to be
  * refused rather than resolved to whichever came first. The other is that the
  * dump is stable, because a dump that changes order between runs cannot be
- * compared against anything, and comparing two dumps is the whole point.
+ * compared against anything, and comparing two dumps is the whole point
  *
  * The images are built here, so the test says exactly which property makes a
- * site a site, and it runs without the Windows binaries.
+ * site a site, and it runs without the Windows binaries
  */
 
 #include <stdio.h>
@@ -53,7 +53,7 @@ static void eqStr(const char *name, const char *got, const char *want) {
 /*
  * The image is examined as a memory view, where a section sits at its RVA and
  * the array offset is the RVA. Writing a section's contents at its RVA is
- * therefore what a loaded image looks like.
+ * therefore what a loaded image looks like
  */
 #define PDATA_RVA 0x9000U
 #define PDATA_RAW PDATA_RVA
@@ -69,7 +69,7 @@ static void put32(uint8_t *at, uint32_t v) {
 }
 
 /* An instruction in the text section. The section is laid out where the bytes
- * are, so an RVA is also an offset into the array. */
+ * are, so an RVA is also an offset into the array */
 static void putInsn(uint8_t *image, uint32_t rva, uint32_t word) {
     put32(image + rva, word);
 }
@@ -78,7 +78,7 @@ static void putInsn(uint8_t *image, uint32_t rva, uint32_t word) {
  * The exception directory is sorted by start address, and the lookup is a
  * binary search, so the section is only ever as large as the entries that were
  * actually declared. An entry of zero past the last real one would break the
- * ordering and the search with it.
+ * ordering and the search with it
  */
 static size_t gFunctionCount;
 
@@ -93,7 +93,7 @@ static void setFunctionCount(uint8_t *image, size_t count) {
 /*
  * The exception directory is part of the image this builds, because a loaded
  * image has one, but nothing in this test depends on it any more: the
- * transfer is a branch inside a function and is not looked up there.
+ * transfer is a branch inside a function and is not looked up there
  */
 
 static void buildImage(uint8_t *image, const char *section, uint16_t subsystem) {
@@ -205,9 +205,9 @@ static size_t countLines(const char *text) {
  * The transfer to the kernel, as the locator looks for it: the loader moves
  * the kernel's stack into SP, keeps the kernel entry point in a register, and
  * finally branches to it. The call in the middle goes somewhere different in
- * every version, so its target is not part of the test.
+ * every version, so its target is not part of the test
  *
- * Returns the offset of the branch, which is what a patch would replace.
+ * Returns the offset of the branch, which is what a patch would replace
  */
 static uint32_t putLeaf(uint8_t *image, uint32_t rva) {
     putInsn(image, rva + 0x00, 0x9100005F);  /* mov sp, x2 */
@@ -232,15 +232,15 @@ static void testSiteCollection(void) {
     eqSize("and adds nothing", list.total, 0);
 
     /* Three vector table installations, in an order the collector does not
-     * see: the dump sorts, so the input order must not matter. */
+     * see: the dump sorts, so the input order must not matter */
     putInsn(gWinload, TEXT_RVA + 0x100, 0xD518C010);  /* msr vbar_el1, x16 */
     putInsn(gWinload, TEXT_RVA + 0x040, 0xD518C000);  /* msr vbar_el1, x0 */
     putInsn(gWinload, TEXT_RVA + 0x280, 0xD518C001);  /* msr vbar_el1, x1 */
 
-    /* Not a vector table write, and must not be taken for one: msr spsel. */
+    /* Not a vector table write, and must not be taken for one: msr spsel */
     putInsn(gWinload, TEXT_RVA + 0x300, 0xD50041BF);
 
-    /* LDAPR instructions, which are counted rather than collected. */
+    /* LDAPR instructions, which are counted rather than collected */
     putInsn(gWinload, TEXT_RVA + 0x400, 0xB8BFC000);  /* ldapr w0, [x0] */
     putInsn(gWinload, TEXT_RVA + 0x404, 0x38BFC021);  /* ldaprb w1, [x1] */
 
@@ -273,18 +273,11 @@ static void testSiteCollection(void) {
 }
 
 /*
- * The two sites that make a plan complete are refused unless the exception
- * directory agrees the match is a function. A byte sequence that happens to
- * occur inside a function is not a place to hook.
- */
-/*
  * The transfer is a branch inside a function, not a function entry, so the
- * exception directory is not consulted and must not be: an earlier version of
- * this test asserted the opposite, for a signature that turned out to belong
- * to a function the handover never calls.
+ * exception directory is not consulted and must not be
  *
  * What the patch point has to be is the branch itself. The four bytes before
- * it are the last thing the loader does with the kernel's entry point.
+ * it are the last thing the loader does with the kernel's entry point
  */
 static void testLeafPatchPointIsTheBranch(void) {
     UsImage img;
@@ -313,14 +306,14 @@ static void testLeafPatchPointIsTheBranch(void) {
 /*
  * A sequence that is almost the same but does not end in the branch is not
  * the transfer, and must not be taken for it: everything here is checked
- * because getting it wrong means patching a place that does nothing.
+ * because getting it wrong means patching a place that does nothing
  */
 static void testLeafRefusesNearMisses(void) {
     UsImage img;
 
     buildImage(gWinload, ".text", US_PE_SUBSYSTEM_EFI_APPLICATION);
     putLeaf(gWinload, TEXT_RVA + 0x1000);
-    /* Change the branch into a return. */
+    /* Change the branch into a return */
     putInsn(gWinload, TEXT_RVA + 0x1014, 0xD65F03C0);
     usImageInitMemory(&img, gWinload, sizeof(gWinload));
     ok("a return instead of the branch is not the transfer",
@@ -328,7 +321,7 @@ static void testLeafRefusesNearMisses(void) {
 
     buildImage(gWinload, ".text", US_PE_SUBSYSTEM_EFI_APPLICATION);
     putLeaf(gWinload, TEXT_RVA + 0x1000);
-    /* Change the register the branch goes through. */
+    /* Change the register the branch goes through */
     putInsn(gWinload, TEXT_RVA + 0x1014, 0xD61F0260);
     usImageInitMemory(&img, gWinload, sizeof(gWinload));
     ok("a branch through another register is not the transfer",
@@ -376,7 +369,7 @@ static void testPlanDump(void) {
     ok("incompleteness is stated", strstr(buf.text, "plan: complete=0") != NULL);
     eqSize("dump is line based", countLines(buf.text), 9);
 
-    /* The same plan printed twice has to be identical, byte for byte. */
+    /* The same plan printed twice has to be identical, byte for byte */
     {
         Buffer again;
         UsSink sink2;
@@ -426,20 +419,20 @@ static void testCompletePlan(void) {
     eqSize("one is the leaf", plan.sites.sites[0].kind, UsSiteTransferLeaf);
     eqSize("one is the handoff", plan.sites.sites[1].kind, UsSiteTtbrHandoff);
 
-    /* And without the kernel there is nothing to plan against. */
+    /* And without the kernel there is nothing to plan against */
     ok("a plan without the kernel is not complete", !usPlanBuild(&plan, &winload, NULL));
     ok("a plan with neither is not complete", !usPlanBuild(&plan, NULL, NULL));
     eqSize("and covers no images", plan.imageCount, 0);
 }
 
 /*
- * Finding the vector table the loader installs.
+ * Finding the vector table the loader installs
  *
  * Shape is not enough, and this is where that is written down: the table here
  * has its synchronous slot holding a branch to itself, exactly like the one
  * shape-based search would pick, and a second table is added that looks the
  * same. What tells them apart is the register the write site loads, which is
- * what this follows.
+ * what this follows
  */
 static void testVbarDiscovery(void) {
     UsImage kernel;
@@ -449,7 +442,7 @@ static void testVbarDiscovery(void) {
     usImageInitMemory(&kernel, gKernel, sizeof(gKernel));
 
     /* A table at 0x2000 with an unused synchronous slot, and one at 0x3000
-     * with the slot taken by something real. */
+     * with the slot taken by something real */
     putInsn(gKernel, 0x2000 + 0x200, 0x14000000);
     putInsn(gKernel, 0x3000 + 0x200, 0xD503201F);
 
@@ -463,7 +456,7 @@ static void testVbarDiscovery(void) {
     putInsn(gKernel, TEXT_RVA + 0x204, 0x91000129);
     putInsn(gKernel, TEXT_RVA + 0x208, 0xD518C009);
 
-    /* ldr x10, [x0, #8] ; msr vbar_el1, x10 -- a runtime value. */
+    /* ldr x10, [x0, #8] ; msr vbar_el1, x10 -- a runtime value */
     putInsn(gKernel, TEXT_RVA + 0x300, 0xF940040A);
     putInsn(gKernel, TEXT_RVA + 0x304, 0xD518C00A);
 
@@ -480,7 +473,7 @@ static void testVbarDiscovery(void) {
        !usVectorSlotIsFree(&kernel, tables.rvas[1], UsVectorSlotEl1hSync));
 
     /* A table that is not there reads as occupied, which is the safe answer:
-     * refusing to write costs a shim, writing into nothing costs the boot. */
+     * refusing to write costs a shim, writing into nothing costs the boot */
     ok("a missing table is not free",
        !usVectorSlotIsFree(&kernel, 0x7000, UsVectorSlotEl1hSync));
 }

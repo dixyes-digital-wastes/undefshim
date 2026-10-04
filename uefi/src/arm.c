@@ -1,5 +1,5 @@
 /*
- * Taking over the handover, see arm.h.
+ * Taking over the handover, see arm.h
  */
 
 #include <uefi.h>
@@ -64,7 +64,7 @@ bool usArmTransfer(UsSession *s) {
     /*
      * The stub goes in first, with the address it is to call already in it.
      * Writing the branch before the stub exists would leave a window, however
-     * short, in which the loader would branch into whatever was there.
+     * short, in which the loader would branch into whatever was there
      */
     memcpy(slotVa, kTransferStub, US_TRANSFER_BYTES);
 
@@ -89,7 +89,7 @@ bool usArmTransfer(UsSession *s) {
 }
 
 /*
- * Drawing the exception path into the payload, see arm.h.
+ * Drawing the exception path into the payload, see arm.h
  *
  * Both tables are taken over, and both of their synchronous slots:
  *
@@ -103,18 +103,18 @@ bool usArmTransfer(UsSession *s) {
  * table and one taken with SP_EL1 at offset 0x200. Only the second of those
  * was being written, so the exceptions this project exists for went past the
  * stub and into the kernel's own handler -- which is a fault loop, since that
- * handler has no idea what an RCpc load is.
+ * handler has no idea what an RCpc load is
  *
  * A slot is replaced by a branch to a stub, whatever it held. The stub reads
  * the exception class and either leaves for the payload or runs the slot's
  * own two-instruction tail, which for the board's table means a branch to
  * where it branched and for the kernel's SP_EL0 slot means the instruction
- * that was written there before continuing past it.
+ * that was written there before continuing past it
  *
  * The stubs live in a run of zero words inside the kernel image. They have to
  * be in the same image as the slots they are reached from, because the branch
  * that reaches them is relative and the image moves when the address space is
- * rebuilt.
+ * rebuilt
  */
 #define US_STUB_SLOTS 3U
 
@@ -124,14 +124,14 @@ typedef struct UsArmTarget_t {
     uint32_t   tableRva;
     uint32_t   stubRva;
     UsVectorSlot slot;
-    /* RVA of the image's descriptor base, or zero when it has none. */
+    /* RVA of the image's descriptor base, or zero when it has none */
     uint32_t   descriptorBaseRva;
 } UsArmTarget;
 
 /*
  * Which stub shape a vector slot needs. The three synchronous entries differ in
  * what they may use to keep x18 and in whether a data abort has to reach the
- * payload; see core/thunk.h.
+ * payload; see core/thunk.h
  */
 static UsStubSlot stubSlotOf(UsVectorSlot slot) {
     switch (slot) {
@@ -154,14 +154,14 @@ static bool armSlot(UsSession *s, const UsArmTarget *target, uint32_t next) {
     uint32_t tail0;
     uint32_t tail1;
     /*
-     * What the slot's stub has to do about x18 and about faults of our own.
+     * What the slot's stub has to do about x18 and about faults of our own
      *
      * The EL1t and EL1h vectors are kernel mode, where x18 is the per-CPU block
      * and is rebuilt from TPIDR_EL1 rather than saved - and there is no stack
      * word to be had on the EL1t vector, whose SP the interrupted code was not
      * using. EL0 is the one vector whose x18 is user state and therefore has to
      * be pushed somewhere; the kernel's own entry there uses SP_EL1 as the
-     * thread's kernel stack, so the red zone below it is that somewhere.
+     * thread's kernel stack, so the red zone below it is that somewhere
      */
     UsStubSlot stubSlot = stubSlotOf(target->slot);
     uint32_t entryOffset = US_PAYLOAD_ENTRY_OFFSET;
@@ -183,7 +183,7 @@ static bool armSlot(UsSession *s, const UsArmTarget *target, uint32_t next) {
      * answer: where does *this* exception level's regime put the address. The
      * EL1&0 regime has already been rebuilt for the kernel by the time this
      * runs and no longer holds the images where the loader put them, so asking
-     * it here refuses a write that would in fact succeed.
+     * it here refuses a write that would in fact succeed
      */
     if (!usTranslateOwnAddress(tableAddress, false, &tablePa)
         || !usTranslateOwnAddress((uintptr_t)stubAt, true, &stubPa)
@@ -199,18 +199,18 @@ static bool armSlot(UsSession *s, const UsArmTarget *target, uint32_t next) {
     /*
      * The tail: what happens when the exception is not one of ours -- and the
      * test for that is the instruction, not the class, so the branch slots are
-     * not the only ones this is safe for.
+     * not the only ones this is safe for
      *
      * A slot holding a branch keeps its meaning, adjusted for the distance the
      * stub is away from it. A slot holding a handler written out in place runs
      * its first instruction and continues past it. The stub now touches only
      * x18, and gives that back before the tail runs, so the tail is reached
-     * with every register but NZCV flags as the exception left them.
+     * with every register but NZCV flags as the exception left them
      */
     {
         uint32_t tailIndex = usSlotStubTailIndex(stubSlot);
         /* The branch the tail ends with is the last of its words, and the
-         * encoder decides how many that is per slot. */
+         * encoder decides how many that is per slot */
         uint32_t from = target->stubRva
                         + (tailIndex + usSlotStubTailWords(stubSlot) - 1U) * 4U;
         uint32_t slotRva = target->tableRva + (uint32_t)target->slot * 0x80U;
@@ -222,7 +222,7 @@ static bool armSlot(UsSession *s, const UsArmTarget *target, uint32_t next) {
             if (displacement == 0) {
                 /* A branch to itself is what an unused slot holds. Keeping
                  * that meaning rather than adjusting it: the place it would
-                 * point at is this stub. */
+                 * point at is this stub */
                 tail1 = 0x14000000U;
             } else if (!usEncodeBranch(from, slotRva + (uint32_t)(displacement * 4),
                                        &tail1)) {
@@ -258,7 +258,7 @@ static bool armSlot(UsSession *s, const UsArmTarget *target, uint32_t next) {
     };
 
     /* The slot last: until the stub is there, a branch into it would be a
-     * branch into whatever the hole held, which is zeroes. */
+     * branch into whatever the hole held, which is zeroes */
     memcpy(slotAt, &enter, sizeof(enter));
     usCacheFlushRange(slotAt, sizeof(enter));
 
@@ -280,7 +280,7 @@ static bool armImage(UsSession *s, UsImageKind kind, size_t *armed) {
      * The SPx slot always, the others when asked for. All three are synchronous
      * entries: EL1t and EL1h for the kernel's own code, EL0 for the user's, and
      * an LDAPR in any of them is an undefined instruction on this hardware.
-     * Leaving one out means that one's loads are not carried out at all.
+     * Leaving one out means that one's loads are not carried out at all
      */
     const UsVectorSlot slots[US_STUB_SLOTS] = {
         UsVectorSlotEl1tSync,
@@ -292,9 +292,7 @@ static bool armImage(UsSession *s, UsImageKind kind, size_t *armed) {
      * tables are the ones in force while the loader runs, and nothing runs at
      * EL0 then: the exception level is not carried down to a user mode until
      * the kernel has installed this table and started a process. Taking that
-     * slot in the loader buys nothing and costs a stub - and, in the loader,
-     * hole space that turned out to matter: the boot stopped in the loader
-     * with every stub in place and nothing ever entering the payload.
+     * slot in the loader buys nothing and costs a stub there
      */
     const size_t slotCount = s->armSlot0
                                  ? (kind == UsImageNtoskrnl ? US_STUB_SLOTS
@@ -313,7 +311,7 @@ static bool armImage(UsSession *s, UsImageKind kind, size_t *armed) {
     }
     /*
      * Where the stubs go. The hole has to be in the same image as the slots,
-     * for the branch that reaches it.
+     * for the branch that reaches it
      */
     hole = usLocateSpareSlot(img, US_SLOT_RUNTIME_BYTES * US_STUB_SLOTS
                                  * (uint32_t)tables.count);
@@ -339,7 +337,7 @@ static bool armImage(UsSession *s, UsImageKind kind, size_t *armed) {
             /* Each table gets its own pair. Sharing one pair between two
              * tables means the second write lands on the first table's stub,
              * and that table's slots then branch into code whose tail belongs
-             * to the other one. */
+             * to the other one */
             UsArmTarget target = {
                 .image = img,
                 .tableRva = tables.rvas[i],
@@ -349,7 +347,7 @@ static bool armImage(UsSession *s, UsImageKind kind, size_t *armed) {
                 /*
                  * Only if the configuration states one for this build, and
                  * only as a candidate: the handler checks it against the
-                 * hardware before trusting it.
+                 * hardware before trusting it
                  */
                 .descriptorBaseRva = kind == UsImageNtoskrnl && s->config != NULL
                                              && s->config->hasDescriptorBase
@@ -378,7 +376,7 @@ bool usArmVectorTable(UsSession *s) {
     /*
      * Before the kernel's own slots are written and long before it runs: this
      * is the moment its image is loaded and still writable, and the lists are
-     * meant to be part of what it starts with rather than a change to it.
+     * meant to be part of what it starts with rather than a change to it
      */
     {
         UsImage *kernel = usRegistryGet(&s->registry, UsImageNtoskrnl);

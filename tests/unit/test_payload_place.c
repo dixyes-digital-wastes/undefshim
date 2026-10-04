@@ -1,6 +1,6 @@
 /* Real placement and generator, with only firmware allocation/cache/IO mocked.
  * The AArch64 blob is copied and inspected, never executed on the host.
- * Keep host libc headers out: posix-uefi supplies its own libc declarations.
+ * Keep host libc headers out: posix-uefi supplies its own libc declarations
  */
 #include <uefi.h>
 
@@ -45,14 +45,14 @@ void usCacheFlushRange(const void *address, size_t bytes) {
     flushes++;
 }
 
-/* Report is linked but not called: its self-test is AArch64 code. */
+/* Report is linked but not called: its self-test is AArch64 code */
 void usConsolePuts(const char *text) { (void)text; }
 void usConsolePutHex(uint64_t value) { (void)value; }
 void usConsolePutDec(uint64_t value) { (void)value; }
 
 static void rejected(const UsAcpiCpus *cpus) {
     UsSession session = { .cpus = *cpus };
-    /* No pool is intentional: rejection must not reach config writes either. */
+    /* No pool is intentional: rejection must not reach config writes either */
     UsPayloadPlace out;
     UsPayloadPlace before;
     memset(&out, 0xA5, sizeof(out));
@@ -106,7 +106,7 @@ static void placed(const UsAcpiCpus *cpus) {
 
     /* Generator semantics have their own interpreter test. Here the complete
      * published lookup must be generated from exactly the cfg/session table,
-     * including its count, order and actual blob-relative stack addresses.
+     * including its count, order and actual blob-relative stack addresses
      */
     assert(usGenerateStackLookup(cpus->mpidr, (uint32_t)cpus->count,
                                 US_PAYLOAD_STACKLOOKUP_OFFSET,
@@ -116,7 +116,7 @@ static void placed(const UsAcpiCpus *cpus) {
                                 US_PAYLOAD_NOSTACK_OFFSET, expected) != 0);
     assert(memcmp(pages + US_PAYLOAD_STACKLOOKUP_OFFSET,
                   expected, sizeof(expected)) == 0);
-    /* Outside those two patched regions, placement must copy the real blob. */
+    /* Outside those two patched regions, placement must copy the real blob */
     for (size_t i = 0; i < US_PAYLOAD_BYTES; i++) {
         bool lookup = i >= US_PAYLOAD_STACKLOOKUP_OFFSET
                       && i < US_PAYLOAD_STACKLOOKUP_OFFSET + sizeof(expected);
@@ -127,7 +127,7 @@ static void placed(const UsAcpiCpus *cpus) {
         }
     }
     memcpy(snapshot, pages, sizeof(pages));
-    /* Even a now-invalid session table cannot replace an existing placement. */
+    /* Even a now-invalid session table cannot replace an existing placement */
     session.cpus.count = 0;
     pool.stackTop[0]++;
     UsPayloadPlace again = {0};
@@ -149,7 +149,7 @@ int main(void) {
     placed(&(UsAcpiCpus){ .count = 8,
                          .mpidr = { 0x103, 2, 0x101, 0, 0x102, 1, 0x100, 3 } });
 
-    /* Allocation failure is still reported cleanly after table preflight. */
+    /* Allocation failure is still reported cleanly after table preflight */
     for (unsigned zero = 0; zero < 2; zero++) {
         UsSession session = { .cpus = { .count = 1 } };
         UsPayloadPlace out = {0};

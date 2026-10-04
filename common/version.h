@@ -1,5 +1,5 @@
 /*
- * Version and build identity. Single source for the banner.
+ * Version and build identity. Single source for the banner
  */
 
 #define US_VERSION_MAJOR 0

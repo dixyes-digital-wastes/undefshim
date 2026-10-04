@@ -1,5 +1,5 @@
 /*
- * Replacing an entry in the boot services table, see service_hook.h.
+ * Replacing an entry in the boot services table, see service_hook.h
  */
 
 #include <uefi.h>
@@ -10,7 +10,7 @@
 /*
  * The boot services table carries a CRC32 over its header, which the firmware
  * may verify. Changing an entry means recomputing it, or the next component
- * that checks will reject the table.
+ * that checks will reject the table
  */
 static void refreshBootServicesCrc(void) {
     efi_boot_services_t *bs = BS;
@@ -24,7 +24,7 @@ static void refreshBootServicesCrc(void) {
     bs->Hdr.CRC32 = 0;
 
     /* CRC32 as the firmware computes it: reflected, polynomial 0xEDB88320,
-     * over the header with the checksum field zeroed. */
+     * over the header with the checksum field zeroed */
     sum = 0xFFFFFFFFU;
     for (size_t i = 0; i < len; i++) {
         sum ^= p[i];
@@ -51,12 +51,12 @@ bool usServiceHookInstall(UsServiceHook *hook, void *const *slot, void *replacem
     refreshBootServicesCrc();
 
     /* The entry is code the firmware will fetch, so the write has to be made
-     * visible beyond this core before anything calls it. */
+     * visible beyond this core before anything calls it */
     usCacheFlushRange(hook->slot, sizeof(*hook->slot));
     usCacheSync();
 
     /* Read back: a write that did not take is otherwise indistinguishable from
-     * a hook that is never called, and finding that out later is much worse. */
+     * a hook that is never called, and finding that out later is much worse */
     hook->installed = (*hook->slot == replacement);
     return hook->installed;
 }

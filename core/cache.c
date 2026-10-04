@@ -1,9 +1,9 @@
 /*
- * Cache maintenance, see cache.h for why this is not optional.
+ * Cache maintenance, see cache.h for why this is not optional
  *
  * The line size is read from the system registers rather than assumed: it is
  * implementation defined, and cleaning the wrong granularity leaves stale
- * instructions behind.
+ * instructions behind
  */
 
 #include "core/cache.h"
@@ -12,7 +12,7 @@ static uint32_t dataCacheLineSize(void) {
     uint64_t ctr;
 
     __asm__ __volatile__("mrs %0, ctr_el0" : "=r"(ctr));
-    /* CTR_EL0.DminLine is bits 19:16, as a log2 of words. */
+    /* CTR_EL0.DminLine is bits 19:16, as a log2 of words */
     return 4U << ((ctr >> 16) & 0xFU);
 }
 
@@ -20,7 +20,7 @@ static uint32_t instructionCacheLineSize(void) {
     uint64_t ctr;
 
     __asm__ __volatile__("mrs %0, ctr_el0" : "=r"(ctr));
-    /* CTR_EL0.IminLine is bits 3:0. */
+    /* CTR_EL0.IminLine is bits 3:0 */
     return 4U << (ctr & 0xFU);
 }
 
@@ -42,7 +42,7 @@ void usCacheFlushRange(const void *addr, size_t len) {
     for (uintptr_t p = start; p < end; p += dline) {
         /* Clean and invalidate to the point of coherence: the new bytes have
          * to leave this core's cache before another core, or the instruction
-         * fetcher, can be trusted to see them. */
+         * fetcher, can be trusted to see them */
         __asm__ __volatile__("dc civac, %0" ::"r"(p) : "memory");
     }
     __asm__ __volatile__("dsb ish" ::: "memory");

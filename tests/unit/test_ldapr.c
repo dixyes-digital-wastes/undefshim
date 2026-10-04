@@ -1,11 +1,11 @@
 /*
- * Checks for the instruction decoder.
+ * Checks for the instruction decoder
  *
  * The encodings here are the real ones, taken from the architecture rather
  * than from the decoder itself: a test built from the code under test agrees
  * with it by construction and says nothing. Each is written as the
  * instruction word, and what has to come back out is the width and the two
- * register numbers a handler needs to carry it out.
+ * register numbers a handler needs to carry it out
  */
 
 #include <stdio.h>
@@ -64,7 +64,7 @@ static void testWidths(void) {
 }
 
 /* The patterns the scanner searches for have to be the ones the decoder
- * accepts, or the count and the emulation disagree about what an LDAPR is. */
+ * accepts, or the count and the emulation disagree about what an LDAPR is */
 static void testScannerAgrees(void) {
     uint32_t rt = 0;
     uint32_t rn = 0;
@@ -111,18 +111,18 @@ static void testScannerAgrees(void) {
  * Everything else has to be refused. An emulator that claims an instruction
  * it does not understand returns to the wrong place with the wrong value,
  * which is worse than not being there: the fault it produces is somewhere
- * else entirely.
+ * else entirely
  */
 static void testRefusals(void) {
     /* ldar w9, [x10] and stlr w11, [x12], assembled rather than recalled:
      * the difference between these and an LDAPR is a field or two, and a
-     * decoder that accepted one of them would corrupt the value it loads. */
+     * decoder that accepted one of them would corrupt the value it loads */
     ok("ldar is not ldapr", usLdaprDecode(0x88DFFD49U).kind == UsLdaprNone);
     ok("the store form is refused", usLdaprDecode(0x889FFD8BU).kind == UsLdaprNone);
-    /* The same opcode with the fixed low bits cleared. */
+    /* The same opcode with the fixed low bits cleared */
     ok("a different opcode is refused", usLdaprDecode(0x38BF0022U).kind == UsLdaprNone);
     ok("zero is refused", usLdaprDecode(0U).kind == UsLdaprNone);
-    /* A brk, which is what the debug probes use. */
+    /* A brk, which is what the debug probes use */
     ok("a breakpoint is not a load", usLdaprDecode(0xD4200000U).kind == UsLdaprNone);
 }
 
@@ -130,7 +130,7 @@ static void testRefusals(void) {
  * The substitution, checked against encodings the assembler produced rather
  * than against what the transformer happens to emit. Each pair below is a
  * real instruction and the acquire load that replaces it, so a width paired
- * with the wrong replacement would show up as a mismatch.
+ * with the wrong replacement would show up as a mismatch
  */
 static void testSubstitution(void) {
     static const struct {
@@ -154,7 +154,7 @@ static void testSubstitution(void) {
         eqHex("and it is the acquire load", got, pairs[i].ldar);
     }
 
-    /* Everything the decoder refuses, the transformer refuses. */
+    /* Everything the decoder refuses, the transformer refuses */
     {
         uint32_t got = 0xA5A5'A5A5U;
 
@@ -163,7 +163,7 @@ static void testSubstitution(void) {
         ok("zero is refused", !usLdaprToLdar(0U, &got));
     }
 
-    /* The registers and the width have to survive, whatever they are. */
+    /* The registers and the width have to survive, whatever they are */
     {
         bool everyOne = true;
 
@@ -176,7 +176,7 @@ static void testSubstitution(void) {
                 back = usLdaprDecode(got);
                 /* The decoder reads RCpc encodings, so it is asked about the
                  * substitute by shifting it back; what matters is that the
-                 * fields landed where they started. */
+                 * fields landed where they started */
                 if (back.kind != UsLdaprNone
                     || (got & 0x3FFU) != ((rn << 5) | rt)
                     || (got & 0xC0000000U) != 0x80000000U) {
@@ -196,11 +196,11 @@ static void testSubstitution(void) {
  * same thing about size, base and destination, and differ only in being an
  * acquire load. Each pair here is the two encodings the assembler produces
  * for the same operands, so a conversion that drifts by one field fails
- * rather than looking plausible.
+ * rather than looking plausible
  *
  * The pairs cover every width, the stack pointer as the base (register 31
  * means SP here, not the zero register) and the zero register as the
- * destination.
+ * destination
  */
 static const struct {
     uint32_t ldapr;
@@ -223,7 +223,7 @@ static void testRewriteConversion(void) {
         ok("the conversion accepts an RCpc load", usLdaprToLdar(kConversions[i].ldapr, &out));
         eqHex(kConversions[i].what, out, kConversions[i].ldar);
         /* And nothing else: an acquire load is not one to convert, and
-         * neither is a word that happens to be data. */
+         * neither is a word that happens to be data */
         ok("an acquire load is not converted again", !usLdaprToLdar(kConversions[i].ldar, &out));
     }
     ok("a word of data is not converted", !usLdaprToLdar(0xDEADBEEFU, NULL));
@@ -234,7 +234,7 @@ static void testRewriteConversion(void) {
      * that has been replaced still traps on a processor whose caches have not
      * caught up: the exception is the old instruction's and the memory holds
      * the new one, so what the handler reads is an acquire load and it has to
-     * mean the same load.
+     * mean the same load
      */
     for (size_t i = 0; i < sizeof(kConversions) / sizeof(kConversions[0]); i++) {
         UsLdaprInsn fromRcpc = usLdaprDecode(kConversions[i].ldapr);

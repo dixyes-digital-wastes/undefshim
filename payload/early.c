@@ -42,7 +42,7 @@ bool usPayloadEarly(void) {
     return true;
 }
 
-/* What the last successful lookup produced, per slot. */
+/* What the last successful lookup produced, per slot */
 static uint64_t gLandingVbar[US_STUB_SLOT_COUNT];
 static uint64_t gLanding[US_STUB_SLOT_COUNT];
 
@@ -58,9 +58,9 @@ bool usPayloadSlotTail(uint64_t vbar, uint64_t spsr, uint64_t *tail) {
     /*
      * Which table VBAR names, asked of the translation - and if that cannot
      * answer, the answer it gave last time. The vector table does not move,
-     * and AT has been wrong in this environment before: refusing here stops a
-     * processor on the payload's own halt, which the kernel sees as a CPU that
-     * stopped answering, so a stale-but-known answer is the better one.
+     * and refusing here stops a processor on the payload's own halt, which
+     * the kernel sees as a CPU that stopped answering, so a stale-but-known
+     * answer is the better one
      */
     static uint64_t lastTablePa;
 
@@ -78,7 +78,7 @@ bool usPayloadSlotTail(uint64_t vbar, uint64_t spsr, uint64_t *tail) {
      * The table is the one VBAR names, told apart by physical address rather
      * than by an assumed delta, and the slot is the one the interrupted SPSR
      * selects. Both tables carry both slots, so the pair is what identifies a
-     * stub.
+     * stub
      */
     for (uint64_t i = 0; i < cfg->stubCount; i++) {
         const UsPayloadStub *stub = &cfg->stubs[i];
@@ -106,7 +106,7 @@ bool usPayloadSlotTail(uint64_t vbar, uint64_t spsr, uint64_t *tail) {
      * the attempt answers, and answering "no destination" stops a processor
      * the kernel is waiting on. AT has been wrong in this environment
      * before - see the handover note in status.md - and the identity of the
-     * image and the slot was settled above by physical address and SPSR.
+     * image and the slot was settled above by physical address and SPSR
      */
     (void)at;
     /*
@@ -116,7 +116,7 @@ bool usPayloadSlotTail(uint64_t vbar, uint64_t spsr, uint64_t *tail) {
      * the processor - which the kernel sees as a processor that has stopped
      * answering, and then waits for it forever. The same VBAR gives the same
      * answer, so an answer already worked out for it is as good as the one
-     * this call could not produce.
+     * this call could not produce
      */
     gLandingVbar[which] = vbar;
     gLanding[which] = stubVa + (uint64_t)usSlotStubTailIndex(which) * 4U;
@@ -127,7 +127,7 @@ bool usPayloadSlotTail(uint64_t vbar, uint64_t spsr, uint64_t *tail) {
 /*
  * The landing worked out for this table and slot before, if there is one. Used
  * when the identity of the table cannot be worked out now: the exception still
- * has to go somewhere, and the place it went last time is that place.
+ * has to go somewhere, and the place it went last time is that place
  */
 bool usPayloadSlotTailCached(uint64_t vbar, uint64_t spsr, uint64_t *tail) {
     UsStubSlot which = usSlotOfSpsr(spsr);
@@ -141,14 +141,14 @@ bool usPayloadSlotTailCached(uint64_t vbar, uint64_t spsr, uint64_t *tail) {
 }
 
 /*
- * The last landing worked out for this slot, whatever table it was for.
+ * The last landing worked out for this slot, whatever table it was for
  *
  * This is the answer of last resort, and it is worse than the one above: the
  * handler it names may belong to another image's table. It is still better
  * than the alternative, which is a processor that stops and is waited for
  * forever - the kernel has no way to know an exception was never delivered,
  * and a machine that keeps running with the wrong handler fails where it can
- * be seen.
+ * be seen
  */
 bool usPayloadSlotTailLast(uint64_t spsr, uint64_t *tail) {
     UsStubSlot which = usSlotOfSpsr(spsr);

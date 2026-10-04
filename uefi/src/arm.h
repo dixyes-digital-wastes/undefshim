@@ -1,5 +1,5 @@
 /*
- * Taking over the handover to the kernel.
+ * Taking over the handover to the kernel
  *
  * The loader branches to the kernel from a fixed place, and the last thing it
  * does with the kernel's entry point is put it in a register. Replacing that
@@ -14,11 +14,11 @@
  * The replacement is a branch to padding the loader leaves in its own code,
  * where the stub goes. That padding exists and is reachable, which is what
  * makes this work without a trampoline somewhere else and without needing to
- * know where the kernel will end up.
+ * know where the kernel will end up
  *
  * What this does NOT do is decide the payload's address after the switch:
  * that is the payload's own job, done while it runs here. See transfer.c on
- * the payload side.
+ * the payload side
  */
 
 #ifndef US_ARM_H
@@ -29,25 +29,25 @@
 #include "uefi/src/session.h"
 
 /*
- * Puts the handover stub in place, with the loader's branch redirected to it.
+ * Puts the handover stub in place, with the loader's branch redirected to it
  *
  * Returns false when the loader cannot be prepared, which is a fact worth
  * reporting: nothing later will work, and the boot will otherwise look
- * normal while nothing of ours ever runs.
+ * normal while nothing of ours ever runs
  */
 bool usArmTransfer(UsSession *session);
 
 /*
- * Draws the exception path into the payload.
+ * Draws the exception path into the payload
  *
  * The loader's vector table is what is in force when the kernel first
  * executes an instruction this hardware does not have, so its synchronous
  * slot is where the shim has to be reachable from. Tables are found by
  * following what the writes of VBAR_EL1 load, and only a slot that is still
- * a branch to itself is written: anything else is a handler that works.
+ * a branch to itself is written: anything else is a handler that works
  *
  * Returns false when no slot was taken over, which means the shim cannot be
- * reached and the boot will fail the same way it did before.
+ * reached and the boot will fail the same way it did before
  */
 bool usArmVectorTable(UsSession *session);
 

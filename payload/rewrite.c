@@ -1,18 +1,17 @@
 /*
- * Replacing an RCpc load where it stands, on the exception that trapped on it.
+ * Replacing an RCpc load where it stands, on the exception that trapped on it
  *
  * Carrying out the load on every exception is correct and far too slow. An
- * exception to EL1 costs a few microseconds under emulation and a few
- * nanoseconds on the hardware being stood in for, and the kernel reads an
- * LDAPR inside its own spin loops: the measured amplification is four orders
- * of magnitude, which is the difference between a boot that finishes and one
- * that never reaches the desktop.
+ * exception to EL1 costs orders of magnitude more than the load it stands in
+ * for, and the kernel reads an LDAPR inside its own spin loops, so the
+ * difference is between a boot that finishes and one that never reaches the
+ * desktop
  *
  * So the instruction is replaced the first time it is trapped on. The
  * substitute is the acquire load with the same operands (core/ldapr.h), which
  * is at least as strong an ordering as the RCpc load and runs at the same
  * privilege level, so the permission the page had is the permission the
- * substitute runs with and nothing has to be emulated afterwards.
+ * substitute runs with and nothing has to be emulated afterwards
  *
  * The obstacle is that the page is read-only: the kernel's own text is mapped
  * that way, and a store into it faults. What can make it writable is the
@@ -22,12 +21,12 @@
  * is not a constant: it is the variable MmPteBase, whose address the image
  * tells us (see UsPayloadStub.descriptorBaseRva), and the literal the kernel's
  * own MiGetPteAddress uses is the x64 one, which on this 47-bit address space
- * does not translate at all.
+ * does not translate at all
  *
  * Every step that can be refused is refused safely. The stores go through the
  * probe in payload.h, so a mapping that does not allow one answers "no"
  * instead of becoming a fault inside a handler, and the site is left exactly
- * as it was: the trap path is still there, and it still works.
+ * as it was: the trap path is still there, and it still works
  */
 
 #include "core/ldapr.h"
@@ -37,18 +36,18 @@
 #include "payload/payload.h"
 #include "payload/rewrite.h"
 
-/* The base of the kernel's descriptor mapping, read once per machine. */
+/* The base of the kernel's descriptor mapping, read once per machine */
 static uint64_t gDescriptorBase;
 static bool     gDescriptorBaseTried;
 
 /* Whether a read the walk made was refused, which makes the answer unknown
- * rather than negative. */
+ * rather than negative */
 typedef struct UsRead_t {
     bool refused;
 } UsRead;
 
 /*
- * The stack bank the accesses that may fault are made under.
+ * The stack bank the accesses that may fault are made under
  *
  * A fault inside the payload is answered by the entry only when it is taken
  * through the EL1h slot: that stub is the one carrying the fault branch, and
@@ -56,20 +55,20 @@ typedef struct UsRead_t {
  * it was itself taken at EL1h. A kernel trap usually is not - the kernel runs
  * thread code on SP_EL0, so its code is at EL1t and so is the payload while it
  * handles it - and a fault taken at EL1t goes to the kernel's own handler,
- * which is not something a payload address can be reported to.
+ * which is not something a payload address can be reported to
  *
  * So the accesses are made with the other bank selected. SP_EL1 is set below
  * the stack in use rather than at its top, because the frames of the handler
  * are live there and a second stack growing down from the same top would write
  * over them. Nothing else uses this bank, and interrupts are masked from the
- * entry onwards, so the switch is the only thing that has to be right.
+ * entry onwards, so the switch is the only thing that has to be right
  */
 typedef struct UsProbeBank_t {
     uint64_t restoreSp;   /* zero when no switch was made */
 } UsProbeBank;
 
 /* How far below the stack in use the probing stack starts. Enough for the few
- * frames these calls need, and far inside the 16KB the CPU has. */
+ * frames these calls need, and far inside the 16KB the CPU has */
 #define US_PROBE_STACK_BYTES 0x1000U
 
 static UsProbeBank probeBankEnter(void) {
@@ -83,7 +82,7 @@ static UsProbeBank probeBankEnter(void) {
     }
     __asm__ volatile("mov %0, sp" : "=r"(sp));
     /* The bank just selected may hold anything at all; it is pointed somewhere
-     * safe before anything is pushed, and no memory is touched in between. */
+     * safe before anything is pushed, and no memory is touched in between */
     __asm__ volatile("msr spsel, #1" ::: "memory");
     __asm__ volatile("mov sp, %0" ::"r"(sp - US_PROBE_STACK_BYTES));
     bank.restoreSp = sp;
@@ -116,12 +115,12 @@ static uint64_t readProbed(void *ctx, uint64_t at) {
 }
 
 /*
- * Where the kernel keeps its descriptor base.
+ * Where the kernel keeps its descriptor base
  *
  * The value is checked before it is used: the base of a mapping is canonical
  * in the kernel half and aligned to the region it describes, and anything else
  * is not it. A wrong base would only ever be read from, and the reads are
- * refused safely, so being wrong here costs a rewrite rather than a machine.
+ * refused safely, so being wrong here costs a rewrite rather than a machine
  */
 static uint64_t descriptorBase(uint64_t *triedOut, uint64_t *valueOut) {
     UsPayloadConfig *cfg = usPayloadConfig();
@@ -144,12 +143,12 @@ static uint64_t descriptorBase(uint64_t *triedOut, uint64_t *valueOut) {
      * a base to offer. The rest of the stubs belong to other images, whose
      * base is not this one: the boot addresses a stub carries are turned into
      * runtime addresses by subtracting the difference between the two, and
-     * doing that with another image's table names an address in neither.
+     * doing that with another image's table names an address in neither
      *
      * The kernel takes its first traps before it has installed its own vector
      * table, so the table in force is sometimes the loader's. Those attempts
      * find nothing here, and that is the right answer: the site will trap
-     * again, and by then the table will be the kernel's.
+     * again, and by then the table will be the kernel's
      */
     (void)usTranslateAddress(vbar, false, &tablePa);
     if (tablePa == 0) {
@@ -171,7 +170,7 @@ static uint64_t descriptorBase(uint64_t *triedOut, uint64_t *valueOut) {
          * the addresses the kernel runs at once it has built its own tables.
          * What survives is the difference between them: the table VBAR names
          * is this image's table, so the image's base is that difference below
-         * it.
+         * it
          */
         imageVa = vbar - (stub->tableAddress - stub->imageAddress);
         *triedOut = imageVa + stub->descriptorBaseRva;
@@ -192,7 +191,7 @@ static uint64_t descriptorBase(uint64_t *triedOut, uint64_t *valueOut) {
 /* A change to a translation, and the fetch of an instruction that followed a
  * change to memory. Both are the sequences the architecture asks for; the
  * scope is inner shareable because the other processors are reading the same
- * tables and instructions. */
+ * tables and instructions */
 static void invalidateTranslation(uint64_t va) {
     uint64_t arg = va >> 12;
 
@@ -210,7 +209,7 @@ static void publishInstruction(uint64_t at) {
     __asm__ volatile("isb" ::: "memory");
 }
 
-/* The record the host reads, since nothing here can print. */
+/* The record the host reads, since nothing here can print */
 static UsPoolRewrite *attemptSlot(void) {
     UsPayloadConfig *cfg = usPayloadConfig();
     UsPool *pool;
@@ -222,7 +221,7 @@ static UsPoolRewrite *attemptSlot(void) {
     return &pool->entry.rewrite[pool->entry.rewriteCount % US_POOL_REWRITE_SLOTS];
 }
 
-/* How far this attempt has got, written into the slot it will end in. */
+/* How far this attempt has got, written into the slot it will end in */
 static void step(uint64_t site, uint64_t insn, uint64_t where) {
     UsPoolRewrite *slot = attemptSlot();
 
@@ -281,7 +280,7 @@ UsRewriteResult usRewriteSite(uint64_t site) {
 
     /*
      * Everything below this point reads and writes addresses whose mapping is
-     * not known in advance, so it runs on the bank whose faults come back.
+     * not known in advance, so it runs on the bank whose faults come back
      *
      * PAN goes off for the same stretch. The sites are as often in user code
      * as in the kernel - the demo this exists for is an EL0 program - and
@@ -291,7 +290,7 @@ UsRewriteResult usRewriteSite(uint64_t site) {
      * does when it copies to a user address. What PAN is left as does not
      * matter: the entry restores the interrupted state from the SPSR, and
      * sets PAN on the way out for a hand-back, which is what a real entry to
-     * EL1 does.
+     * EL1 does
      */
     bank = probeBankEnter();
     usPanOff();
@@ -300,7 +299,7 @@ UsRewriteResult usRewriteSite(uint64_t site) {
      * The instruction as it is now. A site another processor has already
      * replaced reads as the acquire load, and the only work left is this
      * processor's own stale copy: the caller has carried the load out, and
-     * the instruction has to be fetched again here.
+     * the instruction has to be fetched again here
      */
     if (!usPayloadProbeRead(site, &now)) {
         usPanOn();
@@ -359,7 +358,7 @@ UsRewriteResult usRewriteSite(uint64_t site) {
      * physical page the descriptor we are about to edit names. A wrong base
      * cannot pass this, and the attempt is abandoned exactly as it is when
      * there is no base at all, so a configuration written for another build
-     * costs nothing but the rewrite.
+     * costs nothing but the rewrite
      */
     {
         uint64_t hardwarePa = 0;
@@ -379,7 +378,7 @@ UsRewriteResult usRewriteSite(uint64_t site) {
      * The descriptor has to be writable for this to be possible at all, and
      * the page it lives on is a page table: the kernel writes those all the
      * time, so it normally is. The probe is the value it already holds, so a
-     * refusal leaves everything as it was.
+     * refusal leaves everything as it was
      */
     if ((original & US_PTE_AP2) != 0) {
         step(site, insn, UsRewriteProbing);
@@ -401,7 +400,7 @@ UsRewriteResult usRewriteSite(uint64_t site) {
     }
 
     /* The table changed, so this processor's translation of the site is stale
-     * and would still refuse the store. */
+     * and would still refuse the store */
     invalidateTranslation(site);
 
     step(site, insn, UsRewriteStoring);
@@ -418,7 +417,7 @@ UsRewriteResult usRewriteSite(uint64_t site) {
      * holds what this attempt put there, though: it belongs to the kernel, and
      * if the kernel has changed it in the meantime - these are the tables a
      * running system edits - then its value is the one to keep, and writing
-     * the old one back would undo its change.
+     * the old one back would undo its change
      */
     if (relaxed) {
         uint64_t underlying = 0;

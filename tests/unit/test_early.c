@@ -161,12 +161,12 @@ static void unchanged(const UsPayloadConfig *before) {
  * call that could not work it out again: a processor that stops because it
  * cannot name a destination is one the kernel waits for forever. The cache is
  * keyed by the table, so a different table is not served by another one's
- * answer.
+ * answer
  */
 static void testLandingCache(void) {
     uint64_t tail = 0;
 
-    /* Nothing is known before anything has been worked out. */
+    /* Nothing is known before anything has been worked out */
     assert(!usPayloadSlotTailCached(tableVa(0), 4U, &tail));
     assert(!usPayloadSlotTailCached(tableVa(0), 5U, &tail));
     assert(!usPayloadSlotTailCached(tableVa(0), 0U, &tail));
@@ -176,7 +176,7 @@ static void testLandingCache(void) {
     bool known[3] = { false, false, false };
     uint64_t worked[3] = { 0, 0, 0 };
 
-    /* Whatever this configuration can work out, it has to remember. */
+    /* Whatever this configuration can work out, it has to remember */
     for (unsigned i = 0; i < 3; i++) {
         if (usPayloadSlotTail(tableVa(i), spsr[i], &worked[i])) {
             known[i] = true;
@@ -184,12 +184,12 @@ static void testLandingCache(void) {
 
             assert(usPayloadSlotTailCached(tableVa(i), spsr[i], &cached));
             assert(cached == worked[i]);
-            /* Another slot's answer is not this slot's. */
+            /* Another slot's answer is not this slot's */
             assert(!usPayloadSlotTailCached(tableVa(i), spsr[(i + 1) % 3], &cached));
         }
     }
     assert(known[0] || known[1] || known[2]);
-    /* Nor is another table's. */
+    /* Nor is another table's */
     uint64_t cached = 0;
     assert(!usPayloadSlotTailCached(0xdead000, spsr[0], &cached));
     printf("landing cache: works out once, remembers per table and slot\n");

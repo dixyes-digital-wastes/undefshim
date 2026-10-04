@@ -1,9 +1,9 @@
 /*
- * Checks for the configuration loader.
+ * Checks for the configuration loader
  *
  * The loader is where unsupported values are rejected, so most of what is
  * tested here is that a bad document fails loudly instead of yielding a half
- * applied configuration.
+ * applied configuration
  */
 
 #include <stdio.h>
@@ -38,7 +38,7 @@ static void eqStr(const char *name, const char *got, const char *want) {
     }
 }
 
-/* Parses and asserts the document is accepted. */
+/* Parses and asserts the document is accepted */
 static UsConfig *accept(const char *name, const char *doc) {
     char err[256] = { 0 };
     UsConfig *c = usConfigParse(doc, strlen(doc), err, sizeof(err));
@@ -50,7 +50,7 @@ static UsConfig *accept(const char *name, const char *doc) {
     return c;
 }
 
-/* Parses and asserts the document is rejected, returning the message. */
+/* Parses and asserts the document is rejected, returning the message */
 static void reject(const char *name, const char *doc) {
     char err[256] = { 0 };
     UsConfig *c = usConfigParse(doc, strlen(doc), err, sizeof(err));
@@ -69,7 +69,7 @@ static void reject(const char *name, const char *doc) {
 }
 
 static void testDefaults(void) {
-    /* An empty document is how "no configuration file" is expressed. */
+    /* An empty document is how "no configuration file" is expressed */
     UsConfig *c = accept("empty", "");
     if (c == NULL) {
         return;
@@ -146,7 +146,7 @@ static void testShippedShape(void) {
 
 static void testRejections(void) {
     /* A value the parser cannot type is exactly what the loader must catch,
-     * which is how the floating point and date cases are stopped. */
+     * which is how the floating point and date cases are stopped */
     reject("float level", "[log]\nlevel = 1.5\n");
     reject("date level", "[log]\nlevel = 2024-01-02\n");
     reject("int level", "[log]\nlevel = 3\n");
@@ -157,7 +157,7 @@ static void testRejections(void) {
     reject("bad uart width", "[uart]\nbaseAddr = 0x9000000\nwidth = 16\n");
     reject("bad uart base", "[uart]\nbaseAddr = 0\n");
     /* A type with no base address is a table that says nothing: the serial
-     * output stays off rather than the file being refused. */
+     * output stays off rather than the file being refused */
     {
         UsConfig *c = accept("uart type without base", "[uart]\ntype = \"pl011\"\n");
 
@@ -181,7 +181,7 @@ static void testRejections(void) {
 
 static void testWidths(void) {
     /* Every supported width, including the boundary value that still fits and
-     * a negative literal for an all ones 64 bit pattern. */
+     * a negative literal for an all ones 64 bit pattern */
     UsConfig *c = accept("widths",
         "[[debug.patch]]\ntarget = \"a\"\nrva = 0\nvalue = 0xff\nwidth = 1\n"
         "[[debug.patch]]\ntarget = \"b\"\nrva = 1\nvalue = 0xffff\nwidth = 2\n"

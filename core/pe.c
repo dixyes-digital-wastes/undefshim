@@ -1,11 +1,11 @@
 /*
- * ARM64 PE images, see pe.h for the contract.
+ * ARM64 PE images, see pe.h for the contract
  */
 
 #include "core/pe.h"
 
 /* File offsets of the few header fields that have to be read before the
- * section table is known. */
+ * section table is known */
 #define PE_OFF_DOS_PE_RVA 0x3CU
 #define PE_SIG_LEN 4U
 
@@ -114,7 +114,7 @@ static bool readHeaders(UsImage *img) {
     oh.numberOfDirectories = rd32(b + optOffset + 108);
 
     /* The data directories follow the fixed part of the optional header:
-     * 112 bytes of fields, then one 8 byte pair per directory. */
+     * 112 bytes of fields, then one 8 byte pair per directory */
     uint32_t directories = oh.numberOfDirectories;
     if (directories > US_PE_MAX_DIRECTORIES) {
         directories = US_PE_MAX_DIRECTORIES;
@@ -182,7 +182,7 @@ bool usImageInitFile(UsImage *img, const void *data, size_t size) {
     }
 
     /* In a file view every section must lie inside the bytes we hold,
-     * otherwise a later lookup could walk off the end. */
+     * otherwise a later lookup could walk off the end */
     for (uint16_t i = 0; i < img->sectionCount; i++) {
         const UsPeSection *s = &img->sections[i];
         if (s->rawSize == 0) {
@@ -209,7 +209,7 @@ bool usImageInitMemory(UsImage *img, const void *data, size_t size) {
     if (!readHeaders(img)) {
         return false;
     }
-    /* A loaded image is at least as large as the headers it claims. */
+    /* A loaded image is at least as large as the headers it claims */
     if (img->sizeOfImage > size) {
         return false;
     }
@@ -321,7 +321,7 @@ bool usImageHasSection(const UsImage *img, const char *name) {
  * The exception directory. AArch64 RUNTIME_FUNCTION is two uint32 fields,
  * start RVA and unwind data RVA, and the table is sorted by start address,
  * which is what lets the lookup below be a binary search rather than a scan
- * of tens of thousands of entries.
+ * of tens of thousands of entries
  */
 #define US_PDATA_ENTRY_SIZE 8U
 
@@ -381,7 +381,7 @@ bool usImageIsFunctionStart(UsImage *img, uint32_t rva) {
     return false;
 }
 
-/* Byte search inside the image, used by the classifier. */
+/* Byte search inside the image, used by the classifier */
 static bool imageContains(const UsImage *img, const uint8_t *needle, size_t needleLen) {
     if (needleLen == 0 || img->size < needleLen) {
         return false;
@@ -422,7 +422,7 @@ UsImageKind usImageClassify(const UsImage *img) {
      * INITKDBG and the PAGE family come from the kernel's linker script and
      * appear in no boot loader; OSLOADER.XSL is a load option winload must
      * carry, and it is how winload is told apart from a kernel, which also
-     * has PAGE.
+     * has PAGE
      *
      * bootmgfw is deliberately not identified here. It is the image the
      * firmware was asked to load, so its identity comes from the protocol
@@ -452,7 +452,7 @@ const char *usImageKindName(UsImageKind kind) {
     }
 }
 
-/* Images are mapped page aligned, so a header can only ever start on a page. */
+/* Images are mapped page aligned, so a header can only ever start on a page */
 #define US_PE_SCAN_STEP 4096U
 
 int usPeScanRegion(const uint8_t *base, size_t size, UsImageVisitor visit, void *ctx) {
@@ -468,7 +468,7 @@ int usPeScanRegion(const uint8_t *base, size_t size, UsImageVisitor visit, void 
         UsImageKind kind;
 
         /* The cheapest test there is, and it rejects almost everything: only
-         * then is it worth validating a whole header. */
+         * then is it worth validating a whole header */
         if (rd16(candidate) != US_PE_DOS_MAGIC) {
             continue;
         }
@@ -479,7 +479,7 @@ int usPeScanRegion(const uint8_t *base, size_t size, UsImageVisitor visit, void 
         kind = usImageClassify(&img);
         if (kind == UsImageUnknown) {
             /* A PE that is neither of the stages we look for. There are many
-             * in memory, and reporting them would drown the signal. */
+             * in memory, and reporting them would drown the signal */
             continue;
         }
 

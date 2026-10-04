@@ -1,15 +1,15 @@
 /*
- * The machine's processor list, from the firmware's own description.
+ * The machine's processor list, from the firmware's own description
  *
  * The payload indexes everything it keeps per CPU by an index, and the
  * obvious source for one -- the low byte of MPIDR_EL1 -- is wrong: that byte
  * is the core within a cluster, so it repeats across clusters. ACPI describes
- * each processor and carries its MPIDR, which is what this reads.
+ * each processor and carries its MPIDR, which is what this reads
  *
  * The reading itself is in core/acpi.c, where it is a pure function over a
  * table and can be tested without a machine. All that is here is finding the
  * table: the firmware publishes a pointer to it in the configuration table,
- * under one of two guids depending on how old it is.
+ * under one of two guids depending on how old it is
  */
 
 #include <uefi.h>
@@ -21,7 +21,7 @@
 /*
  * The root pointer the firmware published. The newer guid is looked for
  * first: its table can describe a table anywhere, while the older one's
- * entries cannot reach past four gigabytes.
+ * entries cannot reach past four gigabytes
  */
 static const void *findRsdp(void) {
     static const efi_guid_t newer = ACPI_20_TABLE_GUID;

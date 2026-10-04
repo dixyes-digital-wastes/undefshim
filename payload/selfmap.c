@@ -1,5 +1,5 @@
 /*
- * Finding our own mapping, see selfmap.h.
+ * Finding our own mapping, see selfmap.h
  */
 
 #include "core/translate.h"
@@ -19,7 +19,7 @@ UsSelfMap usSelfMapFind(uint64_t targetPa, uint64_t targetBytes, uint64_t nearVa
      * A regime with the MMU off has nothing to translate and a translation
      * attempt there is not defined to answer anything useful. An address is
      * its own physical address, which is the answer, and saying so keeps the
-     * caller from having to know which kind of moment it is in.
+     * caller from having to know which kind of moment it is in
      */
     __asm__ volatile("mrs %0, sctlr_el1" : "=r"(sctlr));
     if ((sctlr & 1) == 0) {
@@ -32,7 +32,7 @@ UsSelfMap usSelfMapFind(uint64_t targetPa, uint64_t targetBytes, uint64_t nearVa
 
     /*
      * The window is placed relative to an address in the new space, so an
-     * anchor below it cannot produce one.
+     * anchor below it cannot produce one
      */
     if (nearVa < US_SELFMAP_WINDOW) {
         return out;
@@ -40,14 +40,12 @@ UsSelfMap usSelfMapFind(uint64_t targetPa, uint64_t targetBytes, uint64_t nearVa
 
     /*
      * The sweep is at page granularity, and that is not a refinement: it is
-     * the only granularity that works.
+     * the only granularity that works
      *
      * A region this size is not covered by a block entry, so it is mapped page
-     * by page, and its start has no reason to fall on a block boundary. An
-     * earlier version swept at block granularity and compared exact addresses,
-     * which can only match when the mapping happens to be aligned the same way
-     * at both ends: it found nothing, over the whole window, without a single
-     * failed translation to suggest anything was wrong.
+     * by page, and its start has no reason to fall on a block boundary. A
+     * sweep at block granularity that compared exact addresses would only
+     * match when the mapping is aligned the same way at both ends
      */
     base = (nearVa & ~(US_PAGE_SIZE - 1)) - US_SELFMAP_WINDOW;
 
@@ -71,7 +69,7 @@ UsSelfMap usSelfMapFind(uint64_t targetPa, uint64_t targetBytes, uint64_t nearVa
         /*
          * A page inside the target is mapped here. The first one found is the
          * answer: the search runs upwards, so it is the lowest address that
-         * reaches the region, and the rest of the region follows it.
+         * reaches the region, and the rest of the region follows it
          */
         out.found = true;
         out.va = va;

@@ -1,5 +1,5 @@
 /*
- * The patch list files the driver applies to an image before it runs.
+ * The patch list files the driver applies to an image before it runs
  *
  * One file describes one target:
  *
@@ -19,7 +19,7 @@
  * least significant byte first, the way the machine keeps it. Whitespace and
  * comments may appear between any two tokens, so the parse follows the
  * grammar rather than the lines. A site whose fields cannot describe a write
- * is left out and counted, not a reason to reject the file.
+ * is left out and counted, not a reason to reject the file
  *
  * The three lines above are matchers: a file may carry any of them, each at
  * most once, and whichever it carries has to agree with the image before a
@@ -27,7 +27,7 @@
  * what lets a list be written for a kernel with no program database (peFile
  * and the hash) or, better, for one that has (the uuid, which is the same in
  * the file and in memory). A file with none of them, or with two copies of
- * one, is refused whole: there would be nothing to check it against.
+ * one, is refused whole: there would be nothing to check it against
  */
 #ifndef US_PATCHLIST_H
 #define US_PATCHLIST_H
@@ -36,7 +36,7 @@
 #include <stdint.h>
 
 /* One instruction is four bytes; the format allows up to a whole cache line,
- * which is what a future patch of something else might want. */
+ * which is what a future patch of something else might want */
 #define US_PATCH_MAX_WIDTH 16U
 
 typedef struct {
@@ -66,7 +66,7 @@ typedef struct {
     bool          hasHash;
     /* The build as the program database states it: the pair the image's own
      * CodeView record carries. Nothing relocates those bytes and the loader
-     * does not patch them, so they are the same in the file and in memory. */
+     * does not patch them, so they are the same in the file and in memory */
     uint8_t       pdbGuid[16];
     uint32_t      pdbAge;
     bool          hasPdbIdentity;
@@ -77,7 +77,7 @@ typedef struct {
 
 /*
  * Parse a whole file. The caller owns the site array; a file that parses is
- * rejected when it does not fit, rather than being applied in part.
+ * rejected when it does not fit, rather than being applied in part
  */
 UsPatchStatus usPatchParse(const char *text, uint32_t length, UsPatchSite *sites,
                            uint32_t capacity, UsPatchFile *out);
@@ -85,7 +85,7 @@ UsPatchStatus usPatchParse(const char *text, uint32_t length, UsPatchSite *sites
 /* Does this memory hold what the site says it should? */
 bool usPatchMatches(const UsPatchSite *site, const uint8_t *memory);
 
-/* Put the replacement there. */
+/* Put the replacement there */
 void usPatchWrite(const UsPatchSite *site, uint8_t *memory);
 
 #endif

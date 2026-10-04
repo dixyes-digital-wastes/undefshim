@@ -1,16 +1,16 @@
 /*
- * planprobe - print the plan for a pair of images, on the host.
+ * planprobe - print the plan for a pair of images, on the host
  *
  * The plan is built the same way here as it is in the driver, over a file
  * rather than over a loaded image, and printed through the same emitter. The
  * two dumps are expected to agree: the images differ in where they are and in
  * what surrounds them, but not in their RVAs, and the plan is expressed in
- * RVAs for exactly that reason.
+ * RVAs for exactly that reason
  *
  * That is what makes this a check rather than a convenience. A plan built
  * from a file exercises the same code the driver will run, in seconds,
  * without a boot; and when the driver's dump disagrees, the difference is
- * somewhere in how the image is read, not in what was decided about it.
+ * somewhere in how the image is read, not in what was decided about it
  *
  * Usage: planprobe <winload.efi> <ntoskrnl.exe>
  */

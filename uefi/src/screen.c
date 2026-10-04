@@ -1,5 +1,5 @@
 /*
- * Drawing on the screen, see screen.h for why it is not just the serial port.
+ * Drawing on the screen, see screen.h for why it is not just the serial port
  */
 
 #include <uefi.h>
@@ -11,7 +11,7 @@
  * The graphics output protocol, which the firmware headers here do not
  * declare: they carry the pixel formats and the GUID and say the rest is not
  * used. Only the mode is needed, and only the fields of it that say where the
- * frame buffer is and how wide it is.
+ * frame buffer is and how wide it is
  */
 typedef struct {
     uint32_t               Version;
@@ -39,7 +39,7 @@ typedef struct {
 } usGop;
 
 /* Two, so that a line of eighty characters fills a 1280 wide screen and the
- * text is readable without leaning in. */
+ * text is readable without leaning in */
 #define US_SCREEN_SCALE 2U
 #define US_SCREEN_LINE (US_FONT_HEIGHT * US_SCREEN_SCALE)
 
@@ -48,7 +48,7 @@ typedef struct {
  * its own console on the same screen, so what this driver says has to be
  * distinguishable at a glance from what everything else says. It also has the
  * useful property that both colours look the same whichever order the
- * channels are in, so the two 8 bit formats need no telling apart.
+ * channels are in, so the two 8 bit formats need no telling apart
  */
 #define US_SCREEN_INK 0x00000000U
 #define US_SCREEN_PAPER 0x00FFFFFFU
@@ -65,9 +65,7 @@ static bool gReady;
 
 static void putPixel(uint32_t x, uint32_t y, uint32_t value) {
     /* Bounded on purpose: a frame buffer smaller than the mode claims would
-     * otherwise be written past its end, which is a fault and not a picture.
-     * That is not hypothetical - an earlier version of this drew a line below
-     * the bottom of the screen and the machine stopped. */
+     * otherwise be written past its end, which is a fault and not a picture */
     if (x >= gWidth || y >= gHeight) {
         return;
     }
@@ -101,14 +99,14 @@ static void drawGlyph(char c, uint32_t x, uint32_t y) {
 
 /*
  * When the area is full, everything moves up a line and the last one is
- * cleared.
+ * cleared
  *
  * Clearing instead would be simpler and is what this did first, and it is
  * wrong for the same reason the whole screen exists: the message that matters
  * on an error path is the one just written, and a clear that runs after it
  * takes it away again. That is not hypothetical either - it is why the first
  * messages this driver wrote were missing from the screen while the last one
- * was there.
+ * was there
  */
 static void scrollUp(void) {
     uint32_t rows = gHeight - gTop - US_SCREEN_LINE;
@@ -143,7 +141,7 @@ void usScreenClear(void) {
         return;
     }
     /* Only the area this driver owns: the firmware's own text is above it and
-     * is none of our business. */
+     * is none of our business */
     for (uint32_t y = gTop; y < gHeight; y++) {
         for (uint32_t x = 0; x < gWidth; x++) {
             putPixel(x, y, US_SCREEN_PAPER);
@@ -163,7 +161,7 @@ void usScreenUseFrameBuffer(void *pixels, uint32_t width, uint32_t height,
      * The bottom half is this driver's. The firmware's console draws from the
      * top down, and sharing the top means the two keep overwriting each
      * other: a machine whose error is on a line that was drawn over is a
-     * machine with nothing to say.
+     * machine with nothing to say
      */
     gTop = gHeight / 2U;
     gColumn = 0;
@@ -187,7 +185,7 @@ bool usScreenInit(void) {
     }
     /* Only the two formats whose channels are eight bits wide are drawn on: a
      * bit mask or a blt-only mode would need a translation this does not
-     * have, and guessing at one would put unreadable pixels on the screen. */
+     * have, and guessing at one would put unreadable pixels on the screen */
     if (gGop->Mode->Info->PixelFormat != PixelRedGreenBlueReserved8BitPerColor
         && gGop->Mode->Info->PixelFormat != PixelBlueGreenRedReserved8BitPerColor) {
         return false;
@@ -214,7 +212,7 @@ void usScreenPutc(char c) {
     }
     if (c == '\r') {
         /* The console writes one of these before every newline. Carriage
-         * return means the start of the line, not a glyph nobody has. */
+         * return means the start of the line, not a glyph nobody has */
         gColumn = 0;
         return;
     }

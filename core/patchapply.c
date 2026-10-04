@@ -67,7 +67,7 @@ UsPatchApplyResult usPatchApplyMatched(const UsPatchFile *file, const UsPatchSit
 
     /* Whichever matchers the file carries have to agree; the ones it does not
      * carry are not asked about, which is what lets one format serve kernels
-     * that publish a program database and kernels that do not. */
+     * that publish a program database and kernels that do not */
     if (file->target != NULL) {
         if (matchers == NULL || matchers->imageName == NULL) {
             return UsPatchUnverifiable;
