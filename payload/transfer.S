@@ -1,23 +1,23 @@
 /*
- * The stub that runs where the loader hands over to the kernel.
+ * The stub that runs where the loader hands over to the kernel
  *
  * It is copied into a spare slot in the loader's own code, and the branch that
  * used to go to the kernel is pointed at it. From there it calls into the
- * payload and then continues to the kernel exactly as the loader would have.
+ * payload and then continues to the kernel exactly as the loader would have
  *
  * This is the one moment where both the old and the new address space are
  * live: the pool is still reachable at its boot address, and the tables that
  * describe where it will end up have already been built. That is why the work
- * is done here and nowhere else.
+ * is done here and nowhere else
  *
- * Registers.
+ * Registers
  *
  * The kernel entry is about to be reached, and it receives whatever the
  * loader had arranged. Two of those are not recoverable if this stub damages
  * them: x0, which is the argument the loader prepared at the instruction
  * before the branch, and x20, which is the entry point itself and is what the
  * stub branches to when it is finished. Neither can be left to the calling
- * convention, because this is not a call.
+ * convention, because this is not a call
  *
  *   saved here      x0-x18, x30   - the argument, and everything the payload
  *                                   is allowed to clobber, and the link
@@ -27,12 +27,12 @@
  *
  * Sixteen registers would not fit in the slot; twenty do. x30 is paired with
  * x18 rather than given its own slot, which is what makes the count come out
- * even.
+ * even
  *
  * The target address is a literal at the end, filled in by the boot once it
  * knows where the payload has been placed. It is read through a register
  * rather than branched to directly: the payload is nowhere near the loader,
- * and a direct branch only reaches 128 MB.
+ * and a direct branch only reaches 128 MB
  */
 
     .text
@@ -52,14 +52,14 @@ usTransferStub:
     stp     x16, x17, [sp, #-16]!
     stp     x18, x30, [sp, #-16]!
 
-    /* The payload entry, as placed. */
+    /* The payload entry, as placed */
     ldr     x16, usTransferTarget
     /*
      * The loader's argument, which is what the kernel is started with. It is
      * the `LOADER_PARAMETER_BLOCK`, and the loader's own list of what it
      * mapped hangs off it -- including where ntoskrnl ended up. It was pushed
      * first, so it sits above everything else the stub saved: ten pairs down
-     * from the current SP.
+     * from the current SP
      */
     ldr     x1, [sp, #144]
     mov     x0, x20                 /* the kernel entry, for the payload */
@@ -76,12 +76,12 @@ usTransferStub:
     ldp     x2, x3, [sp], #16
     ldp     x0, x1, [sp], #16
 
-    /* Exactly what was here before: the kernel's entry point, in x20. */
+    /* Exactly what was here before: the kernel's entry point, in x20 */
     br      x20
 
     /*
      * Where the payload is. The boot writes this after copying the stub, and
-     * it is the only thing in the stub that is not decided here.
+     * it is the only thing in the stub that is not decided here
      */
     .balign 8
     .globl usTransferTarget

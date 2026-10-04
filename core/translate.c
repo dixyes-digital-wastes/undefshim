@@ -1,5 +1,5 @@
 /*
- * Asking the hardware to translate an address, see translate.h.
+ * Asking the hardware to translate an address, see translate.h
  *
  * Two questions are answered here and they are not the same one. The first is
  * "where does the EL1&0 regime put this address", which is what the kernel
@@ -8,12 +8,12 @@
  * actually reaches, and at the boot the two disagree: the boot runs at EL2
  * under a translation regime that maps physical memory to itself, while the
  * EL1&0 tables are already the kernel's and no longer hold an image at the
- * address the loader put it at.
+ * address the loader put it at
  *
  * AT S1E1R/W answers the first question at any exception level. AT S1E2R/W
  * answers the second from EL2 without VHE, and is not available from EL1, so
  * a caller at EL1 asking about its own access gets the EL1&0 answer, which is
- * the same thing there.
+ * the same thing there
  */
 
 #include "core/translate.h"
@@ -21,7 +21,7 @@
 #include "common/layout.h"
 #include "core/par.h"
 
-/* HCR_EL2.E2H: EL2 shares the EL1&0 translation regime (VHE). */
+/* HCR_EL2.E2H: EL2 shares the EL1&0 translation regime (VHE) */
 #define US_HCR_E2H (1ULL << 34)
 
 static bool queryAt(uint64_t va, bool write, bool el2, uint64_t *pa) {
@@ -53,7 +53,7 @@ static bool queryAt(uint64_t va, bool write, bool el2, uint64_t *pa) {
     if (!decoded.valid) {
         return false;
     }
-    /* The low bits of the page are the virtual address's own. */
+    /* The low bits of the page are the virtual address's own */
     *pa = decoded.pa | (va & (US_PAGE_SIZE - 1));
     return true;
 }

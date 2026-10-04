@@ -1,5 +1,5 @@
 /*
- * Runtime configuration, see cfg.h for the contract.
+ * Runtime configuration, see cfg.h for the contract
  */
 
 #include <stdlib.h>
@@ -36,7 +36,7 @@ static void setErrKey(char *err, size_t errLen, const char *what, const char *ke
 }
 
 /* Presence test: non-NULL for every value kind, including ones the typed
- * accessors cannot represent. */
+ * accessors cannot represent */
 static bool sameStr(const char *text, int length, const char *wanted) {
     int i = 0;
 
@@ -54,7 +54,7 @@ static bool cfgHas(const toml_table_t *t, const char *key) {
 
 /* Each returns true when the key is absent, so callers can keep their default
  * with a plain if and still get a hard failure on a present but unusable
- * value. */
+ * value */
 static bool cfgBool(const toml_table_t *t, const char *key, bool *out, char *err, size_t errLen) {
     if (!cfgHas(t, key)) {
         return true;
@@ -98,7 +98,7 @@ static bool cfgStr(const toml_table_t *t, const char *key, const char **out, int
 
 /* The string accessors hand back a pointer into the document plus a length, so
  * comparisons have to respect the length: the byte after the value is the
- * closing quote, not a terminator. */
+ * closing quote, not a terminator */
 static bool refEq(const char *ref, int len, const char *literal) {
     int i = 0;
     for (; i < len && literal[i] != '\0'; i++) {
@@ -173,7 +173,7 @@ static bool parseOnePatch(const toml_table_t *t, uint32_t index, UsPatch *out, c
         return false;
     }
     /* Taken as a bit pattern, so a negative literal is the readable way to ask
-     * for high bits set. */
+     * for high bits set */
     out->value = (uint64_t)n;
 
     snprintf(key, sizeof(key), "patch[%u].width", (unsigned)index);
@@ -191,7 +191,7 @@ static bool parseOnePatch(const toml_table_t *t, uint32_t index, UsPatch *out, c
     out->width = (uint8_t)n;
 
     /* The value has to fit the space it is written into, otherwise the write
-     * would silently drop the high bits. */
+     * would silently drop the high bits */
     if (out->width < 8 && (int64_t)out->value < 0) {
         snprintf(key, sizeof(key), "patch[%u].value", (unsigned)index);
         setErrKey(err, errLen, "negative value needs width 8: ", key);
@@ -273,7 +273,7 @@ UsConfig *usConfigParse(const char *text, size_t len, char *err, size_t errLen) 
     cfg->debugEnabled = false;
 
     /* toml_parse edits the buffer and keeps pointers into it, so it has to
-     * outlive the table. */
+     * outlive the table */
     cfg->text = malloc(len + 1);
     if (cfg->text == NULL) {
         setErr(err, errLen, "out of memory for the config text");
@@ -317,7 +317,7 @@ UsConfig *usConfigParse(const char *text, size_t len, char *err, size_t errLen) 
     }
     /* Replacing user-mode instructions where they stand is the default: it is
      * what makes a user-mode RCpc load stop taking an exception, and it is
-     * not something the kernel's integrity check has an opinion about. */
+     * not something the kernel's integrity check has an opinion about */
     cfg->el0InPlace = true;
     if (!cfgBool(scan, "el0InPlace", &cfg->el0InPlace, err, errLen)) {
         usConfigFree(cfg);
@@ -325,7 +325,7 @@ UsConfig *usConfigParse(const char *text, size_t len, char *err, size_t errLen) 
     }
 
     /* Where the handler's own count of trapping addresses is kept: off
-     * unless asked for, because it costs a lookup on every exception. */
+     * unless asked for, because it costs a lookup on every exception */
     cfg->statsEnabled = false;
     toml_table_t *stats = toml_table_table(cfg->root, "stats");
     if (!cfgBool(stats, "enabled", &cfg->statsEnabled, err, errLen)) {
@@ -363,7 +363,7 @@ UsConfig *usConfigParse(const char *text, size_t len, char *err, size_t errLen) 
      * Serial output, under a table of its own rather than under the kernel's:
      * the driver, the payload and anything reporting later all need it, and
      * none of them is the kernel. No base address means no serial output at
-     * all, which is how a machine says it wants silence.
+     * all, which is how a machine says it wants silence
      */
     cfg->hasUart = false;
     cfg->uartType = "pl011";

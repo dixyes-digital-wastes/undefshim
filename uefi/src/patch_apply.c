@@ -3,7 +3,7 @@
 #include "core/patchapply.h"
 #include "core/patchlist.h"
 
-/* Little endian fields, as they are in the image. */
+/* Little endian fields, as they are in the image */
 static uint32_t rd32le(const uint8_t *p) {
     return (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16)
            | ((uint32_t)p[3] << 24);
@@ -17,13 +17,13 @@ static uint32_t rd16le(const uint8_t *p) {
 #include "uefi/src/console.h"
 #include "uefi/src/patch_apply.h"
 
-/* A list this large is a mistake, not a list. */
+/* A list this large is a mistake, not a list */
 #define US_PATCH_FILE_MAX_BYTES (512U * 1024U)
 
 /*
  * A path that names the volume itself would have us read every file in the
  * root as a list. That is a typo, not an instruction, and it is refused here
- * rather than diagnosed later.
+ * rather than diagnosed later
  */
 static bool namesVolumeRoot(const char *path) {
     if (path[0] == '\0') {
@@ -69,7 +69,7 @@ static bool readFile(efi_file_handle_t *file, char **out, size_t *outLength) {
 /*
  * The bytes a list's addresses refer to: the raw part of the text section, as
  * it is in the file and as it is in memory, which for this image are the same
- * bytes at the same relative place.
+ * bytes at the same relative place
  */
 static uint8_t *imageText(UsImage *image, uint32_t *outBytes) {
     const UsPeSection *text = usImageFindSection(image, ".text");
@@ -81,7 +81,7 @@ static uint8_t *imageText(UsImage *image, uint32_t *outBytes) {
     return (uint8_t *)(uintptr_t)(image->base + text->virtualAddress);
 }
 
-/* Defined below, used by the application above it. */
+/* Defined below, used by the application above it */
 static void digestText(UsImage *image, uint8_t *code, uint32_t bytes, uint8_t out[32]);
 
 /*
@@ -89,7 +89,7 @@ static void digestText(UsImage *image, uint8_t *code, uint32_t bytes, uint8_t ou
  * CodeView entry holds the program database's GUID and age. Those bytes are
  * the same in the file and in memory - nothing relocates them and the loader
  * does not patch them - so a list written from the file can be checked
- * against the running image without ever having run it.
+ * against the running image without ever having run it
  */
 static bool imageIdentity(UsImage *image, UsPatchIdentity *out) {
     uint32_t size = 0;
@@ -169,7 +169,7 @@ static void applyOne(UsImage *image, const char *name, const char *text,
      * same, and a list written from the file names those too. So the range a
      * site is checked against is the whole image, and what keeps a write from
      * landing somewhere it should not is the match against the bytes already
-     * there, which every site carries.
+     * there, which every site carries
      */
     UsPatchApplyResult result = usPatchApplyMatched(&file, sites, &matchers, 0U,
                                                     (uint8_t *)(uintptr_t)image->base,
@@ -191,7 +191,7 @@ static void applyOne(UsImage *image, const char *name, const char *text,
 }
 
 /* Most a kernel's relocation table is going to hold. Anything past this is
- * not counted, which can only make the digest stricter, never wrong. */
+ * not counted, which can only make the digest stricter, never wrong */
 #define US_PATCH_MAX_RELOCATIONS 65536U
 
 static uint32_t relocations[US_PATCH_MAX_RELOCATIONS];
@@ -202,7 +202,7 @@ static uint32_t relocationCount;
  * relocation table names, so those bytes are a function of where the image
  * was loaded and differ from boot to boot. Everything else in the text is the
  * build. A digest that has to be the same every time therefore has to leave
- * them out, and it has to leave out exactly what the list's author did.
+ * them out, and it has to leave out exactly what the list's author did
  */
 static void collectRelocations(UsImage *image, uint32_t textRva, uint32_t textBytes) {
     uint32_t size = 0;
@@ -227,7 +227,7 @@ static void collectRelocations(UsImage *image, uint32_t textRva, uint32_t textBy
 
             /* Every target is skipped by the same width, whatever the entry
              * says it is: the two sides of the comparison only have to agree
-             * with each other, and a wider skip is the safer agreement. */
+             * with each other, and a wider skip is the safer agreement */
             (void)type;
             if (rva < textRva || rva >= textRva + textBytes) {
                 continue;
@@ -238,7 +238,7 @@ static void collectRelocations(UsImage *image, uint32_t textRva, uint32_t textBy
         }
         at += blockSize;
     }
-    /* Sorted, so the digest can be fed the gaps in one pass. */
+    /* Sorted, so the digest can be fed the gaps in one pass */
     for (uint32_t i = 1; i < relocationCount; i++) {
         uint32_t value = relocations[i];
         uint32_t j = i;
@@ -251,7 +251,7 @@ static void collectRelocations(UsImage *image, uint32_t textRva, uint32_t textBy
     }
 }
 
-/* The digest the driver prints and the lists carry. */
+/* The digest the driver prints and the lists carry */
 static void digestText(UsImage *image, uint8_t *code, uint32_t bytes, uint8_t out[32]) {
     UsSha256 ctx;
     uint32_t at = 0;
@@ -284,7 +284,7 @@ static void digestText(UsImage *image, uint8_t *code, uint32_t bytes, uint8_t ou
 /*
  * Printing the digest of the image's text is how a list gets written for this
  * build rather than for a file that looks like it: the two are not always the
- * same binary, and a list that says "another build" is the check working.
+ * same binary, and a list that says "another build" is the check working
  */
 static void reportTextHash(UsImage *image) {
     uint32_t bytes = 0;

@@ -1,13 +1,13 @@
 /*
- * layoutgen - turn the payload's structures into assembly constants.
+ * layoutgen - turn the payload's structures into assembly constants
  *
  * The frame is described once, in C, and both the handler and the assembly
  * entry have to agree on it. Keeping a second copy in the assembly is how the
  * two drift apart, and the failure is silent: the entry stores a register at
- * an offset the handler does not read.
+ * an offset the handler does not read
  *
  * So the offsets are printed from the structure that defines them. This runs
- * on the host, against the same header the payload is built with.
+ * on the host, against the same header the payload is built with
  *
  * Usage: layoutgen <output-file>
  */
@@ -33,7 +33,7 @@ static int emitFrame(FILE *f) {
     fprintf(f, "#define US_FRAME_ESR %zu\n", offsetof(UsFrame, esr));
     fprintf(f, "#define US_FRAME_FAR %zu\n", offsetof(UsFrame, far));
     /* Where the entry branches instead of returning, when the payload hands
-     * the exception to the kernel's own handler. */
+     * the exception to the kernel's own handler */
     fprintf(f, "#define US_FRAME_LANDING %zu\n", offsetof(UsFrame, landing));
 
     fprintf(f, "\n");
@@ -62,7 +62,7 @@ static int emitFrame(FILE *f) {
     fprintf(f, "#define US_STUB_TARGET %zu\n", offsetof(UsPayloadStub, targetIndex));
     fprintf(f, "#define US_STUB_PUBLISHED %zu\n", offsetof(UsPayloadStub, published));
 
-    /* One processor entry, as the entry's lookup walks it. */
+    /* One processor entry, as the entry's lookup walks it */
     fprintf(f, "#define US_CPU_STRIDE %zu\n", sizeof(UsPayloadCpu));
     fprintf(f, "#define US_CPU_INDEX %zu\n", offsetof(UsPayloadCpu, index));
 
@@ -71,18 +71,18 @@ static int emitFrame(FILE *f) {
      * than written into the assembly, where it was a second copy: the one in
      * C is a list of wanted fields, and that word is not a logical immediate
      * the instruction can carry, so the assembly had a different one that
-     * happened to work.
+     * happened to work
      */
     fprintf(f, "#define US_MPIDR_MASK 0x%llx\n",
             (unsigned long long)US_MPIDR_AFFINITY_MASK_LOGICAL);
 
     /* The entry asks whether the stack pointer it was given is already inside
      * this CPU's own stack, which is how a fault inside the payload is told
-     * from an exception of the interrupted code's. */
+     * from an exception of the interrupted code's */
     fprintf(f, "#define US_STACK_SIZE %u\n", US_STACK_SIZE);
 
     /* The room the entry takes to give the handler's registers back when the
-     * handler answers that the payload is to carry on where it was. */
+     * handler answers that the payload is to carry on where it was */
     fprintf(f, "#define US_FAULT_SPILL_BYTES %u\n", US_FAULT_SPILL_BYTES);
 
     return 0;

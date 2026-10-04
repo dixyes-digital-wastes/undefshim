@@ -2,7 +2,7 @@
  * SHA-256, for checking that a patch list was written for the binary it is
  * about to be applied to. The structure follows the implementation musl
  * carries: no allocation, no libc, usable from the driver and from the
- * payload.
+ * payload
  */
 #ifndef US_SHA256_H
 #define US_SHA256_H
@@ -22,7 +22,7 @@ void usSha256Init(UsSha256 *ctx);
 void usSha256Update(UsSha256 *ctx, const void *data, uint32_t length);
 void usSha256Final(UsSha256 *ctx, uint8_t out[US_SHA256_DIGEST]);
 
-/* The whole thing in one call, for short inputs. */
+/* The whole thing in one call, for short inputs */
 void usSha256(const void *data, uint32_t length, uint8_t out[US_SHA256_DIGEST]);
 
 #endif

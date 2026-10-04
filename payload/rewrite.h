@@ -1,9 +1,9 @@
 /*
- * Replacing an RCpc load where it stands, see rewrite.c.
+ * Replacing an RCpc load where it stands, see rewrite.c
  *
  * The question the caller has is only whether it happened: a site that was not
  * replaced is one that keeps trapping, which is what the handler already knows
- * how to answer.
+ * how to answer
  */
 
 #ifndef US_REWRITE_H
@@ -27,11 +27,11 @@ typedef enum UsRewriteResult_e {
     UsRewriteNotRcpc = 8,  /* what is there is neither an RCpc load nor its substitute */
 
     /*
-     * How far an attempt got, written as it goes rather than only at the end.
+     * How far an attempt got, written as it goes rather than only at the end
      *
      * An attempt that never finishes is the case this is for: the record it
      * left says which step it was on, and a machine that stopped there says
-     * more than one that stopped with no record at all.
+     * more than one that stopped with no record at all
      */
     UsRewriteReadingBase = 10,
     UsRewriteWalking = 11,
@@ -44,12 +44,12 @@ typedef enum UsRewriteResult_e {
 
 /*
  * Replaces the instruction at site if it is an RCpc load and its page can be
- * made writable for the one store that takes.
+ * made writable for the one store that takes
  *
  * site has to be four-byte aligned; it is the address of the instruction that
  * trapped. Nothing is changed unless the whole sequence can be carried out,
  * and a store the mapping refuses is answered rather than raised, so this can
- * be called from the handler without a failure here becoming a fault in one.
+ * be called from the handler without a failure here becoming a fault in one
  */
 UsRewriteResult usRewriteSite(uint64_t site);
 

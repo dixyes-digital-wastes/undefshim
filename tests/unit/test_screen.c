@@ -1,11 +1,9 @@
 /*
- * The screen drawer, so far as it can be checked without looking at a screen.
+ * The screen drawer, so far as it can be checked without looking at a screen
  *
- * What it draws was looked at by eye on a real machine and was right; what
- * went wrong there was a line drawn below the bottom of the screen, which
- * stopped the machine rather than spoiling the picture. That is what this
- * checks: that nothing is written outside the frame buffer, whatever it is
- * asked to draw, and that what it draws lands inside the area it claims.
+ * What this checks is that nothing is written outside the frame buffer,
+ * whatever it is asked to draw, and that what it draws lands inside the area
+ * it claims
  */
 
 #include <uefi.h>
@@ -16,7 +14,7 @@ int printf(const char *format, ...);
 #include "uefi/src/screen.h"
 
 /* usScreenInit looks the protocol up; this test sets the frame buffer itself
- * and never calls it, but the symbols have to exist for the linker. */
+ * and never calls it, but the symbols have to exist for the linker */
 efi_system_table_t *ST;
 efi_boot_services_t *BS;
 
@@ -26,7 +24,7 @@ efi_boot_services_t *BS;
  * write above the top or below the bottom lands somewhere that can be
  * noticed. The frame buffer itself has to be one contiguous block, which is
  * why this is a flat array and not a two dimensional one with a margin: the
- * drawer walks it by the stride it was given. */
+ * drawer walks it by the stride it was given */
 #define GUARD 0x5A5A5A5AU
 
 static uint32_t arena[(HEIGHT + 2U) * WIDTH];
@@ -55,7 +53,7 @@ static void fillGuards(void) {
     }
 }
 
-/* Some ink, and no ink, in the lower half where this driver draws. */
+/* Some ink, and no ink, in the lower half where this driver draws */
 static void checkDrawn(const char *what) {
     uint32_t ink = 0;
     uint32_t paper = 0;
@@ -93,7 +91,7 @@ int main(void) {
 
     printf("ready: %d\n", (int)usScreenReady());
     /* Long enough to wrap, and more lines than fit: the drawer has to clear
-     * rather than run off the bottom. */
+     * rather than run off the bottom */
     for (int i = 0; i < 20; i++) {
         usScreenPuts("the quick brown fox jumps over the lazy dog\n");
     }

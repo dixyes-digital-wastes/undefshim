@@ -1,5 +1,5 @@
 /*
- * The string and memory routines, see us_mem.h.
+ * The string and memory routines, see us_mem.h
  */
 
 #include "payload/us_mem.h"
@@ -19,7 +19,7 @@ void *memmove(void *dst, const void *src, size_t n) {
     const uint8_t *s = src;
 
     /* Overlapping and moving up means copying backwards, or the source is
-     * overwritten before it is read. */
+     * overwritten before it is read */
     if (d > s && d < s + n) {
         d += n;
         s += n;

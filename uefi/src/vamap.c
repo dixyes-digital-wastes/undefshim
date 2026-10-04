@@ -1,9 +1,9 @@
 /*
- * Catching the address change, see vamap.h.
+ * Catching the address change, see vamap.h
  *
  * The firmware's SetVirtualAddressMap is what carries the change, and calling
  * ConvertPointer from inside that call is the only way to be told where the
- * runtime memory went. Everything here exists to get at that one moment.
+ * runtime memory went. Everything here exists to get at that one moment
  */
 
 #include <uefi.h>
@@ -19,7 +19,7 @@
  * payload, and for the same reason: the change happens after the boot
  * services are gone, and by then the driver's own memory has been given back
  * and may be in use for something else. The blob is memory the OS keeps, and
- * the driver knows where it was placed, so the offset is all it needs.
+ * the driver knows where it was placed, so the offset is all it needs
  */
 static UsVaMapRecord *record(UsSession *session) {
     if (!session->payloadPlaced) {
@@ -48,7 +48,7 @@ bool usVaMapArm(UsSession *session) {
      * The notification has to be entered in the middle of the switch and is
      * therefore in the blob as well, for the same reason as the hook above,
      * and it is registered here because the services that create it are gone
-     * by the time the switch happens.
+     * by the time the switch happens
      */
     notify = (void *)(uintptr_t)(session->payloadPlace.baseVa + US_PAYLOAD_VAMAPNOTIFY_OFFSET);
     if (EFI_ERROR(BS->CreateEvent(EVT_SIGNAL_VIRTUAL_ADDRESS_CHANGE, TPL_NOTIFY,

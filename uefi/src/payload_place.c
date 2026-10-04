@@ -1,10 +1,10 @@
 /*
- * Placing the payload, see payload.h.
+ * Placing the payload, see payload.h
  */
 
 #include <uefi.h>
 
-/* Kept in step with payload/uart.h, which the driver does not include. */
+/* Kept in step with payload/uart.h, which the driver does not include */
 #define US_PAYLOAD_UART_PL011 1U
 #define US_PAYLOAD_UART_8250 2U
 
@@ -23,7 +23,7 @@
  * The payload is a blob, not an object this image is linked against, so it is
  * entered through pointers computed from where it was placed. That is also
  * the honest model: nothing about the payload is known at link time on the
- * driver's side, including whether it will be reachable from where it runs.
+ * driver's side, including whether it will be reachable from where it runs
  */
 typedef void (*UsSelfTestFn)(void);
 
@@ -31,7 +31,7 @@ typedef void (*UsSelfTestFn)(void);
  * Executable, and a class the OS keeps. Runtime services code is the only
  * memory the firmware offers with both properties, and it is the reason the
  * payload does not live in the data pool: that one is mapped non-executable,
- * correctly, because it holds stacks.
+ * correctly, because it holds stacks
  */
 #define US_PAYLOAD_MEMORY_TYPE EfiRuntimeServicesCode
 
@@ -40,7 +40,7 @@ static void writeConfig(const UsPayloadPlace *place, const UsSession *session) {
 
     /*
      * Where to report from, as the configuration states it: a base of zero
-     * means the payload stays silent, which is what leaving it out means.
+     * means the payload stays silent, which is what leaving it out means
      */
     cfg->uartBase = session->config != NULL && session->config->hasUart
                         ? session->config->uartBase
@@ -61,23 +61,23 @@ static void writeConfig(const UsPayloadPlace *place, const UsSession *session) {
     /*
      * Nothing to forward to yet. A zero here means an exception the payload
      * will not claim stops rather than being handed on, which is the right
-     * answer until there is somewhere to hand it to.
+     * answer until there is somewhere to hand it to
      */
     cfg->forwardTarget = 0;
 
     /* The trace of what happened goes here, and it has to survive the address
-     * space being rebuilt, which the pool does and the payload does not. */
+     * space being rebuilt, which the pool does and the payload does not */
     cfg->poolBase = (uint64_t)(uintptr_t)session->pool;
     session->pool->entry = (UsPoolEntry){ 0 };
 
     /*
      * Which processor is which. Without this the payload would have to use
      * the low byte of MPIDR_EL1, which is not unique across clusters, and two
-     * processors would share a landing pad and a stack.
+     * processors would share a landing pad and a stack
      *
      * A machine the firmware did not describe gets one entry, so there is
      * always at least the processor this ran on and the lookup never comes
-     * back empty on hardware that works.
+     * back empty on hardware that works
      */
     {
         uint64_t count = session->cpus.count;
@@ -85,18 +85,18 @@ static void writeConfig(const UsPayloadPlace *place, const UsSession *session) {
         for (uint64_t i = 0; i < count; i++) {
             cfg->cpus[i] = (UsPayloadCpu){ .mpidr = session->cpus.mpidr[i], .index = i };
         }
-        /* The end of the list, for the entry's lookup. */
+        /* The end of the list, for the entry's lookup */
         cfg->cpus[count] = (UsPayloadCpu){ .mpidr = 0, .index = ~(uint64_t)0 };
         cfg->cpuCount = count;
     }
 
     /*
-     * Silence from the moment the kernel is running.
+     * Silence from the moment the kernel is running
      *
      * The serial port is reachable during boot and is not after the kernel
      * builds its own page tables, where a write to it faults. Whether the
      * payload is entered in that state is not something it can find out by
-     * trying, so it is told.
+     * trying, so it is told
      */
     cfg->quiet = 1;
     cfg->el0InPlace = session->config != NULL && session->config->el0InPlace ? 1U : 0U;
@@ -110,7 +110,7 @@ bool usPayloadPlace(UsSession *session, UsPayloadPlace *out) {
     uint32_t lookup[US_STACK_LOOKUP_WORDS];
 
     /* A second call leaves the first placement alone: the addresses in it may
-     * already have been handed out. */
+     * already have been handed out */
     if (session->payloadPlaced) {
         *out = session->payloadPlace;
         return true;
@@ -143,13 +143,13 @@ bool usPayloadPlace(UsSession *session, UsPayloadPlace *out) {
      * The entry's bootstrap finds its own stack through generated code: one
      * match branch per processor the firmware described, keyed on the full
      * normalized affinity. Writing it here means the cpu list only has to be
-     * right once, at boot, instead of the blob carrying a fixed mapping.
+     * right once, at boot, instead of the blob carrying a fixed mapping
      */
     memcpy(dst + US_PAYLOAD_STACKLOOKUP_OFFSET, lookup, sizeof(lookup));
 
     /*
      * The copy just became instructions, and on AArch64 a store does not
-     * reach the instruction fetcher by itself.
+     * reach the instruction fetcher by itself
      */
     usCacheFlushRange(dst, US_PAYLOAD_BYTES);
 
@@ -190,13 +190,13 @@ void usPayloadReport(const UsSession *session) {
      * slot and cannot be entered from here, but the C part can, and it reports
      * through the configuration block the boot wrote: a silent answer means
      * the block was not written where the payload looks for it, which is the
-     * one thing about placement that is easy to get wrong.
+     * one thing about placement that is easy to get wrong
      */
     selfTest = (UsSelfTestFn)(uintptr_t)(place->baseVa + US_PAYLOAD_SELFTEST_OFFSET);
     selfTest();
 
     /* Printed last, on its own line: the deployment checks stop the machine
      * the moment they see a marker, and stopping on the payload's own output
-     * would cut it in half. */
+     * would cut it in half */
     usConsolePuts("US-M6-PAYLOAD\n");
 }

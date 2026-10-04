@@ -1,5 +1,5 @@
 /*
- * Writing bytes into a loaded image, see rva_patch.h for the contract.
+ * Writing bytes into a loaded image, see rva_patch.h for the contract
  */
 
 #include "core/rva_patch.h"
@@ -17,11 +17,11 @@ const char *usPatchResultName(UsPatchResult r) {
 }
 
 /*
- * The bytes a patch is made of, little endian.
+ * The bytes a patch is made of, little endian
  *
  * Order matters here in a way that is easy to get wrong: a patch written the
  * wrong way round still writes successfully, it just writes something else,
- * and the mistake only shows up as a crash much later.
+ * and the mistake only shows up as a crash much later
  */
 static void encodeLittleEndian(uint64_t value, uint8_t width, uint8_t *out) {
     for (uint8_t i = 0; i < width; i++) {

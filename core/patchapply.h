@@ -1,10 +1,10 @@
 /*
- * Putting a parsed patch list onto an image.
+ * Putting a parsed patch list onto an image
  *
  * The decisions live here, away from the file system, so they can be tested
  * on the host with a buffer standing in for an image: is this list for this
  * image, is it for this build of it, and does each site still hold what the
- * list says it should.
+ * list says it should
  */
 #ifndef US_PATCHAPPLY_H
 #define US_PATCHAPPLY_H
@@ -23,7 +23,7 @@ typedef enum {
 } UsPatchApplyResult;
 
 /* The build as the program database states it: what the image's own CodeView
- * record holds. */
+ * record holds */
 typedef struct {
     uint8_t  guid[16];
     uint32_t age;
@@ -32,7 +32,7 @@ typedef struct {
 /*
  * What the caller knows about the image, for the matchers a list may carry.
  * A NULL field means "cannot answer", and a list that asks a question nobody
- * can answer is refused rather than applied on trust.
+ * can answer is refused rather than applied on trust
  */
 typedef struct {
     const char            *imageName;   /* compared on the stem */
@@ -53,14 +53,14 @@ typedef struct {
 /*
  * Is the name in this list the image the caller is holding? The comparison is
  * on the stem, without case or extension, so "ntoskrnl" and "ntoskrnl.exe"
- * are the same image.
+ * are the same image
  */
 bool usPatchTargetMatches(const UsPatchFile *file, const char *imageName);
 
 /*
  * Check the hash and write every site that still matches. The text is written
  * in place; nothing is written for a site whose bytes are not what the list
- * says, and that is what refused counts.
+ * says, and that is what refused counts
  */
 UsPatchApplyResult usPatchApplyFile(const UsPatchFile *file, const UsPatchSite *sites,
                                     const char *imageName, uint32_t textRva,
@@ -69,7 +69,7 @@ UsPatchApplyResult usPatchApplyFile(const UsPatchFile *file, const UsPatchSite *
 
 /*
  * The same, with everything the caller knows: a list's matchers are checked
- * against these, and only the ones it carries are asked about.
+ * against these, and only the ones it carries are asked about
  */
 UsPatchApplyResult usPatchApplyMatched(const UsPatchFile *file, const UsPatchSite *sites,
                                        const UsPatchMatchers *matchers, uint32_t textRva,
@@ -80,7 +80,7 @@ UsPatchApplyResult usPatchApplyMatched(const UsPatchFile *file, const UsPatchSit
  * The same, with the digest of the text handed in rather than computed here.
  * A loaded image has had its addresses relocated, so the bytes that hold them
  * differ from boot to boot; the caller can leave those out of its digest and
- * still have something that identifies the build.
+ * still have something that identifies the build
  */
 UsPatchApplyResult usPatchApplyWithDigest(const UsPatchFile *file,
                                           const UsPatchSite *sites,

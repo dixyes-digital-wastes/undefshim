@@ -1,13 +1,13 @@
 /*
- * Checks for the RVA patch writer.
+ * Checks for the RVA patch writer
  *
  * The patch table is what gets a breakpoint into a stage that is not otherwise
  * instrumented, so what matters here is that the bytes land the right way
  * round at the address the RVA names. A patch written back to front still
- * writes successfully and only shows up as something inexplicable much later.
+ * writes successfully and only shows up as something inexplicable much later
  *
  * The image is built here rather than taken from a corpus, so the test runs
- * without the Windows binaries.
+ * without the Windows binaries
  */
 
 #include <stdio.h>
@@ -42,7 +42,7 @@ static void eqU64(const char *name, uint64_t got, uint64_t want) {
 static uint8_t gImage[IMAGE_SIZE];
 
 /* A minimal but valid ARM64 PE, in memory view, so the writer has something
- * to write into. Only the fields the reader looks at are set. */
+ * to write into. Only the fields the reader looks at are set */
 static void buildImage(void) {
     const uint32_t peOff = 0x80;
     const uint32_t optOff = peOff + 24;
@@ -82,7 +82,7 @@ static void testWrites(void) {
 
     ok("image is valid", usImageInitMemory(&img, gImage, sizeof(gImage)));
 
-    /* Four bytes, the width a branch needs. */
+    /* Four bytes, the width a branch needs */
     spec.rva = SECTION_RVA;
     spec.value = 0x14000000;  /* b . */
     spec.width = 4;
@@ -93,7 +93,7 @@ static void testWrites(void) {
     eqU64("four byte patch is little endian", *(uint32_t *)(gImage + SECTION_RVA),
           0x14000000U);
 
-    /* Each width has to write exactly the bytes it claims and no more. */
+    /* Each width has to write exactly the bytes it claims and no more */
     memset(gImage + SECTION_RVA, 0xAA, 8);
 
     spec.rva = SECTION_RVA;
@@ -126,7 +126,7 @@ static void testRefusals(void) {
     usImageInitMemory(&img, gImage, sizeof(gImage));
 
     /* Widths the writer does not implement must be refused rather than
-     * guessed at. */
+     * guessed at */
     spec.rva = SECTION_RVA;
     spec.width = 3;
     eqU64("three byte width is refused", usPatchApply(&img, &spec, &range), UsPatchBadWidth);
@@ -136,7 +136,7 @@ static void testRefusals(void) {
     eqU64("sixteen byte width is refused", usPatchApply(&img, &spec, &range), UsPatchBadWidth);
 
     /* Past the end of the image, including a patch that would only fit by
-     * running over it. */
+     * running over it */
     spec.width = 4;
     spec.rva = IMAGE_SIZE;
     eqU64("rva past the image is refused", usPatchApply(&img, &spec, &range),
@@ -149,7 +149,7 @@ static void testRefusals(void) {
           UsPatchOutOfRange);
 
     /* A memory view has no header area to speak of: address zero is not a
-     * place an image can be written at. */
+     * place an image can be written at */
     spec.rva = 0;
     eqU64("rva zero is refused", usPatchApply(&img, &spec, &range), UsPatchOutOfRange);
 }

@@ -1,11 +1,11 @@
 /*
- * The patch list parser, and the hash it checks files with.
+ * The patch list parser, and the hash it checks files with
  *
  * The rule this test exists for: odd input may be refused, and may leave a
  * site out, but it must never walk off the buffer or claim a site it did not
  * read. So besides the format's corners the parser is fed garbage, at the
  * end of the buffer as well, where an off-by-one shows up as a crash under
- * the sanitizers this is also built with.
+ * the sanitizers this is also built with
  */
 #include <assert.h>
 #include <stdio.h>
@@ -65,7 +65,7 @@ static void testSha256(void) {
           "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad" },
         { "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq", 56,
           "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1" },
-        /* One byte past a block, so the padding needs a block of its own. */
+        /* One byte past a block, so the padding needs a block of its own */
         { "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", 64,
           "ffe054fe7ae0cb6dc65c3af9b61d5209f439851db43d0ba5997337df154668eb" },
     };
@@ -82,7 +82,7 @@ static void testSha256(void) {
             failures++;
             printf("FAIL sha256 vector %u\n", i);
         }
-        /* Fed in pieces, the answer has to be the same. */
+        /* Fed in pieces, the answer has to be the same */
         usSha256Init(&ctx);
         for (uint32_t at = 0; at < vectors[i].length; at++) {
             usSha256Update(&ctx, vectors[i].text + at, 1);
@@ -96,7 +96,7 @@ static void testSha256(void) {
     }
 }
 
-/* A file that uses everything the format has. */
+/* A file that uses everything the format has */
 static const char *good =
     "# a list for one kernel\n"
     "\n"
@@ -112,7 +112,7 @@ static const char *good =
 static void testGood(void) {
     UsPatchSite sites[16];
     UsPatchFile file;
-    /* f8bfc3ea, as the four bytes at the address. */
+    /* f8bfc3ea, as the four bytes at the address */
     uint8_t memory[4] = { 0xea, 0xc3, 0xbf, 0xf8 };
     uint8_t digest[32];
 
@@ -156,9 +156,9 @@ static void testRefusals(void) {
         { "an empty file has no version", "", UsPatchUnsupported },
         { "and neither does a comment", "# nothing here\n", UsPatchUnsupported },
         { "a later version is refused", "USPATCHV2\n", UsPatchUnsupported },
-        /* No matcher at all is refused: there would be nothing to check. */
+        /* No matcher at all is refused: there would be nothing to check */
         { "a version and nothing else", "USPATCHV1\n", UsPatchNoMatchers },
-        /* A matcher twice is a bad file, not a coincidence to resolve. */
+        /* A matcher twice is a bad file, not a coincidence to resolve */
         { "two names",
           "USPATCHV1\npeFile ntoskrnl\npeFile winload\n", UsPatchDuplicate },
         { "two hashes",
@@ -170,7 +170,7 @@ static void testRefusals(void) {
         { "two uuids",
           "USPATCHV1\npdbUUID 00010203-0405-0607-0809-0a0b0c0d0e0f-1\n"
           "pdbUUID 00010203-0405-0607-0809-0a0b0c0d0e0f-2\n", UsPatchDuplicate },
-        /* One matcher on its own is enough to be checkable. */
+        /* One matcher on its own is enough to be checkable */
         { "a uuid alone is enough",
           "USPATCHV1\npdbUUID 00010203-0405-0607-0809-0a0b0c0d0e0f-1\n", UsPatchOk },
         { "a name alone is enough", "USPATCHV1\npeFile ntoskrnl\n", UsPatchOk },
@@ -195,7 +195,7 @@ static void testRefusals(void) {
     }
 }
 
-/* Sites whose shape is wrong are left out; the file still applies. */
+/* Sites whose shape is wrong are left out; the file still applies */
 static void testSkippedSites(void) {
     static const char *head =
         "USPATCHV1\npeFile ntoskrnl\ntextSHA256Hash "
@@ -208,7 +208,7 @@ static void testSkippedSites(void) {
     } cases[] = {
         { "an odd number of digits", "0x458b18 f8bfc3e c8dfffea\n", 0U, 1U },
         { "fields of different widths", "0x458b18 f8bfc3ea c8dfffea11\n", 0U, 1U },
-        /* Ten bytes is inside the limit, whatever the address. */
+        /* Ten bytes is inside the limit, whatever the address */
         { "a ten byte field",
           "0x458b18 f8bfc3eaf8bfc3eaf8 c8dfffeac8dfffeac8\n", 1U, 0U },
         { "an odd width", "0x458b19 f8bfc3 c8dfff\n", 1U, 0U },
@@ -220,7 +220,7 @@ static void testSkippedSites(void) {
         { "a good one after a bad one",
           "0x458b18 f8bfc3e c8dfffe\n0x458b18 f8bfc3ea c8dfffea\n", 1U, 1U },
         { "a two byte patch", "0x458b18 f8bf c8df\n", 1U, 0U },
-        /* The second address has no fields at all, so it is left out. */
+        /* The second address has no fields at all, so it is left out */
         { "an address with nothing after it",
           "0x458b18 cafebabe 0x1234\n", 1U, 1U },
         { "sixteen bytes are allowed",
@@ -262,7 +262,7 @@ static void testCapacity(void) {
          usPatchParse(text, at, sites, 2U, &file), UsPatchTooManySites);
 }
 
-/* Garbage in, a status out: never a crash, never a site nobody read. */
+/* Garbage in, a status out: never a crash, never a site nobody read */
 static void testGarbage(void) {
     UsPatchSite sites[4];
     UsPatchFile file;
@@ -294,7 +294,7 @@ static void testGarbage(void) {
         }
     }
 
-    /* Pieces of a valid file cut short at every length: the same rule. */
+    /* Pieces of a valid file cut short at every length: the same rule */
     for (uint32_t cut = 0; cut <= strlen(good); cut++) {
         memset(&file, 0, sizeof(file));
         (void)usPatchParse(good, cut, sites, 4U, &file);
@@ -304,7 +304,7 @@ static void testGarbage(void) {
 
 /*
  * Applying a list: which image it is for, which build of it, and whether the
- * bytes are still the ones the list was written against.
+ * bytes are still the ones the list was written against
  */
 static void testApply(void) {
     static const char *file =
@@ -341,7 +341,7 @@ static void testApply(void) {
     eq64("all four bytes of it", text[7], 0xc8U);
     eq64("and nothing else was touched", text[8], 9U);
 
-    /* The same list against another build: the hash says no. */
+    /* The same list against another build: the hash says no */
     text[0] = 0xff;
     memset(&stats, 0, sizeof(stats));
     eq32("another build is refused",
@@ -350,7 +350,7 @@ static void testApply(void) {
     eq32("and nothing is written for it", stats.applied, 0U);
     text[0] = 1;
 
-    /* Another image entirely. */
+    /* Another image entirely */
     memset(&stats, 0, sizeof(stats));
     eq32("another image is not this list's",
          usPatchApplyFile(&parsed, sites, "winload.efi", 0U, text, sizeof(text), &stats),

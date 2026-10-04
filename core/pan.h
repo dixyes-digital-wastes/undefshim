@@ -1,5 +1,5 @@
 /*
- * PAN, the state that keeps EL1 out of the pages EL0 is allowed to touch.
+ * PAN, the state that keeps EL1 out of the pages EL0 is allowed to touch
  *
  * It matters here because an exception entry to EL1 sets it and nothing about
  * the interrupted code's own value survives that: SCTLR_EL1.SPAN was found to
@@ -7,7 +7,7 @@
  * was interrupted had. The emulation of an LDAPR has to run with the
  * interrupted code's PAN, or a load of a user page that the kernel was
  * deliberately making succeeds instead comes back as a permission fault that
- * never happened on the hardware this is standing in for.
+ * never happened on the hardware this is standing in for
  *
  * PAN cannot be read. The way to learn the interrupted value is the SPSR of
  * the exception, bit 22; the way to set it is MSR PAN. The mnemonic cannot be
@@ -24,7 +24,7 @@
 
 #include <stdint.h>
 
-/* SPSR_EL1.PAN: the state the interrupted code was in. */
+/* SPSR_EL1.PAN: the state the interrupted code was in */
 #define US_SPSR_PAN (UINT64_C(1) << 22)
 
 #define US_PAN_SET_ON 0xD500419FU

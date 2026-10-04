@@ -1,14 +1,14 @@
 /*
- * undefshim boot service driver.
+ * undefshim boot service driver
  *
  * Loaded before the Windows boot manager runs. This is the smallest version
  * that proves the deployment path: it announces itself on the console and the
- * UART, then returns so the firmware keeps it resident.
+ * UART, then returns so the firmware keeps it resident
  *
  * Everything here prints through console.h, never printf. The shell starts
  * this driver on its own stack, and printf's formatted output path wants tens
  * of kilobytes of it; overflowing that stack corrupts firmware memory and the
- * boot then dies later, somewhere unrelated.
+ * boot then dies later, somewhere unrelated
  */
 
 #include <uefi.h>
@@ -25,7 +25,7 @@
 #include "uefi/src/session.h"
 #include "uefi/src/vamap.h"
 
-/* The driver's state. One instance, because there is one driver. */
+/* The driver's state. One instance, because there is one driver */
 static UsSession gSession;
 
 static void printConfig(const UsConfig *cfg) {
@@ -70,10 +70,10 @@ int main(int argc, char **argv) {
      * says where to say it: a machine that does not name a UART wants no
      * serial output at all, and until it is read the console stays silent.
      * That includes the report of a broken configuration, which is why the
-     * error path is going to have to write to the screen instead.
+     * error path is going to have to write to the screen instead
      */
     /* Before the configuration is read: a configuration that cannot be read
-     * is the case where the screen is the only way to say so. */
+     * is the case where the screen is the only way to say so */
     usScreenInit();
 
     result = usConfigLoad(&cfg, msg, sizeof(msg));
@@ -102,7 +102,7 @@ int main(int argc, char **argv) {
     usConsolePuts("US-M2-DONE\n");
 
     /* From here on the driver has to be resident to be useful, so this is
-     * where the work of staying in the loop starts. */
+     * where the work of staying in the loop starts */
     if (!usSessionInit(&gSession)) {
         usConsolePuts("session: no pool\n");
         usConsolePuts("US-M4-FAIL\n");
@@ -111,7 +111,7 @@ int main(int argc, char **argv) {
 
     /* After the session is initialised, which establishes its own defaults.
      * The switches that change what the boot does are debugging decisions
-     * like any other, so they come from the configuration file. */
+     * like any other, so they come from the configuration file */
     gSession.armEnabled = usConfigDebugBool(cfg, "arm", false);
     gSession.armSlot0 = usConfigDebugBool(cfg, "armSlot0", true);
     gSession.spxStack = usConfigDebugBool(cfg, "spxStack", false);
@@ -121,12 +121,12 @@ int main(int argc, char **argv) {
      * parsed into the configuration proper, under [scan]. Reading it here as
      * a debug key would silently override whatever the file said with the
      * default, which is how a check that turns the replacement off ended up
-     * running with it on.
+     * running with it on
      */
     gSession.ldaprRewrite = cfg->ldaprRewrite;
 
     /* Handed over rather than freed: the patch table names stages that are
-     * loaded long after this function has returned. */
+     * loaded long after this function has returned */
     gSession.config = cfg;
     usConsolePuts("pool: pa=");
     usConsolePutHex(gSession.poolAlloc.basePa);
@@ -146,7 +146,7 @@ int main(int argc, char **argv) {
 
     /* The payload goes into place before anything is armed against it: if it
      * cannot be placed there is nothing to enter, and every later step would
-     * be arming something that is not there. */
+     * be arming something that is not there */
     {
         UsPayloadPlace place;
 
@@ -166,7 +166,7 @@ int main(int argc, char **argv) {
     usConsolePuts("loadimage: hooked\n");
 
     /* winload and the kernel arrive without a protocol, so a point in the
-     * boot where they are both in memory has to be waited for. */
+     * boot where they are both in memory has to be waited for */
     if (!usGmmHookInstall(&gSession)) {
         usConsolePuts("gmm: hook failed\n");
         usConsolePuts("US-M4-FAIL\n");

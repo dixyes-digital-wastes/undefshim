@@ -1,6 +1,6 @@
 /*
  * Serial output, see console.h for why it is not just printf, and for why a
- * port that was not configured stays silent.
+ * port that was not configured stays silent
  */
 
 #include <uefi.h>
@@ -11,11 +11,11 @@
 /*
  * Both kinds are described by byte offsets from the port, which is how the
  * datasheets state them. The shift below is a separate thing: an 8250 on a 32
- * bit bus spaces its byte-wide registers a word apart, and nothing else does.
+ * bit bus spaces its byte-wide registers a word apart, and nothing else does
  *
  * The PL011's data register is where a byte goes and the flag register says whether
  * there is room, which has to be waited for or bytes are dropped when the
- * receiver is not being read.
+ * receiver is not being read
  */
 #define US_PL011_DR 0x00U
 #define US_PL011_FR 0x18U
@@ -27,7 +27,7 @@
 
 #define US_PL011_FR_TXFF (1U << 5)
 
-/* The 8250's registers, a byte apart, or a word apart on a 32 bit bus. */
+/* The 8250's registers, a byte apart, or a word apart on a 32 bit bus */
 #define US_8250_THR 0x00U
 #define US_8250_IER 0x01U
 #define US_8250_FCR 0x02U
@@ -74,7 +74,7 @@ static void bringUp(void) {
     /*
      * The 8250 gets its line settings and its FIFOs, and no baud change: the
      * divisor depends on a clock the configuration does not state, and
-     * writing one would break a port the firmware already set up correctly.
+     * writing one would break a port the firmware already set up correctly
      */
     writeReg(US_8250_IER, 0x00U);
     writeReg(US_8250_LCR, 0x03U); /* eight bits, no parity, one stop, no divisor latch */
@@ -103,13 +103,13 @@ void usConsolePutc(char c) {
     /*
      * The screen gets everything the serial port gets. It costs a few writes
      * to memory that is already mapped, and it is the only channel there is
-     * on a machine that asked for no serial output.
+     * on a machine that asked for no serial output
      */
     usScreenPutc(c);
     if (gKind == UsUartOff || gBase == 0) {
         return;
     }
-    /* Bounded spin: a wrong base address must not hang the boot. */
+    /* Bounded spin: a wrong base address must not hang the boot */
     for (uint32_t spin = 0; !roomToWrite() && spin < 1000000U; spin++) {
     }
     writeReg(gKind == UsUartPl011 ? US_PL011_DR : US_8250_THR, (uint32_t)(uint8_t)c);
@@ -126,7 +126,7 @@ void usConsolePuts(const char *s) {
 
 void usConsolePutHex(uint64_t value) {
     /* Sixteen characters and a counter: no frame to speak of, which is the
-     * whole point of not using printf here. */
+     * whole point of not using printf here */
     char digits[16];
     int n = 0;
 

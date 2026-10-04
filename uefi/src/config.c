@@ -1,23 +1,23 @@
 /*
- * Locates, reads and parses the configuration file.
+ * Locates, reads and parses the configuration file
  *
  * See config.h for the policy. Every step here can fail, and the failure
  * modes are deliberately distinct: no file is a normal outcome, a file that
- * will not parse is not.
+ * will not parse is not
  */
 
 #include <uefi.h>
 
 #include "uefi/src/config.h"
 
-/* A configuration this large is a mistake, not a configuration. */
+/* A configuration this large is a mistake, not a configuration */
 #define US_CONFIG_MAX_BYTES (64 * 1024)
 
 static char toLowerAscii(char c) {
     return (c >= 'A' && c <= 'Z') ? (char)(c + ('a' - 'A')) : c;
 }
 
-/* Case insensitive comparison of a firmware path against an ASCII literal. */
+/* Case insensitive comparison of a firmware path against an ASCII literal */
 static bool nameEq(const wchar_t *name, const char *literal) {
     size_t i = 0;
     for (; literal[i] != '\0'; i++) {
@@ -31,7 +31,7 @@ static bool nameEq(const wchar_t *name, const char *literal) {
 /*
  * The configuration file is us.toml, and US.TOM is the same name: it is a
  * valid 8.3 name already, so that is the spelling a case folding filesystem
- * or a tool that upper cases short names would show. nameEq folds case.
+ * or a tool that upper cases short names would show. nameEq folds case
  */
 static bool isConfigName(const wchar_t *name) {
     return nameEq(name, "us.toml");
@@ -53,7 +53,7 @@ static void dealloc(void *p) {
 
 /*
  * Reads a whole file into a freshly allocated, NUL terminated buffer. The
- * caller owns it.
+ * caller owns it
  */
 static char *readFile(efi_file_handle_t *file, size_t *outLen) {
     efi_guid_t infoGuid = EFI_FILE_INFO_GUID;
@@ -88,10 +88,10 @@ static char *readFile(efi_file_handle_t *file, size_t *outLen) {
 
 /*
  * Looks for the configuration file in one volume's root directory. Returns the
- * parsed config, or NULL when this volume has no candidate.
+ * parsed config, or NULL when this volume has no candidate
  */
 /* The volume the configuration was read from, so that a directory named in
- * it can be resolved next to it rather than guessed at. */
+ * it can be resolved next to it rather than guessed at */
 static efi_handle_t configVolume;
 
 efi_handle_t usConfigVolume(void) {
@@ -116,7 +116,7 @@ static UsConfig *tryVolume(efi_handle_t handle, char *msg, size_t msgLen) {
 
     /* Enumerating rather than opening a fixed list of names: the 8.3 name FAT
      * derives from the long name is not predictable, and the firmware may
-     * expose either form. */
+     * expose either form */
     for (;;) {
         uintn_t bufSize = sizeof(efi_file_info_t);
         efi_file_info_t info;
@@ -168,12 +168,12 @@ UsConfigLoad usConfigLoad(UsConfig **out, char *msg, size_t msgLen) {
     msg[0] = '\0';
 
     if (EFI_ERROR(BS->LocateHandleBuffer(ByProtocol, &sfsGuid, NULL, &count, &handles))) {
-        /* No simple file system at all: nothing to read, defaults apply. */
+        /* No simple file system at all: nothing to read, defaults apply */
         return UsConfigAbsent;
     }
 
     /* The volume the driver came from is tried first so that the common case
-     * does not depend on the order the firmware happens to report handles. */
+     * does not depend on the order the firmware happens to report handles */
     efi_handle_t preferred = LIP != NULL ? LIP->DeviceHandle : NULL;
 
     for (int pass = 0; pass < 2 && cfg == NULL; pass++) {
@@ -192,7 +192,7 @@ UsConfigLoad usConfigLoad(UsConfig **out, char *msg, size_t msgLen) {
             }
             if (err[0] != '\0') {
                 /* Found, read, but unusable. Do not look further: the caller
-                 * has to fix this rather than get a different file. */
+                 * has to fix this rather than get a different file */
                 snprintf(msg, msgLen, "%s", err);
                 dealloc(handles);
                 return UsConfigBroken;
@@ -203,7 +203,7 @@ UsConfigLoad usConfigLoad(UsConfig **out, char *msg, size_t msgLen) {
     dealloc(handles);
 
     if (cfg == NULL) {
-        /* Nothing found: run on defaults. */
+        /* Nothing found: run on defaults */
         char err[192] = { 0 };
         cfg = usConfigParse("", 0, err, sizeof(err));
         if (cfg == NULL) {

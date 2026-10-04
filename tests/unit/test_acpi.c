@@ -1,14 +1,14 @@
 /*
- * Checks for reading the processor list out of ACPI.
+ * Checks for reading the processor list out of ACPI
  *
  * The tables are built here rather than taken from a machine, so the test says
  * what makes a table acceptable: the signature, the checksum, the lengths, and
  * the fields the parsing depends on. A corpus would exercise the same code
- * without saying which of those it was relying on.
+ * without saying which of those it was relying on
  *
  * The failure this is really about is the index. A CPU index that collides is
  * not a visible fault, it is two processors sharing one landing pad and one
- * stack, and the corruption surfaces somewhere else entirely.
+ * stack, and the corruption surfaces somewhere else entirely
  */
 
 #include <stdio.h>
@@ -40,14 +40,14 @@ static void eqInt(const char *name, int got, int want) {
 /* --- building tables ---------------------------------------------------- */
 
 /*
- * The tables live at a low address on purpose.
+ * The tables live at a low address on purpose
  *
  * An RSDT holds 32 bit addresses, which is right for firmware: its tables are
  * at low physical addresses. A host process's own arrays are not, so a table
  * built there could not be described by an RSDT at all and the 32 bit path
  * would be untestable. Mapping the buffers low is what makes that path
  * reachable here, and mapping them at all is why this test needs a little
- * more than an array.
+ * more than an array
  */
 #define LOW_BASE 0x10000000U
 
@@ -84,7 +84,7 @@ static void put64(uint8_t *p, uint64_t v) {
     put32(p + 4, (uint32_t)(v >> 32));
 }
 
-/* The checksum that makes a table sum to zero. */
+/* The checksum that makes a table sum to zero */
 static void seal(uint8_t *p, size_t len) {
     uint8_t sum = 0;
 
@@ -103,7 +103,7 @@ typedef struct CpuSpec_t {
 static size_t gMadtLength;
 
 /* Builds a MADT with the given GIC CPU Interface entries, and a root table
- * that points at it. */
+ * that points at it */
 static void buildTables(const CpuSpec *cpus, size_t count, bool extended) {
     size_t at = 44;
 
@@ -157,7 +157,7 @@ static void buildTables(const CpuSpec *cpus, size_t count, bool extended) {
 
 /*
  * The machine this was written against: two clusters of four cores. Aff0
- * repeats across clusters, which is exactly why the low byte is not an index.
+ * repeats across clusters, which is exactly why the low byte is not an index
  */
 static void testRealShape(void) {
     static const CpuSpec cpus[] = {
@@ -176,14 +176,14 @@ static void testRealShape(void) {
     ok("no overflow", !got.overflow);
 
     /* Every processor gets its own index, including the two that share a low
-     * byte. This is the whole point. */
+     * byte. This is the whole point */
     eqInt("the first core of the first cluster", usAcpiCpuIndex(&got, 0x80000000ULL), 0);
     eqInt("the first core of the second cluster", usAcpiCpuIndex(&got, 0x80000100ULL), 4);
     eqInt("and the low byte is the same for both",
           (int)((0x80000000ULL & 0xFF) == (0x80000100ULL & 0xFF)), 1);
 
     /* The extra bits MPIDR_EL1 carries are not part of a processor's
-     * identity, and ACPI does not describe them. */
+     * identity, and ACPI does not describe them */
     eqInt("a set U bit does not change the answer",
           usAcpiCpuIndex(&got, 0xC0000100ULL), 4);
     eqInt("nor does a set MT bit",
@@ -208,7 +208,7 @@ static void testOlderRoot(void) {
 /*
  * A table that fails its checksum is refused rather than walked. The walk
  * follows lengths read out of the table, so a damaged one is a walk off the
- * end, and this runs too early for a fault to be reported as anything.
+ * end, and this runs too early for a fault to be reported as anything
  */
 static void testChecksums(void) {
     static const CpuSpec cpus[] = {
@@ -246,12 +246,12 @@ static void testRobustness(void) {
     gRsdp[0] = 'R';
 
     /* An entry of an unknown type has to be skipped by its length rather than
-     * ending the walk, or a machine with one would report no processors. */
+     * ending the walk, or a machine with one would report no processors */
     {
         uint8_t *madt = gMadt;
         size_t old = gMadtLength;
 
-        /* Insert a distributor entry before the first GICC. */
+        /* Insert a distributor entry before the first GICC */
         memmove(madt + 44 + 24, madt + 44, old - 44);
         memset(madt + 44, 0, 24);
         madt[44] = 0x0C;    /* GICD */

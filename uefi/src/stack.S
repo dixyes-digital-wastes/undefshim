@@ -1,11 +1,11 @@
-// Switching to one of our own stacks, see stack.h for why.
+// Switching to one of our own stacks, see stack.h for why
 //
 // void usStackRunOn(uint64_t stackTop, void (*fn)(void *), void *arg)
 //
 // The caller's stack pointer and the return address are kept on the caller's
 // own stack, so nothing has to be saved anywhere we do not already own. The
 // registers this uses are all callee saved, which means the function that runs
-// on our stack cannot disturb them.
+// on our stack cannot disturb them
 
     .text
     .p2align 2

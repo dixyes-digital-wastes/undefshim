@@ -1,5 +1,5 @@
 /*
- * Getting the runtime pool from firmware memory, see pool.h.
+ * Getting the runtime pool from firmware memory, see pool.h
  */
 
 #include <uefi.h>
@@ -7,7 +7,7 @@
 #include "core/pool.h"
 #include "uefi/src/pool.h"
 
-/* Runtime services memory, so the OS keeps it instead of reclaiming it. */
+/* Runtime services memory, so the OS keeps it instead of reclaiming it */
 #define US_POOL_MEMORY_TYPE EfiRuntimeServicesData
 
 bool usPoolAllocate(UsPoolAlloc *out) {
@@ -29,7 +29,7 @@ bool usPoolAllocate(UsPoolAlloc *out) {
      * The firmware mapped memory identity, so the physical address is also the
      * address to reach it by. Both are recorded because they stop being equal
      * once the address space is rebuilt, and the injector needs the physical
-     * one to re-establish the mapping.
+     * one to re-establish the mapping
      */
     out->basePa = (uint64_t)pa;
     out->baseVa = (uint64_t)pa;

@@ -1,22 +1,22 @@
 /*
- * The PL011, as little of it as reporting needs.
+ * The PL011, as little of it as reporting needs
  *
  * Only two registers are used. The data register is where a byte goes, and
  * the flag register says whether there is room, which has to be waited for or
- * bytes are dropped when the receiver is not being read.
+ * bytes are dropped when the receiver is not being read
  */
 
 #include <stddef.h>
 
 #include "payload/uart.h"
 
-/* PL011 registers, as byte offsets. */
+/* PL011 registers, as byte offsets */
 #define US_PL011_DR 0x00U
 #define US_PL011_FR 0x18U
 #define US_PL011_FR_TXFF (1U << 5)  /* transmit FIFO full */
 #define US_PL011_FR_BUSY (1U << 3)  /* transmit in progress */
 
-/* 8250 registers, as byte offsets; a 32 bit bus spaces them a word apart. */
+/* 8250 registers, as byte offsets; a 32 bit bus spaces them a word apart */
 #define US_8250_THR 0x00U
 #define US_8250_LSR 0x05U
 #define US_8250_LSR_THRE (1U << 5)  /* holding register empty */
@@ -65,7 +65,7 @@ void usUartPutc(char c) {
     /*
      * Wait for room. The count is bounded on purpose: if the port is not
      * there, or its clock is not running, the flags read as permanently busy
-     * and an unbounded wait turns a report into a hang.
+     * and an unbounded wait turns a report into a hang
      */
     for (spins = 0; spins < 1000000U; spins++) {
         if (gKind == US_UART_8250) {

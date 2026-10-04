@@ -1,5 +1,5 @@
 /*
- * peprobe - run the locators over a directory of Windows images.
+ * peprobe - run the locators over a directory of Windows images
  *
  * This is a host tool, not part of the driver. It answers the question the
  * locators have to answer before anything is built on them: given a real
@@ -7,16 +7,16 @@
  *
  * A locator that finds two is worse than one that finds none, because it will
  * pick a place and the failure surfaces much later, so ambiguity is reported
- * as loudly as absence.
+ * as loudly as absence
  *
  * Usage: peprobe <corpus-root> [file ...]
  *
  * The corpus is laid out as <root>/<version>/<name>. The default file list is
- * the set the driver cares about; a version without those files is skipped.
+ * the set the driver cares about; a version without those files is skipped
  *
  * Known gaps are not listed by hand: each expectation comes from a version
  * predicate beside the signature it belongs to, so a new build shows up as a
- * up as a failure and an accepted one does not.
+ * up as a failure and an accepted one does not
  */
 
 #include <dirent.h>
@@ -47,7 +47,7 @@ static int   gClassBad;
 /*
  * Versions whose content predates the signatures. Each entry says what is
  * expected to be missing so that the report stays meaningful instead of
- * accumulating unexplained blanks.
+ * accumulating unexplained blanks
  */
 typedef struct Gap_t {
     const char *version;
@@ -57,7 +57,7 @@ typedef struct Gap_t {
 
 static const Gap kGaps[] = {
     /* Nothing here yet: every version's expectation is now derived from the
-     * signature itself rather than listed by hand. */
+     * signature itself rather than listed by hand */
     { "", "", false },
 };
 
@@ -73,7 +73,7 @@ static const Gap *findGap(const char *version, const char *file) {
 /*
  * Which kernels are expected to use LDAPR at all. 21h2, 22h2 and 23h2 each
  * carry exactly one, so a machine without the extension traps there too; from
- * 24h2 on it is used thousands of times.
+ * 24h2 on it is used thousands of times
  */
 static bool versionUsesLdapr(const char *version) {
     static const char *withLdapr[] = { "21h2", "22h2", "23h2", "24h2", "26100pe", "26h1" };
@@ -87,17 +87,15 @@ static bool versionUsesLdapr(const char *version) {
 }
 
 /*
- * Which images carry the transfer to the kernel, and how it is recognised.
+ * Which images carry the transfer to the kernel, and how it is recognised
  *
  * The signature is a short sequence ending in a branch through a register
  * that was loaded with the kernel entry point. It is a branch in the middle
  * of a function rather than a function entry, so the exception directory has
- * nothing to say about it, and an earlier attempt to require one identified
- * the wrong function entirely.
+ * nothing to say about it
  *
- * It appears only in the loader. Earlier builds hand over by some other route
- * and do not carry it at all, which is why the expectation is per version
- * rather than universal.
+ * It appears only in the loader, and only in the versions that hand over this
+ * way
  */
 static bool versionHasTransferLeaf(const char *version) {
     static const char *withLeaf[] = { "23h2", "24h2", "26100pe", "26h1" };
@@ -154,7 +152,7 @@ static void tally(Tally *t, size_t matches) {
     }
 }
 
-/* A failed expectation is reported with enough context to act on. */
+/* A failed expectation is reported with enough context to act on */
 static void expect(const char *version, const char *file, const char *what, bool got, bool want) {
     gChecks++;
     if (got == want) {
@@ -195,7 +193,7 @@ static void probe(const char *version, const char *name, const char *path) {
            ldapr.total, ldapr.word, ldapr.xword, ldapr.byte, ldapr.half);
 
     /* Classification: ntoskrnl and winload are identified from content.
-     * bootmgfw is not, and must not be mistaken for either. */
+     * bootmgfw is not, and must not be mistaken for either */
     if (isKernel) {
         gChecks++;
         if (kind == UsImageNtoskrnl) {
@@ -224,7 +222,7 @@ static void probe(const char *version, const char *name, const char *path) {
     /*
      * The transfer to the kernel, looked for only in the loader: it is a
      * winload construct, and a version that does not have it is not one that
-     * can be hooked there.
+     * can be hooked there
      */
     if (strcmp(name, "winload.efi") == 0) {
         tally(&gLeaf, leaf.matches);
@@ -238,7 +236,7 @@ static void probe(const char *version, const char *name, const char *path) {
 
     /* The whole point of the shim: on hardware without the extension every
      * one of these traps, so a kernel that has any is a kernel that needs
-     * the shim. Neither loader contains one. */
+     * the shim. Neither loader contains one */
     if (isKernel) {
         expect(version, name, "kernel uses LDAPR", ldapr.total > 0, versionUsesLdapr(version));
     } else {
@@ -301,7 +299,7 @@ int main(int argc, char **argv) {
     }
     closedir(dir);
 
-    /* Sorted so the report reads the same way every run. */
+    /* Sorted so the report reads the same way every run */
     for (int i = 0; i < versionCount; i++) {
         for (int k = i + 1; k < versionCount; k++) {
             if (strcmp(versions[k], versions[i]) < 0) {

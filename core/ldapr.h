@@ -1,15 +1,15 @@
 /*
- * Reading the instruction that faulted.
+ * Reading the instruction that faulted
  *
  * The handler is entered because an instruction is not implemented on this
  * hardware, and what it has to do is whatever that instruction meant. So the
  * first thing it needs is the instruction itself, which is at ELR_EL1: the
  * fault is taken before the instruction runs, and the register still points
- * at it.
+ * at it
  *
  * Decoding it is a pure function, so it lives here rather than with the code
  * that does the load: the interesting part of an emulator is the part that
- * can be checked without a machine.
+ * can be checked without a machine
  */
 
 #ifndef US_LDAPR_H
@@ -19,11 +19,11 @@
 #include <stdint.h>
 
 /*
- * The RCpc loads, by the width they move.
+ * The RCpc loads, by the width they move
  *
  * These are the instructions this whole project exists for: an arm64 CPU
  * without the RCpc extension has no LDAPR, so it takes an undefined
- * instruction exception on one, and the kernel that uses it stops.
+ * instruction exception on one, and the kernel that uses it stops
  */
 typedef enum UsLdaprKind_e {
     UsLdaprNone = 0,
@@ -40,37 +40,37 @@ typedef struct UsLdaprInsn_t {
 } UsLdaprInsn;
 
 /*
- * Identifies the instruction and pulls out its fields.
+ * Identifies the instruction and pulls out its fields
  *
  * The encoding is fixed except for the two register fields and the size,
  * which is what the mask leaves free. A base of 31 means the zero register
  * rather than a general one, which is a different instruction; it is reported
- * so the caller does not read a register that is not there.
+ * so the caller does not read a register that is not there
  */
 UsLdaprInsn usLdaprDecode(uint32_t insn);
 
 /*
- * Identifies the acquire load, which is what the four above are replaced with.
+ * Identifies the acquire load, which is what the four above are replaced with
  *
  * A site that has been replaced still traps on a processor whose caches have
  * not caught up with the write: the exception is the old instruction's, but
  * the memory holds the new one, and reading it is the only way to tell. What
  * that case means is the same load, carried out once more, so it decodes into
- * the same shape.
+ * the same shape
  */
 bool usLdarDecode(uint32_t insn, UsLdaprInsn *out);
 
 /*
- * The acquire load that does the same job, more strongly.
+ * The acquire load that does the same job, more strongly
  *
  * An RCpc load orders releases; the acquire loads order everything, so a
  * substitute made of one cannot be weaker than what it replaces and cannot
  * turn a correct program incorrect. That is the whole argument for this
- * substitution, and it is why the replacement is not a plain load.
+ * substitution, and it is why the replacement is not a plain load
  *
  * The two encodings differ only in their fixed bits, so the register fields
  * are carried across untouched. Returns false when the instruction is not one
- * of the four, in which case nothing is written.
+ * of the four, in which case nothing is written
  */
 bool usLdaprToLdar(uint32_t insn, uint32_t *out);
 

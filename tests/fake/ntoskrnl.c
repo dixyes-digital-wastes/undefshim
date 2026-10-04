@@ -1,31 +1,31 @@
 /*
- * A stand-in for the kernel.
+ * A stand-in for the kernel
  *
  * The real check of this shim needs Windows, and Windows takes ten minutes
  * and a person looking at a screen to say whether it worked. This does the
  * same job in a few seconds and answers on the serial port: it loads values
  * through the instructions the target's processor cannot execute, and reports
- * whether each one produced what it should have.
+ * whether each one produced what it should have
  *
  * It is named ntoskrnl on purpose. The driver decides what an image is by its
  * name, so naming it this way means the whole kernel path runs: the vectors
- * are armed into it, and the patch lists meant for it are applied to it.
+ * are armed into it, and the patch lists meant for it are applied to it
  *
  * Every load here is a separate function, and there is more than one form of
  * it, because the shim has to get the width right: a load of a word replaced
- * by a load of a doubleword reads the wrong memory and the value says so.
+ * by a load of a doubleword reads the wrong memory and the value says so
  */
 
 #include <uefi.h>
 
 /* The values the checks expect. Odd numbers, so a truncated load is not the
- * same value by accident. */
+ * same value by accident */
 static volatile uint64_t gWide = 0x0123456789abcdefULL;
 static volatile uint32_t gWord = 0xfedcba98U;
 static volatile uint16_t gHalf = 0xbeefU;
 static volatile uint8_t gByte = 0xa5U;
 
-/* Each of these is one site: the instructions the shim exists for. */
+/* Each of these is one site: the instructions the shim exists for */
 static __attribute__((noinline)) uint64_t loadWide(const void *p) {
     uint64_t v;
 
@@ -75,7 +75,7 @@ int main(int argc, char **argv) {
      * finds where to put its stubs by following exactly that write. Writing
      * the value back is what makes this image armable, and it is the one
      * place where the fake has to imitate the kernel rather than simply use
-     * the instructions it cannot execute.
+     * the instructions it cannot execute
      */
     {
         uint64_t vbar;
@@ -91,7 +91,7 @@ int main(int argc, char **argv) {
     check("byte", loadByte((const void *)&gByte), gByte);
 
     /* Twice, so a site that is only handled on its first exception is still
-     * seen to work the second time. */
+     * seen to work the second time */
     check("wide again", loadWide((const void *)&gWide), gWide);
     check("word again", loadWord((const void *)&gWord), gWord);
 
@@ -102,7 +102,7 @@ int main(int argc, char **argv) {
      * script ends, the firmware then finds nothing else to boot and the
      * machine quits - which is fine for the automated check, whose monitor
      * has already seen the line above, but not for a run that is being looked
-     * at: a machine that has quit has no screen to look at.
+     * at: a machine that has quit has no screen to look at
      */
     for (;;) {
         __asm__ volatile("wfi");

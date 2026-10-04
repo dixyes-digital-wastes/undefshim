@@ -1,25 +1,25 @@
 /*
- * Walking a translation table, see pgtable.h.
+ * Walking a translation table, see pgtable.h
  *
  * Four levels, 4KB granule. Each level's entries cover a fixed span of virtual
  * address, and a descriptor either continues to the next level or ends the
  * walk by mapping a block itself. Both endings are handled here, because a
  * runtime services region can perfectly well be mapped as one large block and
- * finding nothing in that case would be a silent wrong answer.
+ * finding nothing in that case would be a silent wrong answer
  */
 
 #include "core/pgtable.h"
 
-/* Descriptor bits that are the same at every level. */
+/* Descriptor bits that are the same at every level */
 #define US_DESC_VALID 1ULL
-/* bits [1:0] == 0b11 is a table at L0-L2 and a page at L3. */
+/* bits [1:0] == 0b11 is a table at L0-L2 and a page at L3 */
 #define US_DESC_TABLE_OR_PAGE 3ULL
-/* bits [1:0] == 0b01 is a block, which only L1 and L2 may use. */
+/* bits [1:0] == 0b01 is a block, which only L1 and L2 may use */
 #define US_DESC_BLOCK 1ULL
 
 /* Virtual bits each level's index is taken from, and the span one entry
  * covers at that level. The same numbers the mapped levels are described
- * with, from the same rule. */
+ * with, from the same rule */
 #define US_L0_SHIFT US_LEVEL_SHIFT(0)
 #define US_L1_SHIFT US_LEVEL_SHIFT(1)
 #define US_L2_SHIFT US_LEVEL_SHIFT(2)
@@ -27,7 +27,7 @@
 
 #define US_INDEX_MASK 0x1FFULL
 
-/* A block descriptor at L1 covers 1GB, at L2 2MB, in 4KB granule. */
+/* A block descriptor at L1 covers 1GB, at L2 2MB, in 4KB granule */
 #define US_L1_BLOCK_MASK 0x0000FFFFC0000000ULL
 #define US_L2_BLOCK_MASK 0x0000FFFFFFE00000ULL
 
@@ -48,7 +48,7 @@ typedef struct Walk_t {
 /* Records a mapping if it covers any of the target, and says whether the walk
  * should stop. A block is reported at its own base, with the offset into it
  * left to the caller: the payload only needs the block's address to reach it,
- * since the pool is contiguous inside whatever covers it. */
+ * since the pool is contiguous inside whatever covers it */
 static bool consider(Walk *w, uint64_t va, uint64_t pa, uint64_t size,
                      uint64_t descriptor, bool tablePxn) {
     uint64_t end = pa + size;
@@ -78,20 +78,20 @@ static bool readEntry(Walk *w, uint64_t address, uint64_t *out) {
 
 /*
  * Whether an entry at this level is worth descending into at all. A level 0
- * entry must be a table, since a block is not allowed there.
+ * entry must be a table, since a block is not allowed there
  */
 static bool descendsToTable(uint64_t entry) {
     return (entry & US_DESC_VALID) != 0
            && ((entry & US_DESC_TABLE_OR_PAGE) == US_DESC_TABLE_OR_PAGE);
 }
 
-/* The two levels at which a block may end the walk. */
+/* The two levels at which a block may end the walk */
 static bool isBlock(uint64_t entry) {
     return (entry & US_DESC_TABLE_OR_PAGE) == US_DESC_BLOCK;
 }
 
 /* The TTBR half supplies the all-zero/all-one prefix above vaBits. The
- * remaining bits index a shortened L0 root followed by three full tables. */
+ * remaining bits index a shortened L0 root followed by three full tables */
 UsPageWalk usPageWalkFindBits(UsPhysRead read, void *ctx, uint64_t tableBase,
                               uint64_t vaFirst, uint64_t vaLast,
                               uint64_t targetPa, uint64_t targetBytes,
@@ -127,7 +127,7 @@ UsPageWalk usPageWalkFindBits(UsPhysRead read, void *ctx, uint64_t tableBase,
     prefix = vaFirst & prefixMask;
     /* Reject noncanonical prefixes and ranges crossing TTBR halves. The
      * high half is not a signed extension of bit vaBits-1: that bit indexes
-     * the root too, so only bits above it must all be one. */
+     * the root too, so only bits above it must all be one */
     if ((prefix != 0 && prefix != prefixMask)
         || (vaLast & prefixMask) != prefix) {
         return w.result;
@@ -136,7 +136,7 @@ UsPageWalk usPageWalkFindBits(UsPhysRead read, void *ctx, uint64_t tableBase,
     lo = vaFirst & lowMask;
     hi = vaLast & lowMask;
 
-    /* Strip ASID and low flags, but retain bit 11 for a 2KB (47-bit) root. */
+    /* Strip ASID and low flags, but retain bit 11 for a 2KB (47-bit) root */
     rootAlignment = 1ULL << (3 + (vaBits - US_L0_SHIFT));
     l0 = tableBase & 0x0000FFFFFFFFFFFFULL & ~(rootAlignment - 1);
     w.result.tablesRead = 1;
@@ -276,11 +276,11 @@ UsPageWalk usPageWalkFind(UsPhysRead read, void *ctx, uint64_t tableBase,
 }
 
 /*
- * The mapped descriptors of an address, see pgtable.h.
+ * The mapped descriptors of an address, see pgtable.h
  *
  * The index fields are the ones the walk above uses, and their widths are what
  * makes the levels different sizes: nine bits at the top, nine more each time
- * down. The bottom one is where the 36-bit mask belongs.
+ * down. The bottom one is where the 36-bit mask belongs
  */
 const UsSelfMapLevel usSelfMapLevels[US_SELF_MAP_LEVELS] = {
     { 0 },
@@ -302,7 +302,7 @@ UsLeaf usLeafFind(uint64_t selfMapBase, UsWordRead read, void *ctx, uint64_t va)
      * level's own page descriptor: the same computation as for an address,
      * with that level's base in place of the address, and the page level's
      * base as the base it is computed from. The table below lists the levels
-     * the other way round, top first. */
+     * the other way round, top first */
     bases[US_SELF_MAP_LEVELS - 1] = selfMapBase;
     for (unsigned i = US_SELF_MAP_LEVELS - 1; i > 0; i--) {
         bases[i - 1] = usPteSlotFor(selfMapBase, bases[i]);
@@ -321,10 +321,10 @@ UsLeaf usLeafFind(uint64_t selfMapBase, UsWordRead read, void *ctx, uint64_t va)
             continue;                       /* a table: the answer is below it */
         }
         if ((descriptor & US_DESC_TABLE_OR_PAGE) == US_DESC_TABLE_OR_PAGE) {
-            /* The page itself. */
+            /* The page itself */
         } else if (!last && level->paField != 0
                    && (descriptor & US_DESC_TABLE_OR_PAGE) == US_DESC_BLOCK) {
-            /* A block covering the address, which ends the walk here. */
+            /* A block covering the address, which ends the walk here */
         } else {
             return out;
         }

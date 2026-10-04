@@ -1,13 +1,13 @@
 /*
- * The record the address change notification fills in, see vamap.h.
+ * The record the address change notification fills in, see vamap.h
  *
  * It lives here, in the payload, rather than in the driver, because of where
  * the two end up: the driver's memory is boot services memory and is released
  * once the firmware is done with it, while this blob is in a class the OS
  * keeps. A record written by the driver and read afterwards has to be in the
- * one that survives.
+ * one that survives
  *
- * The driver reaches it through this blob's address, which it knows.
+ * The driver reaches it through this blob's address, which it knows
  */
 
 #include "payload/vamap.h"
@@ -21,10 +21,10 @@ typedef uint64_t (*UsSetVirtualAddressMapFn)(uint64_t, uint64_t, uint32_t, void 
  * Deployed over the firmware's SetVirtualAddressMap. Its job is to be seen:
  * whatever it does happens after the boot services are gone, so nothing can
  * be printed and nothing outside this blob may be touched. The answer goes
- * into the record, which is this blob's memory and outlives everything else.
+ * into the record, which is this blob's memory and outlives everything else
  *
  * Forwarded, because forwarding costs one call and not forwarding would leave
- * the machine to finish booting with the change half applied.
+ * the machine to finish booting with the change half applied
  */
 uint64_t usVaMapHook(uint64_t mapSize, uint64_t descSize, uint32_t descVersion,
                      void *descs) {
@@ -52,11 +52,11 @@ typedef struct UsVaMapTarget_t {
 
 /*
  * Called by the firmware from inside the switch, so the firmware is still
- * answering questions and the boot services are not coming back.
+ * answering questions and the boot services are not coming back
  *
  * The two regions are asked about separately, and each answer is stored
  * before the next question: a firmware that has no entry for one of them
- * says so, and that must not cost the other its answer.
+ * says so, and that must not cost the other its answer
  */
 void usVaMapNotify(void *event, void *context) {
     UsConvertPointerFn convert = (UsConvertPointerFn)(uintptr_t)usVaMapRecord.convertPointer;
