@@ -26,6 +26,11 @@ SERIAL_LOG="${SERIAL_LOG:-$BUILD_DIR/serial.log}"
 STOP_PATTERN="${STOP_PATTERN:-US-M2-DONE}"
 ARM_PATTERN="${ARM_PATTERN:-}"
 GRACE="${GRACE:-0}"
+# A run that is going to be looked at rather than read: the machine is left
+# running, with its screen on the usual display and its monitor on QMP_PORT,
+# so that a picture can be taken of it.
+KEEP="${KEEP:-}"
+QMP_PORT="${QMP_PORT:-4444}"
 BOOT_TIMEOUT="${BOOT_TIMEOUT:-90}"
 
 # A firmware exception ends the run: waiting out the timeout after the guest
@@ -69,7 +74,7 @@ fi
     -device ramfb \
     -vnc 0.0.0.0:0 \
     -gdb tcp::1234 \
-    -qmp tcp:127.0.0.1:4444,server=on,wait=off \
+    -qmp tcp:127.0.0.1:$QMP_PORT,server=on,wait=off \
     "${win_args[@]}" \
     -device qemu-xhci,id=xhci \
     -device usb-kbd,bus=xhci.0 \
@@ -92,6 +97,14 @@ python3 tests/deploy/serial_monitor.py "$SERIAL_SOCK" \
     "${arm_args[@]}" \
     --timeout "$BOOT_TIMEOUT" \
     --log "$SERIAL_LOG" || rc=$?
+
+if [ -n "$KEEP" ]; then
+    # Leaving it running means leaving it running: the exit trap would
+    # otherwise kill the machine this mode exists to keep.
+    trap - EXIT INT TERM
+    echo "left running: display 5900, qmp $QMP_PORT, serial $SERIAL_LOG"
+    exit 0
+fi
 
 kill "$QEMU_PID" 2>/dev/null || true
 wait "$QEMU_PID" 2>/dev/null || true

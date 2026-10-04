@@ -20,11 +20,19 @@ CFG_CFLAGS := -std=gnu23 -O2 -Wall -Wextra -I$(ROOT) -I$(TOML) $(TOML_DEFS)
 .PHONY: all check clean
 all: test_cfg test_layout test_scan_images test_rva_patch test_plan test_pgtable test_par \
      test_thunk test_stackgen test_payload_place test_early test_ldapr test_acpi test_ldr \
-     test_patchlist
+     test_patchlist test_screen
 
 test_early: test_early.c $(ROOT)/payload/early.c $(ROOT)/payload/vamap.c \
             $(ROOT)/core/thunk.c
 	$(CC) -std=gnu23 -O2 -Wall -Wextra -I$(ROOT) $^ -o $@
+
+# The screen drawer is built for the host with the firmware headers, and the
+# frame buffer it draws into is an array in the test.
+test_screen: test_screen.c $(ROOT)/uefi/src/screen.c $(ROOT)/uefi/src/screen.h \
+             $(ROOT)/uefi/src/font8x16.h
+	$(CC) -std=gnu23 -O2 -Wall -Wextra -I. -I$(ROOT) \
+	    -I$(ROOT)/third_party/posix-uefi/uefi \
+	    test_screen.c $(ROOT)/uefi/src/screen.c -o $@
 
 test_patchlist: test_patchlist.c $(ROOT)/core/patchlist.c $(ROOT)/core/patchapply.c \
                 $(ROOT)/core/sha256.c
@@ -103,6 +111,7 @@ check: all
 	./test_early
 	./test_ldapr
 	./test_patchlist
+	./test_screen
 	./test_acpi
 	./test_ldr
 	python3 check_entry_frame.py $(ROOT)/payload/entry.S

@@ -6,6 +6,7 @@
 #include <uefi.h>
 
 #include "uefi/src/console.h"
+#include "uefi/src/screen.h"
 
 /*
  * Both kinds are described by byte offsets from the port, which is how the
@@ -99,6 +100,12 @@ static bool roomToWrite(void) {
 }
 
 void usConsolePutc(char c) {
+    /*
+     * The screen gets everything the serial port gets. It costs a few writes
+     * to memory that is already mapped, and it is the only channel there is
+     * on a machine that asked for no serial output.
+     */
+    usScreenPutc(c);
     if (gKind == UsUartOff || gBase == 0) {
         return;
     }

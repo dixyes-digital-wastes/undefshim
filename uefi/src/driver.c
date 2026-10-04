@@ -17,6 +17,7 @@
 #include "common/version.h"
 #include "uefi/src/config.h"
 #include "uefi/src/console.h"
+#include "uefi/src/screen.h"
 #include "uefi/src/gmm_hook.h"
 #include "uefi/src/loadimage_hook.h"
 #include "uefi/src/payload_place.h"
@@ -71,6 +72,10 @@ int main(int argc, char **argv) {
      * That includes the report of a broken configuration, which is why the
      * error path is going to have to write to the screen instead.
      */
+    /* Before the configuration is read: a configuration that cannot be read
+     * is the case where the screen is the only way to say so. */
+    usScreenInit();
+
     result = usConfigLoad(&cfg, msg, sizeof(msg));
     if (cfg != NULL && cfg->hasUart) {
         usConsoleUse(cfg->uartType[0] == 'p' ? UsUartPl011 : UsUartUart8250,
