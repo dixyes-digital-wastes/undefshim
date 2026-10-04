@@ -145,10 +145,17 @@ static uint32_t runBytes(const Token *token) {
     return token->length / 2U;
 }
 
+/*
+ * A field is written the way an instruction is written, most significant byte
+ * first, and stored the way the machine keeps it, least significant first: a
+ * site reads f8bfc3ea and the four bytes at its address are ea c3 bf f8.
+ */
 static void readBytes(const Token *token, uint8_t *out, uint32_t bytes) {
     for (uint32_t i = 0; i < bytes; i++) {
-        out[i] = (uint8_t)((hexValue(token->at[i * 2]) << 4)
-                           | hexValue(token->at[i * 2 + 1]));
+        uint32_t from = (bytes - 1U - i) * 2U;
+
+        out[i] = (uint8_t)((hexValue(token->at[from]) << 4)
+                           | hexValue(token->at[from + 1]));
     }
 }
 
@@ -210,7 +217,12 @@ UsPatchStatus usPatchParse(const char *text, uint32_t length, UsPatchSite *sites
                     out->errorAt = (uint32_t)(digits.at != NULL ? digits.at - text : scan.at);
                     return UsPatchNoHash;
                 }
-                readBytes(&digits, out->hash, 32U);
+                /* The hash is a byte string, not a value: it keeps the order
+                 * it is written in, unlike the fields below it. */
+                for (uint32_t i = 0; i < 32U; i++) {
+                    out->hash[i] = (uint8_t)((hexValue(digits.at[i * 2]) << 4)
+                                             | hexValue(digits.at[i * 2 + 1]));
+                }
                 haveHash = true;
                 continue;
             }

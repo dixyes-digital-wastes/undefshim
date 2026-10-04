@@ -48,10 +48,13 @@ if [ -n "$CONFIG" ]; then
 # Lists live next to the configuration that names them, and go on the volume
 # the same way: the driver resolves the directory relative to the volume it
 # read the configuration from.
-PATCHLIST_DIR="${PATCHLIST_DIR-$(dirname "$CONFIG")/usPatch}"
+PATCHLIST_DIR="${PATCHLIST_DIR-}"
+if [ -z "$PATCHLIST_DIR" ] && [ -d "$(dirname "$CONFIG")/usPatch" ]; then
+    PATCHLIST_DIR="$(dirname "$CONFIG")/usPatch"
+fi
 if [ -d "$PATCHLIST_DIR" ]; then
-    mmd -i "$ESP" ::/usPatch 2>/dev/null || true
-    mcopy -i "$ESP" "$PATCHLIST_DIR"/* ::/usPatch/ 2>/dev/null || true
+    mmd -i "$ESP" ::/usPatch
+    mcopy -i "$ESP" "$PATCHLIST_DIR"/* ::/usPatch/ || echo "esp: could not copy lists" >&2
 fi
 fi
 mcopy -i "$ESP" "$STARTUP" ::/startup.nsh

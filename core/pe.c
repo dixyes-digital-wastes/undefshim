@@ -26,6 +26,7 @@ typedef struct PeOptionalHeader_t {
     uint32_t sizeOfImage;
     uint32_t sizeOfHeaders;
     uint16_t subsystem;
+    uint32_t numberOfDirectories;
 } PeOptionalHeader;
 
 typedef struct PeSectionHeader_t {
@@ -110,6 +111,25 @@ static bool readHeaders(UsImage *img) {
     oh.sizeOfImage = rd32(b + optOffset + 56);
     oh.sizeOfHeaders = rd32(b + optOffset + 60);
     oh.subsystem = rd16(b + optOffset + 68);
+    oh.numberOfDirectories = rd32(b + optOffset + 108);
+
+    /* The data directories follow the fixed part of the optional header:
+     * 112 bytes of fields, then one 8 byte pair per directory. */
+    uint32_t directories = oh.numberOfDirectories;
+    if (directories > US_PE_MAX_DIRECTORIES) {
+        directories = US_PE_MAX_DIRECTORIES;
+    }
+    for (uint32_t i = 0; i < directories; i++) {
+        uint32_t at = optOffset + 112U + i * 8U;
+
+        if (optOffset + fh.optionalHeaderSize < at + 8U) {
+            directories = i;
+            break;
+        }
+        img->dataDirectoryRva[i] = rd32(b + at);
+        img->dataDirectorySize[i] = rd32(b + at + 4);
+    }
+    img->dataDirectoryCount = directories;
 
     sectionTable = optOffset + fh.optionalHeaderSize;
     if (sectionTable > img->size || img->size - sectionTable < (size_t)fh.sectionCount * 40) {
@@ -266,6 +286,18 @@ const UsPeSection *usImageSectionOfRva(const UsImage *img, uint32_t rva) {
         }
     }
     return NULL;
+}
+
+const uint8_t *usImageDataDirectory(const UsImage *img, uint32_t index,
+                                    uint32_t *outSize) {
+    if (img == NULL || !img->valid || index >= img->dataDirectoryCount
+        || img->dataDirectoryRva[index] == 0) {
+        return NULL;
+    }
+    if (outSize != NULL) {
+        *outSize = img->dataDirectorySize[index];
+    }
+    return usImageRvaToPtr(img, img->dataDirectoryRva[index]);
 }
 
 const UsPeSection *usImageFindSection(const UsImage *img, const char *name) {

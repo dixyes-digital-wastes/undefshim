@@ -29,6 +29,8 @@
 #define US_PE_SECTION_EXECUTABLE 0x20000000U
 #define US_PE_SECTION_WRITABLE 0x80000000U
 
+#define US_PE_MAX_DIRECTORIES 16U
+
 #define US_PE_MAX_SECTIONS 96
 
 typedef struct UsPeSection_t {
@@ -59,6 +61,10 @@ typedef struct UsImage_t {
     uint32_t sizeOfImage;
     uint32_t sizeOfHeaders;
     uint32_t entryRva;
+    /* Data directory RVAs and sizes, as many as the header carries. */
+    uint32_t dataDirectoryRva[US_PE_MAX_DIRECTORIES];
+    uint32_t dataDirectorySize[US_PE_MAX_DIRECTORIES];
+    uint32_t dataDirectoryCount;
     uint16_t subsystem;
     uint16_t sectionAlignment;
     uint16_t sectionCount;
@@ -97,6 +103,15 @@ const uint8_t *usImageRvaSpan(const UsImage *img, uint32_t rva, size_t *availabl
 /* The section containing an RVA, or NULL. */
 const UsPeSection *usImageSectionOfRva(const UsImage *img, uint32_t rva);
 const UsPeSection *usImageFindSection(const UsImage *img, const char *name);
+
+/* Index of the base relocation directory, for a hash that has to hold still
+ * across boots: the loader writes relocated addresses into the image, and
+ * those bytes differ every time it is loaded somewhere else. */
+#define US_PE_DIRECTORY_RELOCATIONS 5U
+
+/* Where a data directory's bytes are, or NULL when it is absent. */
+const uint8_t *usImageDataDirectory(const UsImage *img, uint32_t index,
+                                    uint32_t *outSize);
 bool usImageHasSection(const UsImage *img, const char *name);
 
 /*

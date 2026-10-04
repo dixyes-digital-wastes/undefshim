@@ -11,7 +11,9 @@
  *     0x458b30 c8dfffea                      # rva replace, no match to check
  *
  * The fields are runs of hexadecimal digits with no separators, upper or
- * lower case, and a field's length is its width in bytes. Whitespace and
+ * lower case, and a field's length is its width in bytes. A field is written
+ * most significant byte first, the way an instruction is written, and applied
+ * least significant byte first, the way the machine keeps it. Whitespace and
  * comments may appear between any two tokens, so the parse follows the
  * grammar rather than the lines. A site whose fields cannot describe a write
  * is left out and counted, not a reason to reject the file; a file whose
