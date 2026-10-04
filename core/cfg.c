@@ -337,6 +337,21 @@ UsConfig *usConfigParse(const char *text, size_t len, char *err, size_t errLen) 
     }
 
     cfg->patchDir = "usPatch";
+    cfg->hasDescriptorBase = false;
+    cfg->descriptorBaseRva = 0;
+    toml_table_t *kern = toml_table_table(cfg->root, "kernel");
+    if (kern != NULL && cfgHas(kern, "descriptor_base_rva")) {
+        int64_t rva = 0;
+
+        if (!cfgInt(kern, "descriptor_base_rva", &rva, err, errLen) || rva <= 0
+            || rva > 0xFFFFFFFFLL) {
+            setErrKey(err, errLen, "not an address: ", "descriptor_base_rva");
+            usConfigFree(cfg);
+            return NULL;
+        }
+        cfg->descriptorBaseRva = (uint32_t)rva;
+        cfg->hasDescriptorBase = true;
+    }
     toml_table_t *patch = toml_table_table(cfg->root, "patch");
     if (patch != NULL) {
         int length = 0;
