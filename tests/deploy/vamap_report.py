@@ -105,7 +105,7 @@ def main():
     for name, v in zip(FIELDS, words):
         if name == "magic":
             continue
-        print("  %-16s = 0x%-18x%s" % (name, v, extra))
+        print("  %-16s = 0x%x" % (name, v))
     return 0
 
 

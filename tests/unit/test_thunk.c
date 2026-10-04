@@ -232,8 +232,13 @@ static void testBranchAlignment(void) {
 #define STUB_POP_X18   0xF84107F2U  /* ldr x18, [sp], #16          */
 #define STUB_MRS_TPIDR 0xD538D092U  /* mrs x18, tpidr_el1          */
 #define STUB_AND_TPIDR 0x9274CE52U  /* and x18, x18, #~0xfff       */
+#define STUB_CMP_FAULT 0xF100965FU  /* cmp x18, #0x25              */
+
+#define US_EC_DATA_ABORT_SAME_EL (0x25U << 26)
 
 #define IS_CBNZ_X18(insn) (((insn) & 0xFF00001FU) == 0xB5000012U)
+#define IS_B_COND(insn) (((insn) & 0xFF000010U) == 0x54000000U)
+#define B_COND(insn) ((insn) & 0xFU)
 
 static int32_t branch19(uint32_t insn) {
     return (int32_t)(((insn >> 5) & 0x7FFFFU) << 13) >> 13;
@@ -250,6 +255,7 @@ typedef struct StubRun_t {
 static void runStub(const uint32_t *stub, uint64_t esr, uint32_t insn,
                     StubRun *out) {
     uint64_t x18 = 0xDEAD'0000'BEEFULL;
+    bool zero = false;
     size_t pc = 0;
 
     out->reachedPayload = false;
@@ -276,6 +282,13 @@ static void runStub(const uint32_t *stub, uint64_t esr, uint32_t insn,
             x18 -= 0xE2ULL << 12;
         } else if (w == STUB_SUB_LO) {
             x18 -= 0xFF0ULL;
+        } else if (w == STUB_CMP_FAULT) {
+            zero = x18 == 0x25ULL;
+        } else if (IS_B_COND(w)) {
+            if (zero && B_COND(w) == 0U) {
+                pc = (size_t)((int32_t)pc + branch19(w));
+                continue;
+            }
         } else if (IS_CBNZ_X18(w)) {
             if (x18 != 0) {
                 pc = (size_t)((int32_t)pc + branch19(w));
@@ -351,6 +364,11 @@ static void testSlotStub(void) {
 
     runStub(stub, 0x3CULL << 26, 0, &run);
     ok("a breakpoint reaches the tail too", run.reachedTail);
+
+    /* A data abort is the payload's own only where the payload runs; this
+     * slot is not that one, so it stays the kernel's. */
+    runStub(stub, US_EC_DATA_ABORT_SAME_EL, 0, &run);
+    ok("a data abort from this slot reaches the tail", run.reachedTail);
 }
 
 /*
@@ -362,36 +380,55 @@ static void testSlotStubKeepingRegisters(void) {
     uint32_t stub[US_SLOT_STUB_WORDS];
     uint64_t target = 0x13bc00bb0ULL;
     uint32_t tailIndex = usSlotStubTailIndex(true);
+    uint32_t targetIndex = usSlotStubTargetIndex(true);
+    uint32_t classAt = 4U;
+    uint32_t faultAt = 3U;
+    uint32_t instructionAt = 10U;
     StubRun run;
 
     memset(stub, 0xA5, sizeof(stub));
     usEncodeSlotStub(stub, target, 0xD5384112U, 0x14000010U, true);
 
-    eq64("the saving form pushes x18 first", stub[0], STUB_PUSH_X18);
-    eq64("gives it back before the tail", stub[tailIndex - 1U], STUB_POP_X18);
-    eq64("and the tail is where the index says", (uint64_t)tailIndex, 16U);
-    eq64("the save area is the one push", US_STUB_SAVE_BYTES, 16U);
-    eq64("at its top", US_STUB_SAVE_X18, 0U);
+    /* This form is reached at the EL1h vector, where an entry can arrive with
+     * a stale SP_EL1 - the kernel's own EL1t handler runs there for its first
+     * instructions. Touching memory on the way in would fault there, with the
+     * faulting store's address unchanged, which is an endless loop. */
+    for (uint32_t i = 0; i < US_SLOT_STUB_WORDS; i++) {
+        ok("the saving form never touches the stack",
+           stub[i] != STUB_PUSH_X18 && stub[i] != STUB_POP_X18);
+    }
+    eq64("the tail is where the index says", (uint64_t)tailIndex, 18U);
+    eq64("the destination is too", (uint64_t)targetIndex, 11U);
 
-    /* Both branches land on the pop. */
-    eq64("the class branch lands on it",
-         (uint64_t)(3 + branch19(stub[3])), (uint64_t)(tailIndex - 1U));
+    /* x18 is rebuilt the way the kernel rebuilds it, on the way to the tail. */
+    eq64("the tail path reads TPIDR_EL1", stub[tailIndex - 2U], STUB_MRS_TPIDR);
+    eq64("and masks it to its page", stub[tailIndex - 1U], STUB_AND_TPIDR);
+
+    /* The three branches land where the indices say. */
+    eq64("the class branch lands on the rebuild",
+         (uint64_t)(classAt + branch19(stub[classAt])), (uint64_t)(tailIndex - 2U));
     eq64("so does the instruction branch",
-         (uint64_t)(9 + branch19(stub[9])), (uint64_t)(tailIndex - 1U));
+         (uint64_t)(instructionAt + branch19(stub[instructionAt])),
+         (uint64_t)(tailIndex - 2U));
+    eq64("and the fault branch lands on the destination",
+         (uint64_t)(faultAt + branch19(stub[faultAt])), (uint64_t)targetIndex);
 
     /* The way in still reaches the payload, with x18 spent on the way. */
     runStub(stub, 0, 0xF8BFC22AU, &run);
     ok("an RCpc load still reaches the payload", run.reachedPayload);
     eq64("at the address it was given", run.payloadTarget, target);
-    ok("and the save happened", run.pushed);
+
+    /* And so does a fault of the payload's own: this is the slot its code
+     * runs under, so a data abort taken here is the payload's to explain. */
+    runStub(stub, US_EC_DATA_ABORT_SAME_EL, 0xF8BFC22AU, &run);
+    ok("a data abort reaches the payload from this slot", run.reachedPayload);
+    eq64("with the same destination", run.payloadTarget, target);
 
     runStub(stub, 0, 0x00000000U, &run);
     ok("another undefined instruction reaches the tail", run.reachedTail);
-    ok("after the pop", run.pushed);
 
-    /* The longer form is the one the array has to fit. */
-    ok("the array is sized for the longer form",
-       usSlotStubTailIndex(true) + 2U <= US_SLOT_STUB_WORDS);
+    runStub(stub, 0x3CULL << 26, 0, &run);
+    ok("another class reaches the tail as well", run.reachedTail);
 }
 
 static void testSlotTargetEncoding(void) {
@@ -400,10 +437,10 @@ static void testSlotTargetEncoding(void) {
         0x0123456789ABCDEFULL, 0xFFFFFFFFFFFFFFFFULL,
     };
 
-    eq64("the legacy stub remains eighteen words", US_SLOT_STUB_WORDS, 18U);
+    eq64("the stub is sized for the saving form", US_SLOT_STUB_WORDS, 20U);
     eq64("the off-path target is five words", US_SLOT_TARGET_WORDS, 5U);
-    eq64("the runtime reserves twenty-three words", US_SLOT_RUNTIME_WORDS, 23U);
-    eq64("the runtime size is ninety-two bytes", US_SLOT_RUNTIME_BYTES, 92U);
+    eq64("the runtime reserves twenty-five words", US_SLOT_RUNTIME_WORDS, 25U);
+    eq64("the runtime size is a hundred bytes", US_SLOT_RUNTIME_BYTES, 100U);
 
     for (size_t t = 0; t < sizeof(targets) / sizeof(targets[0]); t++) {
         uint32_t target[US_SLOT_TARGET_WORDS + 1U];
@@ -433,17 +470,17 @@ static void testSlotTargetEncoding(void) {
 
             memset(stub, 0xA5, sizeof(stub));
             usEncodeSlotStub(stub, targets[t], 0xD5384112U, 0x14000010U, save);
-            eq64("the target starts after the filter", index, 9U + saving);
-            ok("the legacy stub uses the shared target encoding",
+            eq64("the target starts after the filter", index, 9U + 2U * saving);
+            ok("the stub uses the shared target encoding",
                memcmp(stub + index, target, US_SLOT_TARGET_BYTES) == 0);
             for (unsigned i = US_SLOT_STUB_WORDS; i < US_SLOT_RUNTIME_WORDS; i++) {
-                eq64("legacy encoding leaves off-path space untouched",
+                eq64("encoding leaves off-path space untouched",
                      stub[i], 0xA5A5A5A5U);
             }
             runStub(stub, 0, 0xF8BFC22AU, &run);
-            ok("the legacy stub still reaches the payload", run.reachedPayload);
-            eq64("the legacy stub also encodes high VA", run.payloadTarget, targets[t]);
-            ok("legacy save behaviour is unchanged", run.pushed == save);
+            ok("the stub still reaches the payload", run.reachedPayload);
+            eq64("the stub also encodes high VA", run.payloadTarget, targets[t]);
+            ok("no form touches the stack", !run.pushed);
         }
     }
 }
@@ -491,14 +528,14 @@ static void testSlotTargetPublication(void) {
             runPublishedStub(runtime, 0, 0xF8BFC22AU, &run);
             ok("staging still enters the low-VA payload", run.reachedPayload);
             eq64("staging cannot expose a partial target", run.payloadTarget, lowTarget);
-            ok("staging retains the original save behaviour", run.pushed == save);
+            ok("staging keeps that true", !run.pushed);
         }
 
         atomic_store_explicit(runtime + index, branch, memory_order_release);
         runPublishedStub(runtime, 0, 0xF8BFC22AU, &run);
         ok("atomic publication enters the high-VA payload", run.reachedPayload);
         eq64("publication reaches the complete high VA", run.payloadTarget, highTarget);
-        ok("publication retains the original save behaviour", run.pushed == save);
+        ok("publication keeps that true", !run.pushed);
         for (unsigned i = 0; i < US_SLOT_STUB_WORDS; i++) {
             if (i != index) {
                 eq64("publication preserves filter, MOVK, restore and tail",
@@ -508,10 +545,10 @@ static void testSlotTargetPublication(void) {
 
         runPublishedStub(runtime, 0, 0, &run);
         ok("published stub still rejects unrelated undefined instructions", run.reachedTail);
-        ok("the rejected instruction keeps save behaviour", run.pushed == save);
+        ok("the rejected instruction still touches nothing", !run.pushed);
         runPublishedStub(runtime, 0x3CULL << 26, 0xF8BFC22AU, &run);
         ok("published stub still rejects unrelated exception classes", run.reachedTail);
-        ok("the rejected class keeps save behaviour", run.pushed == save);
+        ok("the rejected class still touches nothing", !run.pushed);
     }
 }
 

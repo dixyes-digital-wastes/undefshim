@@ -7,6 +7,7 @@
 
 #include "common/layout.h"
 #include "core/ldapr.h"
+#include "core/pan.h"
 #include "payload/payload.h"
 #include "payload/early.h"
 #include "payload/selfmap.h"
@@ -30,6 +31,69 @@ static UsFrame *gCurrentFrame;
 /* How many loads have been carried out, kept here rather than in the pool
  * because the pool is what the host reads and this is only a counter. */
 static uint64_t gEmulated;
+
+/*
+ * What each processor is in the middle of.
+ *
+ * A fault taken inside an emulated access is delivered back here by the entry
+ * before anything else can run on that processor, and the question it has to
+ * answer is which exception it belongs to: the one being handled, standing in
+ * for an instruction of the interrupted code. Neither fact can be recovered
+ * afterwards - the nested frame is the handler's own, not the interrupted
+ * one - so both are kept per processor, indexed the same way the stacks are.
+ */
+typedef struct UsActive_t {
+    UsFrame *frame;    /* the exception the handler was given */
+    uint64_t address;  /* what the emulated access is about to read */
+    bool     loading;  /* whether one is in flight at all */
+} UsActive;
+
+static UsActive gActive[US_MAX_CPUS];
+
+
+static uint64_t currentEsr(void) {
+    uint64_t esr;
+
+    __asm__ volatile("mrs %0, esr_el1" : "=r"(esr));
+    return esr;
+}
+
+static uint64_t currentFar(void) {
+    uint64_t far;
+
+    __asm__ volatile("mrs %0, far_el1" : "=r"(far));
+    return far;
+}
+
+static uint64_t currentSpsr(void) {
+    uint64_t spsr;
+
+    __asm__ volatile("mrs %0, spsr_el1" : "=r"(spsr));
+    return spsr;
+}
+
+static uint64_t currentVbar(void) {
+    uint64_t vbar;
+
+    __asm__ volatile("mrs %0, vbar_el1" : "=r"(vbar));
+    return vbar;
+}
+
+static uint64_t currentElr(void) {
+    uint64_t elr;
+
+    __asm__ volatile("mrs %0, elr_el1" : "=r"(elr));
+    return elr;
+}
+
+/* Says that the frame in flight is finished with, so a later fault is not
+ * blamed on it. Every return from the handler goes through here. */
+static void usPayloadLeave(int cpu) {
+    if (cpu >= 0 && cpu < (int)US_MAX_CPUS) {
+        gActive[cpu].frame = NULL;
+        gActive[cpu].loading = false;
+    }
+}
 
 static uint64_t currentMpidr(void) {
     uint64_t mpidr;
@@ -63,19 +127,6 @@ static int currentCpu(void) {
 
 UsPayloadConfig *usPayloadConfig(void) {
     return &usPayloadConfigBlock;
-}
-
-/*
- * The exceptions this is willing to take responsibility for.
- *
- * An undefined instruction is the whole point: on hardware without the
- * extension, every LDAPR is one. A breakpoint is accepted as well because it
- * is how the deployment checks get here without planting anything that would
- * corrupt a running kernel, and because answering "not mine" to a breakpoint
- * is worse than reporting it.
- */
-static int isHandledClass(uint32_t ec) {
-    return ec == US_EC_UNKNOWN || ec == US_EC_BRK64;
 }
 
 /*
@@ -121,11 +172,12 @@ static uint64_t loadAcquire(UsLdaprKind kind, uint64_t address) {
  * changed and the caller has to answer for the exception the same way it
  * would have without us.
  */
-static bool emulateLdapr(UsFrame *frame) {
+static bool emulateLdapr(UsFrame *frame, int cpu) {
     uint32_t insn = *(const volatile uint32_t *)(uintptr_t)frame->elr;
     UsLdaprInsn decoded = usLdaprDecode(insn);
     uint64_t address;
     uint64_t value;
+    bool pan;
 
     if (decoded.kind == UsLdaprNone) {
         return false;
@@ -133,7 +185,34 @@ static bool emulateLdapr(UsFrame *frame) {
 
     /* Rn=31 selects the interrupted stack pointer, not the zero register */
     address = decoded.rn == 31 ? frame->sp : frame->x[decoded.rn];
+
+    /*
+     * What is about to be read, and that a read is in flight, are recorded
+     * before it happens: if it faults, the entry arrives back here with the
+     * nested fault's own account and nothing else to say which access it was.
+     */
+    if (cpu >= 0 && cpu < (int)US_MAX_CPUS) {
+        gActive[cpu].address = address;
+        gActive[cpu].loading = true;
+    }
+
+    /*
+     * The access is the interrupted instruction's, so it runs with the PAN
+     * that instruction was running with: an exception to EL1 sets PAN, and a
+     * load of a user page from a region that had cleared it would otherwise
+     * come back as a permission fault the hardware would not have raised.
+     */
+    pan = (frame->spsr & US_SPSR_PAN) != 0;
+    if (!pan) {
+        usPanOff();
+    }
     value = loadAcquire(decoded.kind, address);
+    if (!pan) {
+        usPanOn();
+    }
+    if (cpu >= 0 && cpu < (int)US_MAX_CPUS) {
+        gActive[cpu].loading = false;
+    }
 
     if (decoded.rt < 31) {
         frame->x[decoded.rt] = value;
@@ -217,11 +296,22 @@ static void recordHandback(UsFrame *frame) {
 
 int usPayloadHandle(UsFrame *frame) {
     UsPayloadConfig *cfg = usPayloadConfig();
+    uint64_t vbar;
     uint32_t ec;
     int cpu;
 
     gCurrentFrame = frame;
     cpu = currentCpu();
+
+    /*
+     * The exception in flight, recorded before anything that can fault: a
+     * fault here is delivered to the entry, which has to tell it from the
+     * handler's own and knows nothing about this frame otherwise.
+     */
+    if (cpu >= 0 && cpu < (int)US_MAX_CPUS) {
+        gActive[cpu].frame = frame;
+        gActive[cpu].loading = false;
+    }
 
     /*
      * The trace goes down first, and before anything that can fault. It is
@@ -277,8 +367,7 @@ int usPayloadHandle(UsFrame *frame) {
         return 0;
     }
 
-    uint64_t vbar;
-    __asm__ volatile("mrs %0, vbar_el1" : "=r"(vbar));
+    vbar = currentVbar();
     usPayloadPublish(vbar);
     if (cfg->poolBase != 0) {
         ((UsPool *)(uintptr_t)cfg->poolBase)->entry.lastInsn =
@@ -298,15 +387,7 @@ int usPayloadHandle(UsFrame *frame) {
         usUartPuts("\n");
     }
 
-    if (!isHandledClass(ec)) {
-        if (cfg->quiet == 0) {
-            usUartPuts("US-PAYLOAD not-mine\n");
-        }
-        recordHandback(frame);
-        return 0;
-    }
-
-    if (ec == US_EC_UNKNOWN && emulateLdapr(frame)) {
+    if (ec == US_EC_UNKNOWN && emulateLdapr(frame, cpu)) {
         if (cfg->poolBase != 0) {
             ((UsPool *)(uintptr_t)cfg->poolBase)->entry.handled++;
         }
@@ -314,20 +395,97 @@ int usPayloadHandle(UsFrame *frame) {
             usUartPuts("US-PAYLOAD emulated\n");
         }
         /* Claimed: the entry resumes at the instruction after this one. */
+        usPayloadLeave(cpu);
         recordHandback(frame);
         return 1;
     }
 
     /*
-     * Not something this can carry out. Saying so is the honest answer, and
-     * the one that leaves the kernel to deal with it exactly as it would
-     * have; claiming it would resume at an instruction that was never done.
+     * Everything else is not ours to carry out, and the honest answer is the
+     * one that leaves the kernel to deal with it exactly as it would have.
+     * That is not a halt: the entry can hand the frame to the handler the
+     * slot originally held, with the registers and the exception state as
+     * they were, which is indistinguishable from the exception never having
+     * been taken by us. The addresses are the only thing that has to be
+     * worked out, and the SPSR says which slot it was.
      */
     if (cfg->quiet == 0) {
-        usUartPuts("US-PAYLOAD reached\n");
+        usUartPuts("US-PAYLOAD not-ours\n");
     }
+    if (usPayloadSlotTail(vbar, frame->spsr, &frame->landing)) {
+        usPayloadLeave(cpu);
+        recordHandback(frame);
+        return 2;
+    }
+    usPayloadLeave(cpu);
     recordHandback(frame);
     return 0;
+}
+
+/*
+ * The entry on the CPU's own stack, entered when the payload itself faults.
+ *
+ * The frame of the exception being handled is what the kernel has to be
+ * given, because the emulated access stands in for one instruction of the
+ * interrupted code: a fault on that access is that instruction's fault, and
+ * the kernel's page fault handler is what resolves it and retries it.
+ *
+ * What comes back here is the nested fault's own account, which is already
+ * the right exception class and status - nothing has to be made up - and the
+ * entry it came from, which says which slot's handler is to finish it.
+ *
+ * The answer is the frame to restore; the entry branches to its landing.
+ * NULL means there is nothing to restore and the entry stops.
+ */
+UsFrame *usPayloadFault(void) {
+    int cpu = currentCpu();
+    UsFrame *outer;
+    uint64_t vbar;
+
+    /* The access may have cleared PAN; the handler that is about to run
+     * would have been entered with it set. */
+    usPanOn();
+
+    if (cpu < 0 || cpu >= (int)US_MAX_CPUS) {
+        return NULL;
+    }
+    outer = gActive[cpu].frame;
+    if (outer == NULL) {
+        return NULL;
+    }
+    vbar = currentVbar();
+
+    outer->esr = currentEsr();
+    outer->far = currentFar();
+
+    if (gActive[cpu].loading && outer->far == gActive[cpu].address) {
+        /* The emulated access: the kernel's handler for the slot the
+         * exception was taken through is where its instruction's fault
+         * belongs, in the context it was interrupted from. */
+        gActive[cpu].loading = false;
+        if (!usPayloadSlotTail(vbar, outer->spsr, &outer->landing)) {
+            return NULL;
+        }
+    } else {
+        /*
+         * Something of ours, not the interrupted instruction: that is a fault
+         * inside a handler, which the kernel treats as fatal, and it is
+         * reported where it happened - at our code - rather than blamed on
+         * the instruction the handler was standing in for.
+         */
+        outer->elr = currentElr();
+        outer->spsr = currentSpsr();
+        gActive[cpu].loading = false;
+        if (!usPayloadSlotTail(vbar, outer->spsr, &outer->landing)) {
+            return NULL;
+        }
+    }
+    /* What was handed back, like every other way out of the handler. The
+     * frame is finished with: the entry branches away from here and never
+     * returns to the handler that owned it. */
+    usPayloadLeave(cpu);
+    recordHandback(outer);
+    return outer;
 }
 
 /* Only used to prove the blob was copied and is executable before anything
