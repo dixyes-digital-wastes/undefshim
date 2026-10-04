@@ -9,18 +9,15 @@
 # released, so there is nothing to tell apart. Keys this parser does not know
 # are ignored, so a typo is silent - copy from here rather than from memory.
 #
-# The serial settings are at the root rather than under a table, because they
-# are needed in several places, and they must appear before the first table
-# header, since after that every key belongs to that table.
-#
-# Leaving the serial settings out means no serial output at all: the console
+# Leaving the [uart] table out means no serial output at all: the console
 # stays silent, and so does everything that reports through it.
 
+[uart]
 # Where the serial port is, what kind it is, and how wide its registers are
-# read. All three are optional, but uartBase is what switches it on.
-uartBase = 0x09000000   # any address; omit it and nothing is printed
-uartType = "pl011"      # "pl011" (32 bit registers) or "uart8250"
-uartWidth = 32          # 8 or 32; an 8250 on a 32 bit bus wants 32
+# read. All three are optional, but baseAddr is what switches it on.
+baseAddr = 0x09000000   # any address; omit it and nothing is printed
+type = "pl011"          # "pl011" (32 bit registers) or "uart8250"
+width = 32              # 8 or 32; an 8250 on a 32 bit bus wants 32
 
 [log]
 # How much the driver says. Options, least to most:

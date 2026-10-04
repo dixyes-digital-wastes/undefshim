@@ -71,9 +71,9 @@ typedef struct UsConfig_t {
     bool          hasDescriptorBase;
     uint32_t      descriptorBaseRva;
     /*
-     * Where to report from. It is needed in too many places to live under a
-     * table of its own, and leaving it out is how a machine says it wants no
-     * serial output at all.
+     * Where to report from, from the [uart] table: the driver, the payload
+     * and anything reporting later all need it. Leaving it out is how a
+     * machine says it wants no serial output at all.
      */
     bool          hasUart;
     const char   *uartType;    /* "pl011" or "uart8250"; points into the document */

@@ -153,9 +153,19 @@ static void testRejections(void) {
     reject("unknown level", "[log]\nlevel = \"chatty\"\n");
 
     reject("bool as string", "[scan]\nldaprRewrite = \"yes\"\n");
-    reject("unknown uart type", "uartBase = 0x9000000\nuartType = \"pl012\"\n");
-    reject("bad uart width", "uartBase = 0x9000000\nuartWidth = 16\n");
-    reject("bad uart base", "uartBase = 0\n");
+    reject("unknown uart type", "[uart]\nbaseAddr = 0x9000000\ntype = \"pl012\"\n");
+    reject("bad uart width", "[uart]\nbaseAddr = 0x9000000\nwidth = 16\n");
+    reject("bad uart base", "[uart]\nbaseAddr = 0\n");
+    /* A type with no base address is a table that says nothing: the serial
+     * output stays off rather than the file being refused. */
+    {
+        UsConfig *c = accept("uart type without base", "[uart]\ntype = \"pl011\"\n");
+
+        if (c != NULL) {
+            ok("uart stays off without a base", c->hasUart == false);
+            usConfigFree(c);
+        }
+    }
 
     reject("patch missing target", "[[debug.patch]]\nrva = 1\nvalue = 1\nwidth = 4\n");
     reject("patch missing rva", "[[debug.patch]]\ntarget = \"ntoskrnl\"\nvalue = 1\nwidth = 4\n");
