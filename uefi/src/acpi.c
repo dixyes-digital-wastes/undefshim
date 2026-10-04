@@ -23,7 +23,7 @@
  * first: its table can describe a table anywhere, while the older one's
  * entries cannot reach past four gigabytes
  */
-static const void *findRsdp(void) {
+static const void *findRSDP(void) {
     static const efi_guid_t newer = ACPI_20_TABLE_GUID;
     static const efi_guid_t older = ACPI_TABLE_GUID;
 
@@ -52,13 +52,13 @@ static const void *findRsdp(void) {
     return NULL;
 }
 
-UsAcpiCpus usAcpiProbeCpus(void) {
-    const void *rsdp = findRsdp();
-    const void *madt = usAcpiFindMadt(rsdp);
+UsACPICPUs usACPIProbeCPUs(void) {
+    const void *rsdp = findRSDP();
+    const void *madt = usACPIFindMADT(rsdp);
 
     if (madt == NULL) {
         usConsolePuts("acpi: no processor list, falling back to one CPU\n");
-        return (UsAcpiCpus){ 0 };
+        return (UsACPICPUs){ 0 };
     }
-    return usAcpiCollectCpus(madt);
+    return usACPICollectCPUs(madt);
 }

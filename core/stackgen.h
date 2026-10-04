@@ -13,8 +13,8 @@
  * mpidr contains distinct normalized affinity IDs; zero is a valid ID
  */
 uint32_t usGenerateStackLookup(const uint64_t *mpidr, uint32_t cpuCount,
-                               uint32_t codeRva, uint32_t stackTopTableRva,
-                               uint32_t readyRva, uint32_t haltRva,
+                               uint32_t codeRVA, uint32_t stackTopTableRVA,
+                               uint32_t readyRVA, uint32_t haltRVA,
                                uint32_t out[US_STACK_LOOKUP_WORDS]);
 #endif
 

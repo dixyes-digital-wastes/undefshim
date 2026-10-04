@@ -67,9 +67,9 @@ typedef struct {
     /* The build as the program database states it: the pair the image's own
      * CodeView record carries. Nothing relocates those bytes and the loader
      * does not patch them, so they are the same in the file and in memory */
-    uint8_t       pdbGuid[16];
+    uint8_t       pdbGUID[16];
     uint32_t      pdbAge;
-    bool          hasPdbIdentity;
+    bool          hasPDBIdentity;
     uint32_t      sites;          /* filled in */
     uint32_t      skipped;        /* site lines left out for their shape */
     uint32_t      errorAt;        /* offset of the token that was refused */

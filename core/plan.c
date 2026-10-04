@@ -20,7 +20,7 @@ bool usPlanBuild(UsPlan *plan, UsImage *winload, UsImage *ntoskrnl) {
     if (ntoskrnl != NULL && ntoskrnl->valid) {
         plan->imageCount++;
         plan->ntoskrnlSizeOfImage = ntoskrnl->sizeOfImage;
-        plan->ldapr = usCountLdapr(ntoskrnl);
+        plan->ldapr = usCountLDAPR(ntoskrnl);
         usCollectSites(&plan->sites, ntoskrnl, UsImageNtoskrnl);
         plan->thunk = usLocateSpareSlot(ntoskrnl, US_SLOT_RUNTIME_BYTES);
     }
@@ -31,7 +31,7 @@ bool usPlanBuild(UsPlan *plan, UsImage *winload, UsImage *ntoskrnl) {
 
         /* The loader's own LDAPR instructions matter as much as the kernel's:
          * it runs on the same CPU before the kernel does */
-        UsLdaprCounts l = usCountLdapr(winload);
+        UsLDAPRCounts l = usCountLDAPR(winload);
         plan->ldapr.word += l.word;
         plan->ldapr.xword += l.xword;
         plan->ldapr.byte += l.byte;
@@ -39,7 +39,7 @@ bool usPlanBuild(UsPlan *plan, UsImage *winload, UsImage *ntoskrnl) {
         plan->ldapr.total += l.total;
 
         usCollectSites(&plan->sites, winload, UsImageWinload);
-        plan->vbar = usFindVbarTables(winload);
+        plan->vbar = usFindVBARTables(winload);
     }
 
     usSiteListSort(&plan->sites);
@@ -47,7 +47,7 @@ bool usPlanBuild(UsPlan *plan, UsImage *winload, UsImage *ntoskrnl) {
     for (size_t i = 0; i < plan->sites.count; i++) {
         if (plan->sites.sites[i].kind == UsSiteTransferLeaf) {
             leaf = true;
-        } else if (plan->sites.sites[i].kind == UsSiteTtbrHandoff) {
+        } else if (plan->sites.sites[i].kind == UsSiteTTBRHandoff) {
             handoff = true;
         }
     }
@@ -112,7 +112,7 @@ void usPlanEmit(const UsPlan *plan, const UsSink *sink) {
         emitPuts(sink, usImageKindName(s->image));
         emitPuts(sink, " +");
         emitHex(sink, s->rva);
-        if (s->kind == UsSiteVbarWrite) {
+        if (s->kind == UsSiteVBARWrite) {
             emitPuts(sink, " x");
             emitDec(sink, s->auxiliary);
         }

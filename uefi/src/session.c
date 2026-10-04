@@ -18,7 +18,7 @@ bool usSessionInit(UsSession *s) {
     s->ldaprRewrite = true;
 
     /* Read once: the tables are the boot's and are gone with it */
-    s->cpus = usAcpiProbeCpus();
+    s->cpus = usACPIProbeCPUs();
     if (s->cpus.count == 0) {
         uint64_t mpidr;
 

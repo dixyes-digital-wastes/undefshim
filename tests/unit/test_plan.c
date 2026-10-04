@@ -258,17 +258,17 @@ static void testSiteCollection(void) {
     eqSize("register of the third", list.sites[2].auxiliary, 1);
 
     {
-        UsLdaprCounts c = usCountLdapr(NULL);
+        UsLDAPRCounts c = usCountLDAPR(NULL);
         eqSize("ldapr of nothing is nothing", c.total, 0);
     }
     {
-        UsLdaprCounts c = usCountLdapr(&img);
+        UsLDAPRCounts c = usCountLDAPR(&img);
         eqSize("one ldapr word", c.word, 1);
         eqSize("one ldapr byte", c.byte, 1);
         eqSize("two ldapr in total", c.total, 2);
     }
 
-    eqStr("site kind name", usSiteKindName(UsSiteVbarWrite), "vbar-write");
+    eqStr("site kind name", usSiteKindName(UsSiteVBARWrite), "vbar-write");
     eqStr("image kind name", usImageKindName(UsImageNtoskrnl), "ntoskrnl");
 }
 
@@ -293,7 +293,7 @@ static void testLeafPatchPointIsTheBranch(void) {
         ok("the sequence is found", leaf.found);
         eqSize("and it is unique", leaf.matches, 1);
         eqSize("the sequence starts where it was written", leaf.rva, TEXT_RVA + 0x1000);
-        eqSize("the patch point is the branch", leaf.patchRva, branch);
+        eqSize("the patch point is the branch", leaf.patchRVA, branch);
     }
 
     usSiteListInit(&list);
@@ -406,10 +406,10 @@ static void testCompletePlan(void) {
         ok("the leaf is found", leaf.found);
         eqSize("the leaf is unique", leaf.matches, 1);
         eqSize("the leaf starts at the sequence", leaf.rva, TEXT_RVA + 0x1000);
-        eqSize("and patches the branch", leaf.patchRva, TEXT_RVA + 0x1014);
+        eqSize("and patches the branch", leaf.patchRVA, TEXT_RVA + 0x1014);
     }
     {
-        UsHandoffSite handoff = usLocateTtbrHandoff(&winload);
+        UsHandoffSite handoff = usLocateTTBRHandoff(&winload);
         ok("the handoff is found", handoff.found);
         eqSize("the handoff is at the ttbr0 write", handoff.rva, TEXT_RVA + 0x2000);
     }
@@ -417,7 +417,7 @@ static void testCompletePlan(void) {
     ok("a plan with both is complete", usPlanBuild(&plan, &winload, &kernel));
     eqSize("two sites in all", plan.sites.count, 2);
     eqSize("one is the leaf", plan.sites.sites[0].kind, UsSiteTransferLeaf);
-    eqSize("one is the handoff", plan.sites.sites[1].kind, UsSiteTtbrHandoff);
+    eqSize("one is the handoff", plan.sites.sites[1].kind, UsSiteTTBRHandoff);
 
     /* And without the kernel there is nothing to plan against */
     ok("a plan without the kernel is not complete", !usPlanBuild(&plan, &winload, NULL));
@@ -434,9 +434,9 @@ static void testCompletePlan(void) {
  * same. What tells them apart is the register the write site loads, which is
  * what this follows
  */
-static void testVbarDiscovery(void) {
+static void testVBARDiscovery(void) {
     UsImage kernel;
-    UsVbarTables tables;
+    UsVBARTables tables;
 
     buildImage(gKernel, ".text", US_PE_SUBSYSTEM_NATIVE);
     usImageInitMemory(&kernel, gKernel, sizeof(gKernel));
@@ -460,7 +460,7 @@ static void testVbarDiscovery(void) {
     putInsn(gKernel, TEXT_RVA + 0x300, 0xF940040A);
     putInsn(gKernel, TEXT_RVA + 0x304, 0xD518C00A);
 
-    tables = usFindVbarTables(&kernel);
+    tables = usFindVBARTables(&kernel);
     eqSize("three writes are seen", tables.sites, 3);
     eqSize("two tables are resolved", tables.count, 2);
     eqSize("and one is not", tables.unresolved, 1);
@@ -471,14 +471,14 @@ static void testVbarDiscovery(void) {
         int32_t displacement = 0;
 
         ok("the first table's synchronous slot is a branch to itself",
-           usVectorSlotBranch(&kernel, tables.rvas[0], UsVectorSlotEl1hSync,
+           usVectorSlotBranch(&kernel, tables.rvas[0], UsVectorSlotEL1hSync,
                               &displacement) && displacement == 0);
     }
 
     /* A slot holding anything else is a handler written out in place, and
      * there is nothing there to keep for the exceptions that are not ours */
     ok("the second table's is not a branch",
-       !usVectorSlotBranch(&kernel, tables.rvas[1], UsVectorSlotEl1hSync, NULL));
+       !usVectorSlotBranch(&kernel, tables.rvas[1], UsVectorSlotEL1hSync, NULL));
 }
 
 int main(void) {
@@ -487,7 +487,7 @@ int main(void) {
     testLeafRefusesNearMisses();
     testPlanDump();
     testCompletePlan();
-    testVbarDiscovery();
+    testVBARDiscovery();
 
     printf("%d checks, %d failures\n", checks, failures);
     return failures != 0;

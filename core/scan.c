@@ -24,12 +24,12 @@
     (uint8_t)(((w) >> 24) & 0xFF)
 
 /* msr VBAR_EL1, xN. N is free, hence the wildcard in the low byte */
-static const uint8_t kMsrVbarEl1[] = { US_LE32(0xD518C000) };
-static const uint8_t kMsrVbarEl1Mask[] = { US_LE32(0xFFFFFFE0) };
+static const uint8_t kMsrVBAREL1[] = { US_LE32(0xD518C000) };
+static const uint8_t kMsrVBAREL1Mask[] = { US_LE32(0xFFFFFFE0) };
 
-const UsPattern usPatMsrVbarEl1 = {
-    .bytes = kMsrVbarEl1,
-    .mask = kMsrVbarEl1Mask,
+const UsPattern usPatMsrVBAREL1 = {
+    .bytes = kMsrVBAREL1,
+    .mask = kMsrVBAREL1Mask,
     .len = 4,
 };
 
@@ -73,7 +73,7 @@ const UsPattern usPatTransferLeaf = {
  * restructured this code and the byte sequence is gone, so the shape is what
  * gets matched
  */
-static const uint8_t kTtbrHandoffOld[] = {
+static const uint8_t kTTBRHandoffOld[] = {
     US_LE32(0xD5182001), US_LE32(0xD5033FDF),
     US_LE32(0xD5182022), US_LE32(0xD5033FDF),
     US_LE32(0xD5182043), US_LE32(0xD5033FDF),
@@ -81,27 +81,27 @@ static const uint8_t kTtbrHandoffOld[] = {
     US_LE32(0xD508871F),
 };
 
-const UsPattern usPatTtbrHandoff = {
-    .bytes = kTtbrHandoffOld,
+const UsPattern usPatTTBRHandoff = {
+    .bytes = kTTBRHandoffOld,
     .mask = NULL,
-    .len = sizeof(kTtbrHandoffOld),
+    .len = sizeof(kTTBRHandoffOld),
 };
 
 /*
  * The LDAPR family. The size and the opcode live in the top two bytes and are
  * fixed; the two register fields are free, which the mask carries
  */
-static const uint8_t kLdaprMask[] = { US_LE32(0xFFFFFC00) };
+static const uint8_t kLDAPRMask[] = { US_LE32(0xFFFFFC00) };
 
-static const uint8_t kLdaprWBytes[] = { US_LE32(0xB8BFC000) };
-static const uint8_t kLdaprXBytes[] = { US_LE32(0xF8BFC000) };
-static const uint8_t kLdaprBBytes[] = { US_LE32(0x38BFC000) };
-static const uint8_t kLdaprHBytes[] = { US_LE32(0x78BFC000) };
+static const uint8_t kLDAPRWBytes[] = { US_LE32(0xB8BFC000) };
+static const uint8_t kLDAPRXBytes[] = { US_LE32(0xF8BFC000) };
+static const uint8_t kLDAPRBBytes[] = { US_LE32(0x38BFC000) };
+static const uint8_t kLDAPRHBytes[] = { US_LE32(0x78BFC000) };
 
-const UsPattern usPatLdaprW = { .bytes = kLdaprWBytes, .mask = kLdaprMask, .len = 4 };
-const UsPattern usPatLdaprX = { .bytes = kLdaprXBytes, .mask = kLdaprMask, .len = 4 };
-const UsPattern usPatLdaprB = { .bytes = kLdaprBBytes, .mask = kLdaprMask, .len = 4 };
-const UsPattern usPatLdaprH = { .bytes = kLdaprHBytes, .mask = kLdaprMask, .len = 4 };
+const UsPattern usPatLDAPRW = { .bytes = kLDAPRWBytes, .mask = kLDAPRMask, .len = 4 };
+const UsPattern usPatLDAPRX = { .bytes = kLDAPRXBytes, .mask = kLDAPRMask, .len = 4 };
+const UsPattern usPatLDAPRB = { .bytes = kLDAPRBBytes, .mask = kLDAPRMask, .len = 4 };
+const UsPattern usPatLDAPRH = { .bytes = kLDAPRHBytes, .mask = kLDAPRMask, .len = 4 };
 
 /* "OSLOADER.XSL" as UTF-16LE */
 static const uint8_t kOsloaderXsl[] = {
@@ -164,7 +164,7 @@ UsMatchList usScanImage(UsImage *img, const UsPattern *pat) {
      * that load a page table register occur in dead code that the linker kept
      */
     for (uint16_t i = 0; i < img->sectionCount; i++) {
-        const UsPeSection *s = &img->sections[i];
+        const UsPESection *s = &img->sections[i];
         const uint8_t *p;
         size_t avail = 0;
 
@@ -174,7 +174,7 @@ UsMatchList usScanImage(UsImage *img, const UsPattern *pat) {
         if (s->virtualSize == 0) {
             continue;
         }
-        p = usImageRvaSpan(img, s->virtualAddress, &avail);
+        p = usImageRVASpan(img, s->virtualAddress, &avail);
         if (p == NULL) {
             continue;
         }
@@ -209,7 +209,7 @@ UsLeafSite usLocateTransferLeaf(UsImage *img) {
      * to be replaced: the four bytes before it are the last thing the loader
      * does with the kernel's entry point before using it
      */
-    site.patchRva = m.matches[0].rva + (uint32_t)(sizeof(kTransferLeaf) - sizeof(uint32_t));
+    site.patchRVA = m.matches[0].rva + (uint32_t)(sizeof(kTransferLeaf) - sizeof(uint32_t));
     return site;
 }
 
@@ -221,7 +221,7 @@ UsLeafSite usLocateTransferLeaf(UsImage *img) {
  * here" without a separate status
  */
 static uint32_t readInsn(const UsImage *img, uint32_t rva) {
-    const uint8_t *p = usImageRvaToPtr(img, rva);
+    const uint8_t *p = usImageRVAToPtr(img, rva);
 
     if (p == NULL) {
         return 0;
@@ -253,8 +253,8 @@ static uint32_t readInsn(const UsImage *img, uint32_t rva) {
  */
 static bool isHandoffAt(const UsImage *img, uint32_t rva) {
     uint32_t next;
-    bool sawMair = false;
-    bool sawTcr = false;
+    bool sawMAIR = false;
+    bool sawTCR = false;
 
     if (US_MSR_VAL(readInsn(img, rva)) != US_MSR_VAL(US_SYSREG_TTBR0_EL1)) {
         return false;
@@ -282,17 +282,17 @@ static bool isHandoffAt(const UsImage *img, uint32_t rva) {
             continue;
         }
         if (v == US_MSR_VAL(US_SYSREG_MAIR_EL1)) {
-            sawMair = true;
+            sawMAIR = true;
         } else if (v == US_MSR_VAL(US_SYSREG_TCR_EL1)) {
-            sawTcr = true;
+            sawTCR = true;
         }
     }
-    return sawMair && sawTcr;
+    return sawMAIR && sawTCR;
 }
 
 /* Does an SCTLR_EL1 write follow within the given distance? That write is what
  * actually enables the MMU, so it marks the real handoff */
-static bool writesSctlrSoon(const UsImage *img, uint32_t rva, uint32_t within) {
+static bool writesSCTLRSoon(const UsImage *img, uint32_t rva, uint32_t within) {
     for (uint32_t off = 0; off < within; off += 4) {
         if (US_MSR_VAL(readInsn(img, rva + off)) == US_MSR_VAL(US_SYSREG_SCTLR_EL1)) {
             return true;
@@ -301,17 +301,17 @@ static bool writesSctlrSoon(const UsImage *img, uint32_t rva, uint32_t within) {
     return false;
 }
 
-UsHandoffSite usLocateTtbrHandoff(UsImage *img) {
+UsHandoffSite usLocateTTBRHandoff(UsImage *img) {
     UsHandoffSite site = { 0 };
     UsHandoffSite inTrans = { 0 };
-    UsHandoffSite beforeSctlr = { 0 };
+    UsHandoffSite beforeSCTLR = { 0 };
 
     if (img == NULL || !img->valid) {
         return site;
     }
 
     for (uint16_t i = 0; i < img->sectionCount; i++) {
-        const UsPeSection *s = &img->sections[i];
+        const UsPESection *s = &img->sections[i];
         uint32_t end;
 
         if ((s->characteristics & US_PE_SECTION_EXECUTABLE) == 0 || s->virtualSize == 0) {
@@ -335,10 +335,10 @@ UsHandoffSite usLocateTtbrHandoff(UsImage *img) {
                 inTrans.candidates = site.candidates;
                 break;
             }
-            if (!beforeSctlr.found && writesSctlrSoon(img, rva, 0x90)) {
-                beforeSctlr.form = UsHandoffBeforeSctlr;
-                beforeSctlr.rva = rva;
-                beforeSctlr.found = true;
+            if (!beforeSCTLR.found && writesSCTLRSoon(img, rva, 0x90)) {
+                beforeSCTLR.form = UsHandoffBeforeSCTLR;
+                beforeSCTLR.rva = rva;
+                beforeSCTLR.found = true;
             }
         }
         if (inTrans.found) {
@@ -349,8 +349,8 @@ UsHandoffSite usLocateTtbrHandoff(UsImage *img) {
     if (inTrans.found) {
         return inTrans;
     }
-    beforeSctlr.candidates = site.candidates;
-    return beforeSctlr;
+    beforeSCTLR.candidates = site.candidates;
+    return beforeSCTLR;
 }
 
 /* --- the spare slot ----------------------------------------------------- */
@@ -387,7 +387,7 @@ UsSpareSlot usLocateSpareSlot(UsImage *img, uint32_t minBytes) {
     }
 
     for (uint16_t i = 0; i < img->sectionCount; i++) {
-        const UsPeSection *s = &img->sections[i];
+        const UsPESection *s = &img->sections[i];
         uint32_t span;
         uint32_t off;
 
@@ -483,15 +483,15 @@ static uint64_t adrpPage(uint32_t at, uint32_t word) {
     return (uint64_t)(int64_t)(at & ~0xFFFU) + ((uint64_t)imm << 12);
 }
 
-UsVbarTables usFindVbarTables(UsImage *img) {
-    UsVbarTables out = { 0 };
+UsVBARTables usFindVBARTables(UsImage *img) {
+    UsVBARTables out = { 0 };
 
     if (img == NULL || !img->valid) {
         return out;
     }
 
     for (uint16_t i = 0; i < img->sectionCount; i++) {
-        const UsPeSection *s = &img->sections[i];
+        const UsPESection *s = &img->sections[i];
         const uint8_t *p;
         size_t avail = 0;
         size_t offset = 0;
@@ -500,7 +500,7 @@ UsVbarTables usFindVbarTables(UsImage *img) {
             || s->rawSize == 0) {
             continue;
         }
-        p = usImageRvaSpan(img, s->virtualAddress, &avail);
+        p = usImageRVASpan(img, s->virtualAddress, &avail);
         if (p == NULL) {
             continue;
         }
@@ -512,10 +512,10 @@ UsVbarTables usFindVbarTables(UsImage *img) {
             uint32_t rva;
             uint32_t word;
             uint32_t reg;
-            uint32_t tableRva = 0;
+            uint32_t tableRVA = 0;
             bool resolved = false;
 
-            if (!patMatchAt(p + offset, &usPatMsrVbarEl1)) {
+            if (!patMatchAt(p + offset, &usPatMsrVBAREL1)) {
                 offset += 4;
                 continue;
             }
@@ -534,7 +534,7 @@ UsVbarTables usFindVbarTables(UsImage *img) {
                     uint32_t prev = readInsn(img, at - 4);
 
                     if ((prev & US_ADRP_MASK) == US_ADRP_OPCODE && US_RD(prev) == reg) {
-                        tableRva = (uint32_t)adrpPage(at - 4, prev) + US_IMM12(w);
+                        tableRVA = (uint32_t)adrpPage(at - 4, prev) + US_IMM12(w);
                         resolved = true;
                     }
                     /* The definition is this add either way; anything before
@@ -563,19 +563,19 @@ UsVbarTables usFindVbarTables(UsImage *img) {
                 bool seen = false;
 
                 for (size_t k = 0; k < out.count; k++) {
-                    if (out.rvas[k] == tableRva) {
+                    if (out.rvas[k] == tableRVA) {
                         seen = true;
                     }
                 }
                 if (!seen) {
                     if (out.count < US_VBAR_MAX_TABLES) {
-                        uint32_t slot = readInsn(img, tableRva
-                                                 + (uint32_t)UsVectorSlotEl1hSync
+                        uint32_t slot = readInsn(img, tableRVA
+                                                 + (uint32_t)UsVectorSlotEL1hSync
                                                        * US_VECTOR_SLOT_BYTES);
 
                         out.syncWord[out.count] = slot;
                         out.syncUsable[out.count] = isBranch(slot);
-                        out.rvas[out.count++] = tableRva;
+                        out.rvas[out.count++] = tableRVA;
                     } else {
                         out.overflow = true;
                     }
@@ -588,21 +588,21 @@ UsVbarTables usFindVbarTables(UsImage *img) {
     return out;
 }
 
-UsLdaprCounts usCountLdapr(UsImage *img) {    UsLdaprCounts c = { 0 };    c.word = usScanImage(img, &usPatLdaprW).total;    c.xword = usScanImage(img, &usPatLdaprX).total;
-    c.byte = usScanImage(img, &usPatLdaprB).total;
-    c.half = usScanImage(img, &usPatLdaprH).total;
+UsLDAPRCounts usCountLDAPR(UsImage *img) {    UsLDAPRCounts c = { 0 };    c.word = usScanImage(img, &usPatLDAPRW).total;    c.xword = usScanImage(img, &usPatLDAPRX).total;
+    c.byte = usScanImage(img, &usPatLDAPRB).total;
+    c.half = usScanImage(img, &usPatLDAPRH).total;
     c.total = c.word + c.xword + c.byte + c.half;
     return c;
 }
 
-bool usVectorSlotBranch(UsImage *img, uint32_t tableRva, UsVectorSlot slot,
+bool usVectorSlotBranch(UsImage *img, uint32_t tableRVA, UsVectorSlot slot,
                         int32_t *displacement) {
     uint32_t word;
 
     if (img == NULL || !img->valid || (uint32_t)slot >= US_VECTOR_SLOTS) {
         return false;
     }
-    word = readInsn(img, tableRva + (uint32_t)slot * US_VECTOR_SLOT_BYTES);
+    word = readInsn(img, tableRVA + (uint32_t)slot * US_VECTOR_SLOT_BYTES);
     if (!isBranch(word)) {
         return false;
     }
@@ -635,11 +635,11 @@ bool usSiteAdd(UsSiteList *list, UsSiteKind kind, UsImageKind image, uint32_t rv
 
 const char *usSiteKindName(UsSiteKind kind) {
     switch (kind) {
-    case UsSiteVbarWrite:
+    case UsSiteVBARWrite:
         return "vbar-write";
     case UsSiteTransferLeaf:
         return "transfer-leaf";
-    case UsSiteTtbrHandoff:
+    case UsSiteTTBRHandoff:
         return "ttbr-handoff";
     }
     return "unknown";
@@ -653,11 +653,11 @@ const char *usSiteKindName(UsSiteKind kind) {
  * them, and a list that stopped at the first sixty four would be a list that
  * silently missed some
  */
-static size_t collectVbarWrites(UsSiteList *list, UsImage *img, UsImageKind kind) {
+static size_t collectVBARWrites(UsSiteList *list, UsImage *img, UsImageKind kind) {
     size_t before = list->total;
 
     for (uint16_t i = 0; i < img->sectionCount; i++) {
-        const UsPeSection *s = &img->sections[i];
+        const UsPESection *s = &img->sections[i];
         const uint8_t *p;
         size_t avail = 0;
         size_t offset = 0;
@@ -665,7 +665,7 @@ static size_t collectVbarWrites(UsSiteList *list, UsImage *img, UsImageKind kind
         if ((s->characteristics & US_PE_SECTION_EXECUTABLE) == 0 || s->virtualSize == 0) {
             continue;
         }
-        p = usImageRvaSpan(img, s->virtualAddress, &avail);
+        p = usImageRVASpan(img, s->virtualAddress, &avail);
         if (p == NULL) {
             continue;
         }
@@ -674,14 +674,14 @@ static size_t collectVbarWrites(UsSiteList *list, UsImage *img, UsImageKind kind
         }
 
         while (offset + 4 <= avail) {
-            if (patMatchAt(p + offset, &usPatMsrVbarEl1)) {
+            if (patMatchAt(p + offset, &usPatMsrVBAREL1)) {
                 uint32_t word = (uint32_t)p[offset] | ((uint32_t)p[offset + 1] << 8)
                                 | ((uint32_t)p[offset + 2] << 16)
                                 | ((uint32_t)p[offset + 3] << 24);
                 uint32_t rva = s->virtualAddress + (uint32_t)offset;
 
                 /* The low five bits are the register holding the address */
-                usSiteAdd(list, UsSiteVbarWrite, kind, rva, word & 0x1FU);
+                usSiteAdd(list, UsSiteVBARWrite, kind, rva, word & 0x1FU);
             }
             offset += 4;
         }
@@ -697,7 +697,7 @@ size_t usCollectSites(UsSiteList *list, UsImage *img, UsImageKind kind) {
         return 0;
     }
 
-    collectVbarWrites(list, img, kind);
+    collectVBARWrites(list, img, kind);
 
     /*
      * The other two only exist in the loader: the leaf is what hands control
@@ -706,13 +706,13 @@ size_t usCollectSites(UsSiteList *list, UsImage *img, UsImageKind kind) {
      */
     if (kind == UsImageWinload) {
         UsLeafSite leaf = usLocateTransferLeaf(img);
-        UsHandoffSite handoff = usLocateTtbrHandoff(img);
+        UsHandoffSite handoff = usLocateTTBRHandoff(img);
 
         if (leaf.found) {
-            usSiteAdd(list, UsSiteTransferLeaf, kind, leaf.patchRva, 0);
+            usSiteAdd(list, UsSiteTransferLeaf, kind, leaf.patchRVA, 0);
         }
         if (handoff.found) {
-            usSiteAdd(list, UsSiteTtbrHandoff, kind, handoff.rva, (uint32_t)handoff.form);
+            usSiteAdd(list, UsSiteTTBRHandoff, kind, handoff.rva, (uint32_t)handoff.form);
         }
     }
 

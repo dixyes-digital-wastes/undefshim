@@ -17,7 +17,7 @@
 #include "common/layout.h"
 
 /*
- * Fills in a pool header for memory at baseVa / basePa
+ * Fills in a pool header for memory at baseVA / basePA
  *
  * The two are passed separately because they stop being equal once the
  * address space is rebuilt, and the payload has to know both: one to reach the
@@ -26,7 +26,7 @@
  * Returns false if either address is not page aligned, which would mean the
  * stacks are misaligned too
  */
-bool usPoolInitLayout(UsPool *pool, uint64_t baseVa, uint64_t basePa);
+bool usPoolInitLayout(UsPool *pool, uint64_t baseVA, uint64_t basePA);
 
 /*
  * Top of a CPU's stack, or 0 when the slot does not exist. The caller checks

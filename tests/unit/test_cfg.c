@@ -77,7 +77,7 @@ static void testDefaults(void) {
     eqInt("default log level", c->logLevel, UsLogInfo);
     eqInt("default ldaprRewrite", c->ldaprRewrite, 1);
     eqInt("default el0InPlace", c->el0InPlace, 1);
-    ok("default no uart", c->hasUart == false);
+    ok("default no uart", c->hasUART == false);
     eqInt("default debug.enabled", c->debugEnabled, 0);
     eqInt("default patch count", c->patchCount, 0);
     eqInt("debug bag fallback", usConfigDebugBool(c, "nope", true), 1);
@@ -158,7 +158,7 @@ static void testRejections(void) {
         UsConfig *c = accept("uart type without base", "[uart]\ntype = \"pl011\"\n");
 
         if (c != NULL) {
-            ok("uart stays off without a base", c->hasUart == false);
+            ok("uart stays off without a base", c->hasUART == false);
             usConfigFree(c);
         }
     }

@@ -75,11 +75,11 @@ static const Gap *findGap(const char *version, const char *file) {
  * carry exactly one, so a machine without the extension traps there too; from
  * 24h2 on it is used thousands of times
  */
-static bool versionUsesLdapr(const char *version) {
-    static const char *withLdapr[] = { "21h2", "22h2", "23h2", "24h2", "26100pe", "26h1" };
+static bool versionUsesLDAPR(const char *version) {
+    static const char *withLDAPR[] = { "21h2", "22h2", "23h2", "24h2", "26100pe", "26h1" };
 
-    for (size_t i = 0; i < sizeof(withLdapr) / sizeof(withLdapr[0]); i++) {
-        if (strcmp(version, withLdapr[i]) == 0) {
+    for (size_t i = 0; i < sizeof(withLDAPR) / sizeof(withLDAPR[0]); i++) {
+        if (strcmp(version, withLDAPR[i]) == 0) {
             return true;
         }
     }
@@ -182,8 +182,8 @@ static void probe(const char *version, const char *name, const char *path) {
 
     UsImageKind kind = usImageClassify(&img);
     UsLeafSite leaf = usLocateTransferLeaf(&img);
-    UsHandoffSite handoff = usLocateTtbrHandoff(&img);
-    UsLdaprCounts ldapr = usCountLdapr(&img);
+    UsHandoffSite handoff = usLocateTTBRHandoff(&img);
+    UsLDAPRCounts ldapr = usCountLDAPR(&img);
 
     printf("%-9s %-13s class=%-9s leaf=%-4zu handoff=%-10s ldapr=%-6zu (w%zu x%zu b%zu h%zu)\n",
            version, name, usImageKindName(kind), leaf.matches,
@@ -238,7 +238,7 @@ static void probe(const char *version, const char *name, const char *path) {
      * one of these traps, so a kernel that has any is a kernel that needs
      * the shim. Neither loader contains one */
     if (isKernel) {
-        expect(version, name, "kernel uses LDAPR", ldapr.total > 0, versionUsesLdapr(version));
+        expect(version, name, "kernel uses LDAPR", ldapr.total > 0, versionUsesLDAPR(version));
     } else {
         expect(version, name, "loader free of LDAPR", ldapr.total == 0, true);
     }

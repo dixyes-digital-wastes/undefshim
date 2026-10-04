@@ -157,8 +157,8 @@ $(PAYLOAD_BUILD)/%.o: $(PAYLOAD_DIR)/%.S | $(PAYLOAD_BUILD)
 # purpose, and a missing one would show up as an offset of zero, which is a
 # plausible looking answer rather than an obvious failure, so the header rule
 # refuses zero as well.
-PAYLOAD_KEEP := -Wl,--undefined=usTransferEntry -Wl,--undefined=usVaMapRecord \
-                -Wl,--undefined=usVaMapHook -Wl,--undefined=usVaMapNotify
+PAYLOAD_KEEP := -Wl,--undefined=usTransferEntry -Wl,--undefined=usVAMapRecord \
+                -Wl,--undefined=usVAMapHook -Wl,--undefined=usVAMapNotify
 
 $(PAYLOAD_ELF): $(PAYLOAD_OBJS) $(PAYLOAD_DIR)/payload.lds
 	$(CC) --target=aarch64-none-elf -nostdlib -fuse-ld=lld \
@@ -194,9 +194,9 @@ $(PAYLOAD_BIN): $(PAYLOAD_ELF) $(TOOLS_TESTS)/blobcheck.c | $(PAYLOAD_BUILD)
 $(PAYLOAD_HDR): $(PAYLOAD_BIN)
 	@printf '/* Generated from %s. */\n' "$<" > $@
 	@printf '#define US_PAYLOAD_BYTES %s\n' "$$(stat -c %s $<)" >> $@
-	@for sym in usSyncEntry:ENTRY usSyncEntrySp0:ENTRYSP0 usPayloadConfigBlock:CONFIG usPayloadSelfTest:SELFTEST \
-	           usPayloadHandle:HANDLE usTransferEntry:TRANSFER usVaMapRecord:VAMAP \
-	           usVaMapHook:VAMAPHOOK usVaMapNotify:VAMAPNOTIFY \
+	@for sym in usSyncEntry:ENTRY usSyncEntrySP0:ENTRYSP0 usPayloadConfigBlock:CONFIG usPayloadSelfTest:SELFTEST \
+	           usPayloadHandle:HANDLE usTransferEntry:TRANSFER usVAMapRecord:VAMAP \
+	           usVAMapHook:VAMAPHOOK usVAMapNotify:VAMAPNOTIFY \
 	           usStackLookup:STACKLOOKUP usSyncStackReady:READY usSyncNoStack:NOSTACK; do \
 	    name=$${sym%%:*}; tag=$${sym##*:}; \
 	    off=$$(llvm-nm $(PAYLOAD_ELF) | awk -v w="$$name" \

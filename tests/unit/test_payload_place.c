@@ -50,7 +50,7 @@ void usConsolePuts(const char *text) { (void)text; }
 void usConsolePutHex(uint64_t value) { (void)value; }
 void usConsolePutDec(uint64_t value) { (void)value; }
 
-static void rejected(const UsAcpiCpus *cpus) {
+static void rejected(const UsACPICPUs *cpus) {
     UsSession session = { .cpus = *cpus };
     /* No pool is intentional: rejection must not reach config writes either */
     UsPayloadPlace out;
@@ -68,7 +68,7 @@ static void rejected(const UsAcpiCpus *cpus) {
     }
 }
 
-static void placed(const UsAcpiCpus *cpus) {
+static void placed(const UsACPICPUs *cpus) {
     UsPool pool = {0};
     UsSession session = { .pool = &pool, .cpus = *cpus };
     UsPayloadPlace out;
@@ -85,12 +85,12 @@ static void placed(const UsAcpiCpus *cpus) {
     assert(allocations == 1 && flushes == 1);
     assert(session.payloadPlaced);
     assert(memcmp(&out, &session.payloadPlace, sizeof(out)) == 0);
-    assert(out.basePa == (uint64_t)(uintptr_t)pages);
-    assert(out.baseVa == out.basePa && out.bytes == US_PAYLOAD_BYTES);
-    assert(out.entryVa == out.baseVa + US_PAYLOAD_ENTRY_OFFSET);
-    assert(out.configVa == out.baseVa + US_PAYLOAD_CONFIG_OFFSET);
+    assert(out.basePA == (uint64_t)(uintptr_t)pages);
+    assert(out.baseVA == out.basePA && out.bytes == US_PAYLOAD_BYTES);
+    assert(out.entryVA == out.baseVA + US_PAYLOAD_ENTRY_OFFSET);
+    assert(out.configVA == out.baseVA + US_PAYLOAD_CONFIG_OFFSET);
 
-    const UsPayloadConfig *cfg = (const UsPayloadConfig *)(uintptr_t)out.configVa;
+    const UsPayloadConfig *cfg = (const UsPayloadConfig *)(uintptr_t)out.configVA;
     assert(cfg->cpuCount == cpus->count);
     for (size_t i = 0; i < cpus->count; i++) {
         assert(cfg->cpus[i].mpidr == cpus->mpidr[i]);
@@ -99,7 +99,7 @@ static void placed(const UsAcpiCpus *cpus) {
     assert(cfg->cpus[cpus->count].mpidr == 0);
     assert(cfg->cpus[cpus->count].index == UINT64_MAX);
     assert(memcmp(cfg->stackTop, pool.stackTop, sizeof(cfg->stackTop)) == 0);
-    assert(cfg->selfVa == out.baseVa);
+    assert(cfg->selfVA == out.baseVA);
     assert(cfg->poolBase == (uint64_t)(uintptr_t)&pool);
     assert(cfg->uartBase == 0 && cfg->uartKind == 0 && cfg->quiet == 1);
 
@@ -137,15 +137,15 @@ static void placed(const UsAcpiCpus *cpus) {
 }
 
 int main(void) {
-    rejected(&(UsAcpiCpus){ .count = 0 });
-    rejected(&(UsAcpiCpus){ .count = US_MAX_CPUS + 1 });
-    rejected(&(UsAcpiCpus){ .count = 1, .mpidr = { UINT64_C(1) << 24 } });
-    rejected(&(UsAcpiCpus){ .count = 2, .mpidr = { 0, UINT64_C(1) << 63 } });
-    rejected(&(UsAcpiCpus){ .count = 3, .mpidr = { 0x100, 0, 0x100 } });
-    placed(&(UsAcpiCpus){ .count = 1, .mpidr = { 0 } });
-    placed(&(UsAcpiCpus){ .count = 3,
+    rejected(&(UsACPICPUs){ .count = 0 });
+    rejected(&(UsACPICPUs){ .count = US_MAX_CPUS + 1 });
+    rejected(&(UsACPICPUs){ .count = 1, .mpidr = { UINT64_C(1) << 24 } });
+    rejected(&(UsACPICPUs){ .count = 2, .mpidr = { 0, UINT64_C(1) << 63 } });
+    rejected(&(UsACPICPUs){ .count = 3, .mpidr = { 0x100, 0, 0x100 } });
+    placed(&(UsACPICPUs){ .count = 1, .mpidr = { 0 } });
+    placed(&(UsACPICPUs){ .count = 3,
                          .mpidr = { UINT64_C(0x8000010000), 0, 0x100 } });
-    placed(&(UsAcpiCpus){ .count = 8,
+    placed(&(UsACPICPUs){ .count = 8,
                          .mpidr = { 0x103, 2, 0x101, 0, 0x102, 1, 0x100, 3 } });
 
     /* Allocation failure is still reported cleanly after table preflight */
@@ -158,7 +158,7 @@ int main(void) {
         assert(!usPayloadPlace(&session, &out));
         assert(allocations == 1 && flushes == 0);
         assert(!session.payloadPlaced);
-        assert(out.basePa == 0 && out.baseVa == 0);
+        assert(out.basePA == 0 && out.baseVA == 0);
     }
     printf("payload_place: preflight, session cfg/lookup and idempotence passed\n");
     return 0;

@@ -58,7 +58,7 @@ static bool digestMatches(const UsPatchFile *file, const uint8_t *digest) {
 }
 
 UsPatchApplyResult usPatchApplyMatched(const UsPatchFile *file, const UsPatchSite *sites,
-                                       const UsPatchMatchers *matchers, uint32_t textRva,
+                                       const UsPatchMatchers *matchers, uint32_t textRVA,
                                        uint8_t *text, uint32_t textBytes,
                                        UsPatchStats *stats) {
     stats->files++;
@@ -82,12 +82,12 @@ UsPatchApplyResult usPatchApplyMatched(const UsPatchFile *file, const UsPatchSit
                                                                 : UsPatchWrongBuild;
         }
     }
-    if (file->hasPdbIdentity) {
+    if (file->hasPDBIdentity) {
         if (matchers == NULL || matchers->identity == NULL) {
             return UsPatchUnverifiable;
         }
         if (matchers->identity->age != file->pdbAge
-            || memcmpBytes(matchers->identity->guid, file->pdbGuid, 16U)) {
+            || memcmpBytes(matchers->identity->guid, file->pdbGUID, 16U)) {
             stats->wrongBuild++;
             return UsPatchWrongBuild;
         }
@@ -100,9 +100,9 @@ UsPatchApplyResult usPatchApplyMatched(const UsPatchFile *file, const UsPatchSit
     for (uint32_t i = 0; i < file->sites; i++) {
         const UsPatchSite *site = &sites[i];
         uint32_t width = site->width;
-        uint32_t offset = site->rva - textRva;
+        uint32_t offset = site->rva - textRVA;
 
-        if (width == 0U || site->rva < textRva || offset > textBytes
+        if (width == 0U || site->rva < textRVA || offset > textBytes
             || width > textBytes - offset) {
             stats->outOfRange++;
             continue;

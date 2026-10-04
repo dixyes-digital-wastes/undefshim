@@ -36,17 +36,17 @@ typedef struct UsSelfMap_t {
 } UsSelfMap;
 
 /*
- * Looks for an address that translates to targetPa, searching near nearVa
+ * Looks for an address that translates to targetPA, searching near nearVA
  *
- * nearVa is expected to be the kernel's own entry point, which is known at
+ * nearVA is expected to be the kernel's own entry point, which is known at
  * the handover because it is the register the loader is about to branch to.
  * The search covers a window either side of it, which is where a runtime
  * region has been measured to land
  */
-UsSelfMap usSelfMapFind(uint64_t targetPa, uint64_t targetBytes, uint64_t nearVa);
+UsSelfMap usSelfMapFind(uint64_t targetPA, uint64_t targetBytes, uint64_t nearVA);
 
 /*
- * The window searched, either side of nearVa
+ * The window searched, either side of nearVA
  *
  * Measured across boots, the pool's address sits between 81 and 141 MB from
  * the kernel's, the variation coming from how the two regions are placed

@@ -19,12 +19,12 @@
 #include <stdint.h>
 
 /* What a module entry says about where the module is */
-typedef struct UsLdrModule_t {
+typedef struct UsLDRModule_t {
     uint64_t base;
     uint64_t entry;
     uint64_t size;
     uint32_t nameChars;
-} UsLdrModule;
+} UsLDRModule;
 
 /*
  * Finds a module by name in the loader's list
@@ -37,7 +37,7 @@ typedef struct UsLdrModule_t {
  * base and size. A list whose shape does not fit is walked to its end and
  * answered with false, rather than read past
  */
-bool usLdrFindModule(const void *loaderBlock, const char *asciiName,
-                     UsLdrModule *out);
+bool usLDRFindModule(const void *loaderBlock, const char *asciiName,
+                     UsLDRModule *out);
 
 #endif

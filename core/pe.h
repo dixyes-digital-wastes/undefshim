@@ -32,7 +32,7 @@
 
 #define US_PE_MAX_SECTIONS 96
 
-typedef struct UsPeSection_t {
+typedef struct UsPESection_t {
     char     name[9];  /* NUL terminated copy, for printing */
     uint32_t nameLen;
     uint32_t virtualSize;
@@ -40,7 +40,7 @@ typedef struct UsPeSection_t {
     uint32_t rawSize;
     uint32_t rawOffset;
     uint32_t characteristics;
-} UsPeSection;
+} UsPESection;
 
 typedef enum UsImageView_e {
     /* base points at a mapped file: an RVA is only reachable through the
@@ -59,16 +59,16 @@ typedef struct UsImage_t {
     uint64_t preferredBase;
     uint32_t sizeOfImage;
     uint32_t sizeOfHeaders;
-    uint32_t entryRva;
+    uint32_t entryRVA;
     /* Data directory RVAs and sizes, as many as the header carries */
-    uint32_t dataDirectoryRva[US_PE_MAX_DIRECTORIES];
+    uint32_t dataDirectoryRVA[US_PE_MAX_DIRECTORIES];
     uint32_t dataDirectorySize[US_PE_MAX_DIRECTORIES];
     uint32_t dataDirectoryCount;
     uint16_t subsystem;
     uint16_t sectionAlignment;
     uint16_t sectionCount;
     uint32_t sectionTableOffset;  /* into base, not an RVA */
-    UsPeSection sections[US_PE_MAX_SECTIONS];
+    UsPESection sections[US_PE_MAX_SECTIONS];
 } UsImage;
 
 typedef enum UsImageKind_e {
@@ -91,17 +91,17 @@ bool usImageInitMemory(UsImage *img, const void *data, size_t size);
 /*
  * Translates an RVA into a pointer, or NULL when it is outside the image. The
  * result is at least one byte long; callers that read more must bound the
- * read themselves, which usImageRvaSpan helps with
+ * read themselves, which usImageRVASpan helps with
  */
-const uint8_t *usImageRvaToPtr(const UsImage *img, uint32_t rva);
+const uint8_t *usImageRVAToPtr(const UsImage *img, uint32_t rva);
 
-/* Like usImageRvaToPtr, but also reports how many bytes are readable from
+/* Like usImageRVAToPtr, but also reports how many bytes are readable from
  * there, clamped to the end of the image */
-const uint8_t *usImageRvaSpan(const UsImage *img, uint32_t rva, size_t *available);
+const uint8_t *usImageRVASpan(const UsImage *img, uint32_t rva, size_t *available);
 
 /* The section containing an RVA, or NULL */
-const UsPeSection *usImageSectionOfRva(const UsImage *img, uint32_t rva);
-const UsPeSection *usImageFindSection(const UsImage *img, const char *name);
+const UsPESection *usImageSectionOfRVA(const UsImage *img, uint32_t rva);
+const UsPESection *usImageFindSection(const UsImage *img, const char *name);
 
 /* Index of the base relocation directory, for a hash that has to hold still
  * across boots: the loader writes relocated addresses into the image, and
@@ -151,7 +151,7 @@ typedef enum UsImageVisit_e {
 typedef UsImageVisit (*UsImageVisitor)(const UsImage *img, UsImageKind kind, void *ctx);
 
 /* Returns how many images were recognised */
-int usPeScanRegion(const uint8_t *base, size_t size, UsImageVisitor visit, void *ctx);
+int usPEScanRegion(const uint8_t *base, size_t size, UsImageVisitor visit, void *ctx);
 
 
 #endif

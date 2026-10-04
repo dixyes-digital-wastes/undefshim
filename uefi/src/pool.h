@@ -21,8 +21,8 @@
 
 typedef struct UsPoolAlloc_t {
     UsPool  *pool;
-    uint64_t basePa;
-    uint64_t baseVa;
+    uint64_t basePA;
+    uint64_t baseVA;
     uint64_t bytes;
 } UsPoolAlloc;
 

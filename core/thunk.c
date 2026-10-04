@@ -43,15 +43,15 @@ void usEncodeSlotTarget(uint32_t out[US_SLOT_TARGET_WORDS], uint64_t target) {
  * x18 for EL0, a rebuild from TPIDR_EL1 for the two kernel-mode slots
  */
 uint32_t usSlotStubTargetIndex(UsStubSlot slot) {
-    return slot == UsStubSlotEl1h ? 11U : slot == UsStubSlotEl0 ? 10U : 9U;
+    return slot == UsStubSlotEL1h ? 11U : slot == UsStubSlotEL0 ? 10U : 9U;
 }
 
 uint32_t usSlotStubTailIndex(UsStubSlot slot) {
-    return slot == UsStubSlotEl1h ? 18U : 16U;
+    return slot == UsStubSlotEL1h ? 18U : 16U;
 }
 
 uint32_t usSlotStubTailWords(UsStubSlot slot) {
-    return slot == UsStubSlotEl0 ? 3U : 2U;
+    return slot == UsStubSlotEL0 ? 3U : 2U;
 }
 
 void usEncodeSlotStub(uint32_t *out, uint64_t target, uint32_t tail0,
@@ -62,7 +62,7 @@ void usEncodeSlotStub(uint32_t *out, uint64_t target, uint32_t tail0,
     uint32_t restore;
     uint32_t targetAt;
 
-    if (slot == UsStubSlotEl1h) {
+    if (slot == UsStubSlotEL1h) {
         /*
          * Everything taken at this slot goes to the payload first
          *
@@ -83,7 +83,7 @@ void usEncodeSlotStub(uint32_t *out, uint64_t target, uint32_t tail0,
          */
         faultBranch = n;
         out[n++] = 0;
-        while (n < usSlotStubTargetIndex(UsStubSlotEl1h)) {
+        while (n < usSlotStubTargetIndex(UsStubSlotEL1h)) {
             out[n++] = US_NOP;
         }
         targetAt = n;
@@ -95,7 +95,7 @@ void usEncodeSlotStub(uint32_t *out, uint64_t target, uint32_t tail0,
                            | ((targetAt - faultBranch) & 0x03FFFFFFU);
         goto tail;
     }
-    if (slot == UsStubSlotEl0) {
+    if (slot == UsStubSlotEL0) {
         /*
          * User x18 cannot be rebuilt, and this vector's SP_EL1 is the
          * interrupted thread's kernel stack, which the kernel's own entry for
@@ -140,13 +140,13 @@ tail:
      * the word the push put in the red zone comes back and SP with it
      */
     restore = n;
-    if (slot == UsStubSlotEl0) {
+    if (slot == UsStubSlotEL0) {
         out[n++] = 0xF84107F2U; /* ldr x18, [sp], #16 */
     } else {
         out[n++] = 0xD538D092U; /* mrs x18, tpidr_el1 */
         out[n++] = 0x9274CE52U; /* and x18, x18, #~0xfff */
     }
-    if (slot == UsStubSlotEl0) {
+    if (slot == UsStubSlotEL0) {
         /*
          * The first tail word, and so where a handed-back frame branches: put
          * back the interrupted x18 from the word the push left below the SP
@@ -165,7 +165,7 @@ tail:
      * branch of the kernel-mode form is patched where it is written */
     /* The kernel-mode form has no class filter: its first word is the branch
      * to the destination, written where it stands */
-    if (slot != UsStubSlotEl1h) {
+    if (slot != UsStubSlotEL1h) {
         out[classBranch] = 0xB5000012U | ((restore - classBranch) << 5);
     }
 }

@@ -9,11 +9,11 @@
     .text
     .balign 16
     .globl usSyncEntry
-    .globl usSyncEntrySp0
+    .globl usSyncEntrySP0
     .type usSyncEntry, %function
-    .type usSyncEntrySp0, %function
+    .type usSyncEntrySP0, %function
 usSyncEntry:
-usSyncEntrySp0:
+usSyncEntrySP0:
     msr     daifset, #0xF
     b       usStackLookup
 
@@ -104,9 +104,9 @@ usSyncHaveX18:
     mrs     x18, spsr_el1
     and     x18, x18, #0xF
     cmp     x18, #5
-    b.eq    usSyncHaveSp
+    b.eq    usSyncHaveSP
     mrs     x17, sp_el0
-usSyncHaveSp:
+usSyncHaveSP:
     str     x17, [x16, #US_FRAME_SP]
 
     mrs     x17, elr_el1
@@ -261,7 +261,7 @@ usSyncNoForwardHalt:
     b       usSyncNoForwardHalt
 
     .size   usSyncEntry, . - usSyncEntry
-    .size   usSyncEntrySp0, . - usSyncEntrySp0
+    .size   usSyncEntrySP0, . - usSyncEntrySP0
 
     .balign 16
     .globl usStackLookup

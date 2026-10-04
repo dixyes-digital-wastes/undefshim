@@ -87,7 +87,7 @@ static efi_status_t EFIAPI loadImageHook(boolean_t bootPolicy, efi_handle_t pare
                                          efi_device_path_t *path, void *sourceBuffer,
                                          uintn_t sourceSize, efi_handle_t *image) {
     efi_status_t status;
-    efi_guid_t lipGuid = EFI_LOADED_IMAGE_PROTOCOL_GUID;
+    efi_guid_t lipGUID = EFI_LOADED_IMAGE_PROTOCOL_GUID;
     efi_loaded_image_protocol_t *lip = NULL;
 
     /*
@@ -108,7 +108,7 @@ static efi_status_t EFIAPI loadImageHook(boolean_t bootPolicy, efi_handle_t pare
      * identification is only needed for the stages that arrive without a
      * protocol attached
      */
-    if (EFI_ERROR(BS->HandleProtocol(*image, &lipGuid, (void **)&lip)) || lip == NULL
+    if (EFI_ERROR(BS->HandleProtocol(*image, &lipGUID, (void **)&lip)) || lip == NULL
         || lip->ImageBase == NULL || lip->ImageSize == 0) {
         usConsolePuts("\nloadimage: no loaded image\n");
         return status;

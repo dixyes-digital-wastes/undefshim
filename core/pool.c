@@ -6,19 +6,19 @@
 
 #include "core/pool.h"
 
-bool usPoolInitLayout(UsPool *pool, uint64_t baseVa, uint64_t basePa) {
+bool usPoolInitLayout(UsPool *pool, uint64_t baseVA, uint64_t basePA) {
     if (pool == NULL) {
         return false;
     }
-    if ((baseVa & (US_PAGE_SIZE - 1)) != 0 || (basePa & (US_PAGE_SIZE - 1)) != 0) {
+    if ((baseVA & (US_PAGE_SIZE - 1)) != 0 || (basePA & (US_PAGE_SIZE - 1)) != 0) {
         return false;
     }
 
     memset(pool, 0, sizeof(*pool));
     pool->magic = US_POOL_MAGIC;
     pool->stackSlots = US_MAX_CPUS;
-    pool->selfPa = basePa;
-    pool->selfVa = baseVa;
+    pool->selfPA = basePA;
+    pool->selfVA = baseVA;
 
     for (uint32_t i = 0; i < US_MAX_CPUS; i++) {
         /*
@@ -26,7 +26,7 @@ bool usPoolInitLayout(UsPool *pool, uint64_t baseVa, uint64_t basePa) {
          * descending stack starts. Stacks grow down, so the top is aligned and
          * the first push lands inside the slot
          */
-        uint64_t top = baseVa + US_POOL_STACK_OFFSET(i) + US_STACK_SIZE;
+        uint64_t top = baseVA + US_POOL_STACK_OFFSET(i) + US_STACK_SIZE;
         pool->stackTop[i] = top & ~(uint64_t)(US_STACK_ALIGN - 1);
     }
 
@@ -47,10 +47,10 @@ bool usPoolIsValid(const UsPool *pool) {
     if (pool->stackSlots == 0 || pool->stackSlots > US_MAX_CPUS) {
         return false;
     }
-    if ((pool->selfPa & (US_PAGE_SIZE - 1)) != 0) {
+    if ((pool->selfPA & (US_PAGE_SIZE - 1)) != 0) {
         return false;
     }
-    if (pool->selfVa == 0) {
+    if (pool->selfVA == 0) {
         return false;
     }
 
@@ -61,7 +61,7 @@ bool usPoolIsValid(const UsPool *pool) {
      * accepted as long as it is monotonic
      */
     for (uint32_t i = 0; i < pool->stackSlots; i++) {
-        uint64_t want = (pool->selfVa + US_POOL_STACK_OFFSET(i) + US_STACK_SIZE)
+        uint64_t want = (pool->selfVA + US_POOL_STACK_OFFSET(i) + US_STACK_SIZE)
                         & ~(uint64_t)(US_STACK_ALIGN - 1);
 
         if (pool->stackTop[i] != want) {
@@ -70,7 +70,7 @@ bool usPoolIsValid(const UsPool *pool) {
     }
 
     /* No stack may cover the header it is described by */
-    if (pool->stackTop[0] < pool->selfVa + US_POOL_HEADER_SIZE) {
+    if (pool->stackTop[0] < pool->selfVA + US_POOL_HEADER_SIZE) {
         return false;
     }
 

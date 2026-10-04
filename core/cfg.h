@@ -69,13 +69,13 @@ typedef struct UsConfig_t {
      * not hold
      */
     bool          hasDescriptorBase;
-    uint32_t      descriptorBaseRva;
+    uint32_t      descriptorBaseRVA;
     /*
      * Where to report from, from the [uart] table: the driver, the payload
      * and anything reporting later all need it. Leaving it out is how a
      * machine says it wants no serial output at all
      */
-    bool          hasUart;
+    bool          hasUART;
     const char   *uartType;    /* "pl011" or "uart8250"; points into the document */
     uint64_t      uartBase;
     uint32_t      uartWidth;   /* bits per access: 8 or 32 */

@@ -29,7 +29,7 @@ typedef struct UsSession_t {
      * indexed by a position in this list, because the obvious index -- the low
      * byte of MPIDR_EL1 -- is the same for the first core of every cluster
      */
-    UsAcpiCpus   cpus;
+    UsACPICPUs   cpus;
 
     /* Where the payload was put, once it has been. Placed once and kept: the
      * addresses in it may already have been handed out */

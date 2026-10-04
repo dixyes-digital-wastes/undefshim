@@ -22,9 +22,9 @@
  * reached from after. The second is what the walk is for */
 typedef struct UsTransferRecord_t {
     uint64_t magic;
-    uint64_t poolPa;
-    uint64_t poolVaBefore;
-    uint64_t poolVaAfter;
+    uint64_t poolPA;
+    uint64_t poolVABefore;
+    uint64_t poolVAAfter;
     uint64_t kernelEntry;
     uint64_t mappedSize;
     uint64_t probes;
@@ -50,19 +50,19 @@ typedef struct UsTransferRecord_t {
  */
 UsTransferRecord usTransferRecord;
 
-void usTransferEntry(uint64_t kernelEntryVa, uint64_t loaderBlockVa) {
+void usTransferEntry(uint64_t kernelEntryVA, uint64_t loaderBlockVA) {
     UsPayloadConfig *cfg = usPayloadConfig();
-    UsLdrModule kernel;
+    UsLDRModule kernel;
     UsSelfMap self;
     uint64_t here;
 
     __asm__ volatile("adr %0, usTransferEntry" : "=r"(here));
 
     usTransferRecord.magic = US_TRANSFER_MAGIC;
-    usTransferRecord.kernelEntry = kernelEntryVa;
-    usTransferRecord.poolPa = cfg->selfVa;
-    usTransferRecord.poolVaBefore = here;
-    usTransferRecord.loaderBlock = loaderBlockVa;
+    usTransferRecord.kernelEntry = kernelEntryVA;
+    usTransferRecord.poolPA = cfg->selfVA;
+    usTransferRecord.poolVABefore = here;
+    usTransferRecord.loaderBlock = loaderBlockVA;
 
     /*
      * Where the kernel is, asked of the loader rather than worked out from
@@ -72,7 +72,7 @@ void usTransferEntry(uint64_t kernelEntryVa, uint64_t loaderBlockVa) {
      * image
      */
     usTransferRecord.foundKernel =
-        usLdrFindModule((const void *)(uintptr_t)loaderBlockVa, "ntoskrnl.exe",
+        usLDRFindModule((const void *)(uintptr_t)loaderBlockVA, "ntoskrnl.exe",
                         &kernel)
             ? 1U
             : 0U;
@@ -87,10 +87,10 @@ void usTransferEntry(uint64_t kernelEntryVa, uint64_t loaderBlockVa) {
      * what the search is anchored on, since it is the one address in the new
      * space that is known here for certain
      */
-    self = usSelfMapFind(cfg->selfVa, US_POOL_BYTES, kernelEntryVa);
+    self = usSelfMapFind(cfg->selfVA, US_POOL_BYTES, kernelEntryVA);
 
     usTransferRecord.mapped = self.found ? 1U : 0U;
-    usTransferRecord.poolVaAfter = self.va;
+    usTransferRecord.poolVAAfter = self.va;
     usTransferRecord.mappedSize = self.size;
     usTransferRecord.probes = self.probes;
     usTransferRecord.exhausted = self.exhausted ? 1U : 0U;

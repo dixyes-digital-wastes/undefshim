@@ -44,7 +44,7 @@ static UsImageVisit recordImage(const UsImage *img, UsImageKind kind, void *ctx)
 int usRegistryScanRegion(UsRegistry *reg, const void *base, size_t size) {
     int before = usRegistryCount(reg);
 
-    usPeScanRegion(base, size, recordImage, reg);
+    usPEScanRegion(base, size, recordImage, reg);
     return usRegistryCount(reg) - before;
 }
 

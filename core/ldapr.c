@@ -24,22 +24,22 @@
 
 /* Bits 31..30 are the size, and they are the only thing that differs between
  * the four widths, in both families */
-static UsLdaprKind sizeOf(uint32_t insn) {
+static UsLDAPRKind sizeOf(uint32_t insn) {
     switch ((insn >> 30) & 3U) {
     case 0:
-        return UsLdaprByte;
+        return UsLDAPRByte;
     case 1:
-        return UsLdaprHalf;
+        return UsLDAPRHalf;
     case 2:
-        return UsLdaprWord;
+        return UsLDAPRWord;
     default:
-        return UsLdaprXword;
+        return UsLDAPRXword;
     }
 }
 
 /* The two register fields sit in the same place in both families */
-static UsLdaprInsn fieldsOf(uint32_t insn, UsLdaprKind kind) {
-    UsLdaprInsn out = { 0 };
+static UsLDAPRInsn fieldsOf(uint32_t insn, UsLDAPRKind kind) {
+    UsLDAPRInsn out = { 0 };
 
     out.kind = kind;
     out.rt = (uint8_t)(insn & 0x1FU);
@@ -47,9 +47,9 @@ static UsLdaprInsn fieldsOf(uint32_t insn, UsLdaprKind kind) {
     return out;
 }
 
-UsLdaprInsn usLdaprDecode(uint32_t insn) {
+UsLDAPRInsn usLDAPRDecode(uint32_t insn) {
     if ((insn & US_LDAPR_MASK) != US_LDAPR_FIXED) {
-        return fieldsOf(0, UsLdaprNone);
+        return fieldsOf(0, UsLDAPRNone);
     }
     return fieldsOf(insn, sizeOf(insn));
 }
@@ -68,7 +68,7 @@ UsLdaprInsn usLdaprDecode(uint32_t insn) {
 #define US_LDAR_FIXED 0x08DFFC00U
 #define US_LDAR_MASK 0x3FFFFC00U
 
-bool usLdarDecode(uint32_t insn, UsLdaprInsn *out) {
+bool usLDARDecode(uint32_t insn, UsLDAPRInsn *out) {
     if (out == NULL || (insn & US_LDAR_MASK) != US_LDAR_FIXED) {
         return false;
     }
@@ -76,8 +76,8 @@ bool usLdarDecode(uint32_t insn, UsLdaprInsn *out) {
     return true;
 }
 
-bool usLdaprToLdar(uint32_t insn, uint32_t *out) {
-    if (usLdaprDecode(insn).kind == UsLdaprNone) {
+bool usLDAPRToLDAR(uint32_t insn, uint32_t *out) {
+    if (usLDAPRDecode(insn).kind == UsLDAPRNone) {
         return false;
     }
     *out = US_LDAR_FIXED | (insn & US_LDAPR_SIZE_MASK) | (insn & US_LDAPR_REG_MASK);

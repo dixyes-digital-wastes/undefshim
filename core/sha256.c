@@ -50,7 +50,7 @@ static void transform(uint32_t state[8], const uint8_t block[64]) {
     state[4] += e; state[5] += f; state[6] += g; state[7] += h;
 }
 
-void usSha256Init(UsSha256 *ctx) {
+void usSHA256Init(UsSHA256 *ctx) {
     ctx->state[0] = 0x6a09e667U; ctx->state[1] = 0xbb67ae85U;
     ctx->state[2] = 0x3c6ef372U; ctx->state[3] = 0xa54ff53aU;
     ctx->state[4] = 0x510e527fU; ctx->state[5] = 0x9b05688cU;
@@ -59,7 +59,7 @@ void usSha256Init(UsSha256 *ctx) {
     ctx->used = 0;
 }
 
-void usSha256Update(UsSha256 *ctx, const void *data, uint32_t length) {
+void usSHA256Update(UsSHA256 *ctx, const void *data, uint32_t length) {
     const uint8_t *p = data;
 
     ctx->bytes += length;
@@ -80,19 +80,19 @@ void usSha256Update(UsSha256 *ctx, const void *data, uint32_t length) {
     }
 }
 
-void usSha256Final(UsSha256 *ctx, uint8_t out[US_SHA256_DIGEST]) {
+void usSHA256Final(UsSHA256 *ctx, uint8_t out[US_SHA256_DIGEST]) {
     uint64_t bits = ctx->bytes * 8U;
     uint8_t pad = 0x80;
 
-    usSha256Update(ctx, &pad, 1);
+    usSHA256Update(ctx, &pad, 1);
     pad = 0;
     while (ctx->used != 56U) {
-        usSha256Update(ctx, &pad, 1);
+        usSHA256Update(ctx, &pad, 1);
     }
     for (int i = 7; i >= 0; i--) {
         uint8_t byte = (uint8_t)(bits >> (i * 8));
 
-        usSha256Update(ctx, &byte, 1);
+        usSHA256Update(ctx, &byte, 1);
     }
     for (int i = 0; i < 8; i++) {
         out[i * 4] = (uint8_t)(ctx->state[i] >> 24);
@@ -102,10 +102,10 @@ void usSha256Final(UsSha256 *ctx, uint8_t out[US_SHA256_DIGEST]) {
     }
 }
 
-void usSha256(const void *data, uint32_t length, uint8_t out[US_SHA256_DIGEST]) {
-    UsSha256 ctx;
+void usSHA256(const void *data, uint32_t length, uint8_t out[US_SHA256_DIGEST]) {
+    UsSHA256 ctx;
 
-    usSha256Init(&ctx);
-    usSha256Update(&ctx, data, length);
-    usSha256Final(&ctx, out);
+    usSHA256Init(&ctx);
+    usSHA256Update(&ctx, data, length);
+    usSHA256Final(&ctx, out);
 }

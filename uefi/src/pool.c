@@ -15,8 +15,8 @@ bool usPoolAllocate(UsPoolAlloc *out) {
     efi_status_t status;
 
     out->pool = NULL;
-    out->basePa = 0;
-    out->baseVa = 0;
+    out->basePA = 0;
+    out->baseVA = 0;
     out->bytes = 0;
 
     status = BS->AllocatePages(AllocateAnyPages, US_POOL_MEMORY_TYPE,
@@ -31,17 +31,17 @@ bool usPoolAllocate(UsPoolAlloc *out) {
      * once the address space is rebuilt, and the injector needs the physical
      * one to re-establish the mapping
      */
-    out->basePa = (uint64_t)pa;
-    out->baseVa = (uint64_t)pa;
+    out->basePA = (uint64_t)pa;
+    out->baseVA = (uint64_t)pa;
     out->bytes = US_POOL_BYTES;
 
-    if (!usPoolInitLayout((UsPool *)(uintptr_t)out->baseVa, out->baseVa, out->basePa)) {
+    if (!usPoolInitLayout((UsPool *)(uintptr_t)out->baseVA, out->baseVA, out->basePA)) {
         BS->FreePages(pa, (uintn_t)US_POOL_PAGES);
-        out->basePa = 0;
-        out->baseVa = 0;
+        out->basePA = 0;
+        out->baseVA = 0;
         return false;
     }
 
-    out->pool = (UsPool *)(uintptr_t)out->baseVa;
+    out->pool = (UsPool *)(uintptr_t)out->baseVA;
     return usPoolIsValid(out->pool);
 }

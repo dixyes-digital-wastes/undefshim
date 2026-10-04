@@ -25,7 +25,7 @@
 
 #include <stdint.h>
 
-typedef struct UsVaMapRecord_t {
+typedef struct UsVAMapRecord_t {
     uint64_t magic;
     uint64_t fired;          /* the notification was called */
     uint64_t poolBefore;
@@ -48,24 +48,24 @@ typedef struct UsVaMapRecord_t {
     uint64_t svmOriginal;    /* the function the hook forwards to */
     uint64_t rt;             /* runtime services table, for the record */
     uint64_t convertPointer; /* the driver's handle on the translation */
-} UsVaMapRecord;
+} UsVAMapRecord;
 
 /* "UAMAPREC", recognisable in a dump */
 #define US_VAMAP_MAGIC 0x43455250414D4155ULL
 
-extern UsVaMapRecord usVaMapRecord;
+extern UsVAMapRecord usVAMapRecord;
 
 /*
  * Built for the firmware's own signature and called after the boot services
  * are gone, so it lives in this blob rather than in the driver
  */
-uint64_t usVaMapHook(uint64_t mapSize, uint64_t descSize, uint32_t descVersion,
+uint64_t usVAMapHook(uint64_t mapSize, uint64_t descSize, uint32_t descVersion,
                      void *descs);
 
 /*
  * The firmware calls this one in the middle of the switch, which is the only
  * moment at which both address spaces are still meaningful
  */
-void usVaMapNotify(void *event, void *context);
+void usVAMapNotify(void *event, void *context);
 
 #endif

@@ -32,11 +32,11 @@
  * about */
 #define US_ACPI_MAX_CPUS 8
 
-typedef struct UsAcpiCpus_t {
+typedef struct UsACPICPUs_t {
     uint64_t mpidr[US_ACPI_MAX_CPUS];  /* affinity fields only */
     size_t   count;
     bool     overflow;   /* the machine has more processors than this holds */
-} UsAcpiCpus;
+} UsACPICPUs;
 
 /*
  * Finds the Multiple APIC Description Table from the root pointer the
@@ -47,9 +47,9 @@ typedef struct UsAcpiCpus_t {
  * a walk over lengths read out of the table itself: a wrong length is a walk
  * off the end, and this runs before anything is in place to report a fault
  */
-const void *usAcpiFindMadt(const void *rsdp);
+const void *usACPIFindMADT(const void *rsdp);
 
 /* Collects the processors the MADT describes, in the order it lists them */
-UsAcpiCpus usAcpiCollectCpus(const void *madt);
+UsACPICPUs usACPICollectCPUs(const void *madt);
 
 #endif

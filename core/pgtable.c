@@ -47,7 +47,7 @@ UsLeaf usLeafFind(uint64_t selfMapBase, UsWordRead read, void *ctx, uint64_t va)
      * the other way round, top first */
     bases[US_SELF_MAP_LEVELS - 1] = selfMapBase;
     for (unsigned i = US_SELF_MAP_LEVELS - 1; i > 0; i--) {
-        bases[i - 1] = usPteSlotFor(selfMapBase, bases[i]);
+        bases[i - 1] = usPTESlotFor(selfMapBase, bases[i]);
     }
 
     for (unsigned i = 0; i < US_SELF_MAP_LEVELS; i++) {
@@ -73,7 +73,7 @@ UsLeaf usLeafFind(uint64_t selfMapBase, UsWordRead read, void *ctx, uint64_t va)
 
         out.found = true;
         out.level = i;
-        out.descriptorVa = at;
+        out.descriptorVA = at;
         out.descriptor = descriptor;
         out.size = size;
         out.pa = (descriptor & level->paField) | (va & (size - 1));

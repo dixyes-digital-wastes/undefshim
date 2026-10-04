@@ -38,13 +38,13 @@ static bool namesVolumeRoot(const char *path) {
 }
 
 static bool readFile(efi_file_handle_t *file, char **out, size_t *outLength) {
-    efi_guid_t infoGuid = EFI_FILE_INFO_GUID;
+    efi_guid_t infoGUID = EFI_FILE_INFO_GUID;
     uintn_t infoSize = sizeof(efi_file_info_t);
     efi_file_info_t info;
     char *buffer;
     uintn_t got;
 
-    if (EFI_ERROR(file->GetInfo(file, &infoGuid, &infoSize, &info))) {
+    if (EFI_ERROR(file->GetInfo(file, &infoGUID, &infoSize, &info))) {
         return false;
     }
     if (info.FileSize > US_PATCH_FILE_MAX_BYTES) {
@@ -72,7 +72,7 @@ static bool readFile(efi_file_handle_t *file, char **out, size_t *outLength) {
  * bytes at the same relative place
  */
 static uint8_t *imageText(UsImage *image, uint32_t *outBytes) {
-    const UsPeSection *text = usImageFindSection(image, ".text");
+    const UsPESection *text = usImageFindSection(image, ".text");
 
     if (text == NULL || text->rawSize == 0) {
         return NULL;
@@ -107,7 +107,7 @@ static bool imageIdentity(UsImage *image, UsPatchIdentity *out) {
         if (type != 2U || bytes < 24U) {
             continue;
         }
-        record = usImageRvaToPtr(image, rva);
+        record = usImageRVAToPtr(image, rva);
         if (record == NULL || rd32le(record) != 0x53445352U) {   /* RSDS */
             continue;
         }
@@ -204,7 +204,7 @@ static uint32_t relocationCount;
  * build. A digest that has to be the same every time therefore has to leave
  * them out, and it has to leave out exactly what the list's author did
  */
-static void collectRelocations(UsImage *image, uint32_t textRva, uint32_t textBytes) {
+static void collectRelocations(UsImage *image, uint32_t textRVA, uint32_t textBytes) {
     uint32_t size = 0;
     const uint8_t *table;
 
@@ -229,11 +229,11 @@ static void collectRelocations(UsImage *image, uint32_t textRva, uint32_t textBy
              * says it is: the two sides of the comparison only have to agree
              * with each other, and a wider skip is the safer agreement */
             (void)type;
-            if (rva < textRva || rva >= textRva + textBytes) {
+            if (rva < textRVA || rva >= textRVA + textBytes) {
                 continue;
             }
             if (relocationCount < US_PATCH_MAX_RELOCATIONS) {
-                relocations[relocationCount++] = rva - textRva;
+                relocations[relocationCount++] = rva - textRVA;
             }
         }
         at += blockSize;
@@ -253,11 +253,11 @@ static void collectRelocations(UsImage *image, uint32_t textRva, uint32_t textBy
 
 /* The digest the driver prints and the lists carry */
 static void digestText(UsImage *image, uint8_t *code, uint32_t bytes, uint8_t out[32]) {
-    UsSha256 ctx;
+    UsSHA256 ctx;
     uint32_t at = 0;
 
     collectRelocations(image, (uint32_t)((uintptr_t)code - (uintptr_t)image->base), bytes);
-    usSha256Init(&ctx);
+    usSHA256Init(&ctx);
     for (uint32_t i = 0; i < relocationCount; i++) {
         uint32_t start = relocations[i];
         uint32_t end = start + 8U;
@@ -269,16 +269,16 @@ static void digestText(UsImage *image, uint8_t *code, uint32_t bytes, uint8_t ou
             end = bytes;
         }
         if (start > at) {
-            usSha256Update(&ctx, code + at, start - at);
+            usSHA256Update(&ctx, code + at, start - at);
         }
         if (end > at) {
             at = end;
         }
     }
     if (bytes > at) {
-        usSha256Update(&ctx, code + at, bytes - at);
+        usSHA256Update(&ctx, code + at, bytes - at);
     }
-    usSha256Final(&ctx, out);
+    usSHA256Final(&ctx, out);
 }
 
 /*
@@ -307,7 +307,7 @@ static void reportTextHash(UsImage *image) {
 
 void usPatchApplyLists(UsSession *session, UsImage *image) {
     efi_handle_t volume;
-    efi_guid_t sfsGuid = EFI_SIMPLE_FILE_SYSTEM_PROTOCOL_GUID;
+    efi_guid_t sfsGUID = EFI_SIMPLE_FILE_SYSTEM_PROTOCOL_GUID;
     efi_simple_file_system_protocol_t *sfs = NULL;
     efi_file_handle_t *root = NULL;
     efi_file_handle_t *dir = NULL;
@@ -329,7 +329,7 @@ void usPatchApplyLists(UsSession *session, UsImage *image) {
         return;
     }
     reportTextHash(image);
-    if (EFI_ERROR(BS->HandleProtocol(volume, &sfsGuid, (void **)&sfs)) || sfs == NULL) {
+    if (EFI_ERROR(BS->HandleProtocol(volume, &sfsGUID, (void **)&sfs)) || sfs == NULL) {
         return;
     }
     if (EFI_ERROR(sfs->OpenVolume(sfs, &root)) || root == NULL) {

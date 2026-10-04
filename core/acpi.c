@@ -72,7 +72,7 @@ static bool checksumOk(const uint8_t *p, size_t len) {
 #define GICC_MPIDR 68U
 #define GICC_MPIDR_END 76U
 
-const void *usAcpiFindMadt(const void *rsdp) {
+const void *usACPIFindMADT(const void *rsdp) {
     const uint8_t *p = rsdp;
     const uint8_t *root;
     const uint8_t *end;
@@ -131,8 +131,8 @@ const void *usAcpiFindMadt(const void *rsdp) {
     return NULL;
 }
 
-UsAcpiCpus usAcpiCollectCpus(const void *madt) {
-    UsAcpiCpus out = { 0 };
+UsACPICPUs usACPICollectCPUs(const void *madt) {
+    UsACPICPUs out = { 0 };
     const uint8_t *p = madt;
     const uint8_t *end;
     uint32_t length;

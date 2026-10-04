@@ -70,39 +70,39 @@ typedef struct UsActive_t {
 
 static UsActive gActive[US_MAX_CPUS];
 
-static uint64_t currentEsr(void) {
+static uint64_t currentESR(void) {
     uint64_t esr;
 
     __asm__ volatile("mrs %0, esr_el1" : "=r"(esr));
     return esr;
 }
 
-static uint64_t currentFar(void) {
+static uint64_t currentFAR(void) {
     uint64_t far;
 
     __asm__ volatile("mrs %0, far_el1" : "=r"(far));
     return far;
 }
 
-static void usSetElr(uint64_t elr) {
+static void usSetELR(uint64_t elr) {
     __asm__ volatile("msr elr_el1, %0" ::"r"(elr));
 }
 
-static uint64_t currentSpsr(void) {
+static uint64_t currentSPSR(void) {
     uint64_t spsr;
 
     __asm__ volatile("mrs %0, spsr_el1" : "=r"(spsr));
     return spsr;
 }
 
-static uint64_t currentVbar(void) {
+static uint64_t currentVBAR(void) {
     uint64_t vbar;
 
     __asm__ volatile("mrs %0, vbar_el1" : "=r"(vbar));
     return vbar;
 }
 
-static uint64_t currentElr(void) {
+static uint64_t currentELR(void) {
     uint64_t elr;
 
     __asm__ volatile("mrs %0, elr_el1" : "=r"(elr));
@@ -118,7 +118,7 @@ static void usPayloadLeave(int cpu) {
     }
 }
 
-static uint64_t currentMpidr(void) {
+static uint64_t currentMPIDR(void) {
     uint64_t mpidr;
 
     __asm__ volatile("mrs %0, mpidr_el1" : "=r"(mpidr));
@@ -136,9 +136,9 @@ static uint64_t currentMpidr(void) {
  * The list comes from the firmware, through the boot. A processor that is not
  * in it has no index, and the caller has to refuse rather than pick one
  */
-static int currentCpu(void) {
+static int currentCPU(void) {
     UsPayloadConfig *cfg = usPayloadConfig();
-    uint64_t mpidr = currentMpidr();
+    uint64_t mpidr = currentMPIDR();
 
     for (uint64_t i = 0; i < cfg->cpuCount && i < US_MAX_CPUS; i++) {
         if (cfg->cpus[i].mpidr == mpidr) {
@@ -179,7 +179,7 @@ static bool probeDisarm(int cpu) {
  * gets an old value rather than a plausible one
  */
 bool usPayloadProbeRead(uint64_t at, uint64_t *value) {
-    int cpu = currentCpu();
+    int cpu = currentCPU();
     uint64_t got;
 
     if (value == NULL || !probeArm(cpu, at)) {
@@ -195,7 +195,7 @@ bool usPayloadProbeRead(uint64_t at, uint64_t *value) {
 
 /* Writes a word, saying whether the store happened */
 bool usPayloadProbeWrite(uint64_t at, uint64_t value) {
-    int cpu = currentCpu();
+    int cpu = currentCPU();
 
     if (!probeArm(cpu, at)) {
         return false;
@@ -207,7 +207,7 @@ bool usPayloadProbeWrite(uint64_t at, uint64_t value) {
 /* The same, one instruction wide: a site is four bytes, and writing eight
  * would take the instruction after it with it */
 bool usPayloadProbeWriteWord(uint64_t at, uint32_t value) {
-    int cpu = currentCpu();
+    int cpu = currentCPU();
 
     if (!probeArm(cpu, at)) {
         return false;
@@ -230,10 +230,10 @@ void usPayloadStuck(uint64_t kind) {
     pool = (UsPool *)(uintptr_t)cfg->poolBase;
     pool->entry.stuck++;
     pool->entry.stuckKind = kind;
-    pool->entry.stuckEsr = currentEsr();
-    pool->entry.stuckElr = currentElr();
-    pool->entry.stuckSpsr = currentSpsr();
-    pool->entry.stuckVbar = currentVbar();
+    pool->entry.stuckESR = currentESR();
+    pool->entry.stuckELR = currentELR();
+    pool->entry.stuckSPSR = currentSPSR();
+    pool->entry.stuckVBAR = currentVBAR();
 }
 
 /*
@@ -252,17 +252,17 @@ void usPayloadStuck(uint64_t kind) {
  * A destination of 31 is the zero register: the value is read and thrown
  * away, which is what the instruction does, and it is not written anywhere
  */
-static uint64_t loadAcquire(UsLdaprKind kind, uint64_t address) {
+static uint64_t loadAcquire(UsLDAPRKind kind, uint64_t address) {
     uint64_t value = 0;
 
     switch (kind) {
-    case UsLdaprByte:
+    case UsLDAPRByte:
         __asm__ volatile("ldarb %w0, [%1]" : "=r"(value) : "r"(address) : "memory");
         break;
-    case UsLdaprHalf:
+    case UsLDAPRHalf:
         __asm__ volatile("ldarh %w0, [%1]" : "=r"(value) : "r"(address) : "memory");
         break;
-    case UsLdaprWord:
+    case UsLDAPRWord:
         __asm__ volatile("ldar %w0, [%1]" : "=r"(value) : "r"(address) : "memory");
         break;
     default:
@@ -288,17 +288,17 @@ static uint64_t loadAcquire(UsLdaprKind kind, uint64_t address) {
  * acquire. LDAR would say it in one instruction but is privileged, so it would
  * answer the wrong question
  */
-static uint64_t loadUserAcquire(UsLdaprKind kind, uint64_t address) {
+static uint64_t loadUserAcquire(UsLDAPRKind kind, uint64_t address) {
     uint64_t value = 0;
 
     switch (kind) {
-    case UsLdaprByte:
+    case UsLDAPRByte:
         __asm__ volatile("ldtrb %w0, [%1]" : "=r"(value) : "r"(address) : "memory");
         break;
-    case UsLdaprHalf:
+    case UsLDAPRHalf:
         __asm__ volatile("ldtrh %w0, [%1]" : "=r"(value) : "r"(address) : "memory");
         break;
-    case UsLdaprWord:
+    case UsLDAPRWord:
         __asm__ volatile("ldtr %w0, [%1]" : "=r"(value) : "r"(address) : "memory");
         break;
     default:
@@ -316,9 +316,9 @@ static uint64_t loadUserAcquire(UsLdaprKind kind, uint64_t address) {
  * changed and the caller has to answer for the exception the same way it
  * would have without us
  */
-static bool emulateLdapr(UsFrame *frame, int cpu) {
+static bool emulateLDAPR(UsFrame *frame, int cpu) {
     uint32_t insn = *(const volatile uint32_t *)(uintptr_t)frame->elr;
-    UsLdaprInsn decoded = usLdaprDecode(insn);
+    UsLDAPRInsn decoded = usLDAPRDecode(insn);
     uint64_t address;
     uint64_t value;
     bool pan;
@@ -330,9 +330,9 @@ static bool emulateLdapr(UsFrame *frame, int cpu) {
      * same load: reading it here is how the two are told apart, and refusing
      * it would hand the kernel an exception it cannot explain
      */
-    bool replaced = decoded.kind == UsLdaprNone;
+    bool replaced = decoded.kind == UsLDAPRNone;
 
-    if (replaced && !usLdarDecode(insn, &decoded)) {
+    if (replaced && !usLDARDecode(insn, &decoded)) {
         return false;
     }
 
@@ -357,7 +357,7 @@ static bool emulateLdapr(UsFrame *frame, int cpu) {
      */
     pan = (frame->spsr & US_SPSR_PAN) != 0;
     if (!pan) {
-        usPanOff();
+        usPANOff();
     }
     if (user) {
         value = loadUserAcquire(decoded.kind, address);
@@ -365,7 +365,7 @@ static bool emulateLdapr(UsFrame *frame, int cpu) {
         value = loadAcquire(decoded.kind, address);
     }
     if (!pan) {
-        usPanOn();
+        usPANOn();
     }
     if (cpu >= 0 && cpu < (int)US_MAX_CPUS) {
         gActive[cpu].loading = false;
@@ -389,7 +389,7 @@ static bool emulateLdapr(UsFrame *frame, int cpu) {
             pool->entry.emuInsn = insn;
             pool->entry.emuAddr = address;
             pool->entry.emuValue = value;
-            pool->entry.emuElr = frame->elr;
+            pool->entry.emuELR = frame->elr;
             pool->entry.emuX0 = frame->x[0];
             pool->entry.emuX9 = frame->x[9];
         }
@@ -428,7 +428,7 @@ static bool emulateLdapr(UsFrame *frame, int cpu) {
      * keeps taking the exception, which is slower and always correct
      */
     if (usPayloadConfig()->el0InPlace != 0
-        && usSlotOfSpsr(frame->spsr) == UsStubSlotEl0) {
+        && usSlotOfSPSR(frame->spsr) == UsStubSlotEL0) {
         (void)usRewriteSite(frame->elr);
     }
 
@@ -463,8 +463,8 @@ static void recordHandback(UsFrame *frame) {
     t = &e->handback[at % US_POOL_TRACE_SLOTS];
 
     src = (const uint64_t *)(const void *)frame;
-    t->cpu = (uint64_t)(int64_t)currentCpu();
-    t->mpidr = currentMpidr();
+    t->cpu = (uint64_t)(int64_t)currentCPU();
+    t->mpidr = currentMPIDR();
     for (uint32_t i = 0; i < US_POOL_TRACE_WORDS; i++) {
         t->words[i] = src[i];
     }
@@ -517,7 +517,7 @@ int usPayloadHandle(UsFrame *frame) {
     int cpu;
 
     gCurrentFrame = frame;
-    cpu = currentCpu();
+    cpu = currentCPU();
 
     /*
      * The exception in flight, recorded before anything that can fault: a
@@ -541,12 +541,12 @@ int usPayloadHandle(UsFrame *frame) {
 
         pool->entry.magic = US_POOL_ENTRY_MAGIC;
         pool->entry.entries++;
-        pool->entry.lastCpu = (uint64_t)(int64_t)cpu;
-        pool->entry.lastSp = frame != NULL ? frame->sp : 0;
+        pool->entry.lastCPU = (uint64_t)(int64_t)cpu;
+        pool->entry.lastSP = frame != NULL ? frame->sp : 0;
         if (frame != NULL) {
-            pool->entry.lastEsr = frame->esr;
-            pool->entry.lastElr = frame->elr;
-            pool->entry.lastFar = frame->far;
+            pool->entry.lastESR = frame->esr;
+            pool->entry.lastELR = frame->elr;
+            pool->entry.lastFAR = frame->far;
         }
 
         /* Kept apart from the summary so that two exceptions arriving at once
@@ -560,7 +560,7 @@ int usPayloadHandle(UsFrame *frame) {
             const uint64_t *src = (const uint64_t *)(const void *)frame;
 
             t->cpu = (uint64_t)(int64_t)cpu;
-            t->mpidr = currentMpidr();
+            t->mpidr = currentMPIDR();
             for (uint32_t i = 0; i < US_POOL_TRACE_WORDS; i++) {
                 t->words[i] = src[i];
             }
@@ -573,17 +573,17 @@ int usPayloadHandle(UsFrame *frame) {
      * survivable, so the quiet flag is obeyed rather than discovered
      */
     if (cfg->quiet == 0) {
-        usUartInit(cfg->uartBase, (uint32_t)cfg->uartKind, (uint32_t)cfg->uartWidth);
+        usUARTInit(cfg->uartBase, (uint32_t)cfg->uartKind, (uint32_t)cfg->uartWidth);
     }
 
     if (frame == NULL) {
         if (cfg->quiet == 0) {
-            usUartPuts("US-PAYLOAD no-frame\n");
+            usUARTPuts("US-PAYLOAD no-frame\n");
         }
         return 0;
     }
 
-    vbar = currentVbar();
+    vbar = currentVBAR();
     usPayloadPublish(vbar);
     if (cfg->poolBase != 0) {
         ((UsPool *)(uintptr_t)cfg->poolBase)->entry.lastInsn =
@@ -592,23 +592,23 @@ int usPayloadHandle(UsFrame *frame) {
 
     ec = (uint32_t)US_ESR_EC(frame->esr);
     if (cfg->quiet == 0) {
-        usUartPuts("US-PAYLOAD ec=");
-        usUartPutHex(ec);
-        usUartPuts(" elr=");
-        usUartPutHex(frame->elr);
-        usUartPuts(" far=");
-        usUartPutHex(frame->far);
-        usUartPuts(" cpu=");
-        usUartPutDec((uint64_t)(int64_t)cpu);
-        usUartPuts("\n");
+        usUARTPuts("US-PAYLOAD ec=");
+        usUARTPutHex(ec);
+        usUARTPuts(" elr=");
+        usUARTPutHex(frame->elr);
+        usUARTPuts(" far=");
+        usUARTPutHex(frame->far);
+        usUARTPuts(" cpu=");
+        usUARTPutDec((uint64_t)(int64_t)cpu);
+        usUARTPuts("\n");
     }
 
-    if (ec == US_EC_UNKNOWN && emulateLdapr(frame, cpu)) {
+    if (ec == US_EC_UNKNOWN && emulateLDAPR(frame, cpu)) {
         if (cfg->poolBase != 0) {
             ((UsPool *)(uintptr_t)cfg->poolBase)->entry.handled++;
         }
         if (cfg->quiet == 0) {
-            usUartPuts("US-PAYLOAD emulated\n");
+            usUARTPuts("US-PAYLOAD emulated\n");
         }
         /* Claimed: the entry resumes at the instruction after this one */
         usPayloadLeave(cpu);
@@ -626,7 +626,7 @@ int usPayloadHandle(UsFrame *frame) {
      * worked out, and the SPSR says which slot it was
      */
     if (cfg->quiet == 0) {
-        usUartPuts("US-PAYLOAD not-ours\n");
+        usUARTPuts("US-PAYLOAD not-ours\n");
     }
     if (usPayloadSlotTail(vbar, frame->spsr, &frame->landing)
         || usPayloadSlotTailCached(vbar, frame->spsr, &frame->landing)
@@ -635,8 +635,8 @@ int usPayloadHandle(UsFrame *frame) {
             UsPool *pool = (UsPool *)(uintptr_t)cfg->poolBase;
 
             pool->entry.handedBack++;
-            pool->entry.handbackEsr = frame->esr;
-            pool->entry.handbackElr = frame->elr;
+            pool->entry.handbackESR = frame->esr;
+            pool->entry.handbackELR = frame->elr;
         }
         usPayloadLeave(cpu);
         recordHandback(frame);
@@ -663,13 +663,13 @@ int usPayloadHandle(UsFrame *frame) {
  * NULL means there is nothing to restore and the entry stops
  */
 UsFrame *usPayloadFault(void) {
-    int cpu = currentCpu();
+    int cpu = currentCPU();
     UsFrame *outer;
     uint64_t vbar;
 
     /* The access may have cleared PAN; the handler that is about to run
      * would have been entered with it set */
-    usPanOn();
+    usPANOn();
 
     if (cpu < 0 || cpu >= (int)US_MAX_CPUS) {
         return NULL;
@@ -678,10 +678,10 @@ UsFrame *usPayloadFault(void) {
     if (outer == NULL) {
         return NULL;
     }
-    vbar = currentVbar();
+    vbar = currentVBAR();
 
-    outer->esr = currentEsr();
-    outer->far = currentFar();
+    outer->esr = currentESR();
+    outer->far = currentFAR();
 
     /*
      * An access the handler asked to be told about. ELR still names the
@@ -690,7 +690,7 @@ UsFrame *usPayloadFault(void) {
      * refused is recorded, and the caller reads that rather than the fault
      */
     if (gActive[cpu].probing && outer->far == gActive[cpu].probeAt) {
-        usSetElr(currentElr() + 4);
+        usSetELR(currentELR() + 4);
         gActive[cpu].probeRefused = true;
         gActive[cpu].probing = false;
         return US_PAYLOAD_RESUME;
@@ -700,11 +700,11 @@ UsFrame *usPayloadFault(void) {
         /* The emulated access: the kernel's handler for the slot the
          * exception was taken through is where its instruction's fault
          * belongs, in the context it was interrupted from */
-        if (usSlotOfSpsr(outer->spsr) == UsStubSlotEl0) {
+        if (usSlotOfSPSR(outer->spsr) == UsStubSlotEL0) {
             /* The instruction was the user's, so the fault has to read as one
              * the user took; the fault status and the direction are the same
              * either way */
-            outer->esr = usEsrAsLowerEl(outer->esr);
+            outer->esr = usESRAsLowerEL(outer->esr);
         }
         gActive[cpu].loading = false;
         if (!usPayloadSlotTail(vbar, outer->spsr, &outer->landing)
@@ -722,18 +722,18 @@ UsFrame *usPayloadFault(void) {
         UsPayloadConfig *cfg = usPayloadConfig();
         UsPool *pool;
 
-        outer->elr = currentElr();
-        outer->spsr = currentSpsr();
+        outer->elr = currentELR();
+        outer->spsr = currentSPSR();
         pool = cfg->poolBase != 0 ? (UsPool *)(uintptr_t)cfg->poolBase : NULL;
         if (pool != NULL) {
             pool->entry.nestedFaults++;
-            pool->entry.nestedEsr = outer->esr;
-            pool->entry.nestedFar = outer->far;
-            pool->entry.nestedElr = outer->elr;
-            pool->entry.nestedSelfVa = cfg->selfVa;
+            pool->entry.nestedESR = outer->esr;
+            pool->entry.nestedFAR = outer->far;
+            pool->entry.nestedELR = outer->elr;
+            pool->entry.nestedSelfVA = cfg->selfVA;
             pool->entry.nestedPoolBase = cfg->poolBase;
             pool->entry.nestedStackTop = cfg->stackTop[cpu];
-            pool->entry.nestedCpu = (uint64_t)(int64_t)cpu;
+            pool->entry.nestedCPU = (uint64_t)(int64_t)cpu;
         }
         gActive[cpu].loading = false;
         if (!usPayloadSlotTail(vbar, outer->spsr, &outer->landing)) {
@@ -754,12 +754,12 @@ void usPayloadSelfTest(void) {
     UsPayloadConfig *cfg = usPayloadConfig();
     UsSelfMap self;
 
-    usUartInit(cfg->uartBase, (uint32_t)cfg->uartKind, (uint32_t)cfg->uartWidth);
-    usUartPuts("US-PAYLOAD alive cpu=");
-    usUartPutDec((uint64_t)currentCpu());
-    usUartPuts(" frame=");
-    usUartPutDec(sizeof(UsFrame));
-    usUartPuts("\n");
+    usUARTInit(cfg->uartBase, (uint32_t)cfg->uartKind, (uint32_t)cfg->uartWidth);
+    usUARTPuts("US-PAYLOAD alive cpu=");
+    usUARTPutDec((uint64_t)currentCPU());
+    usUARTPuts(" frame=");
+    usUARTPutDec(sizeof(UsFrame));
+    usUARTPuts("\n");
 
     /*
      * Where the tables say this very code can be reached from
@@ -771,20 +771,20 @@ void usPayloadSelfTest(void) {
      * where the kernel's tables are in force and the question actually
      * matters
      */
-    self = usSelfMapFind(cfg->selfVa, US_POOL_BYTES, cfg->selfVa);
-    usUartPuts("US-PAYLOAD selfmap ");
+    self = usSelfMapFind(cfg->selfVA, US_POOL_BYTES, cfg->selfVA);
+    usUARTPuts("US-PAYLOAD selfmap ");
     if (self.found) {
-        usUartPuts("va=");
-        usUartPutHex(self.va);
-        usUartPuts(" pa=");
-        usUartPutHex(self.pa);
-        usUartPuts(" size=");
-        usUartPutHex(self.size);
+        usUARTPuts("va=");
+        usUARTPutHex(self.va);
+        usUARTPuts(" pa=");
+        usUARTPutHex(self.pa);
+        usUARTPuts(" size=");
+        usUARTPutHex(self.size);
     } else {
-        usUartPuts("none");
+        usUARTPuts("none");
     }
-    usUartPuts(" probes=");
-    usUartPutDec(self.probes);
-    usUartPuts(self.exhausted ? " truncated" : " complete");
-    usUartPuts("\n");
+    usUARTPuts(" probes=");
+    usUARTPutDec(self.probes);
+    usUARTPuts(self.exhausted ? " truncated" : " complete");
+    usUARTPuts("\n");
 }

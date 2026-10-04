@@ -53,7 +53,7 @@ static void hexOf(const char *hex, uint8_t *out, uint32_t bytes) {
     }
 }
 
-static void testSha256(void) {
+static void testSHA256(void) {
     static const struct {
         const char *text;
         uint32_t    length;
@@ -73,21 +73,21 @@ static void testSha256(void) {
     for (unsigned i = 0; i < sizeof(vectors) / sizeof(vectors[0]); i++) {
         uint8_t want[32];
         uint8_t got[32];
-        UsSha256 ctx;
+        UsSHA256 ctx;
 
         hexOf(vectors[i].digest, want, 32);
-        usSha256(vectors[i].text, vectors[i].length, got);
+        usSHA256(vectors[i].text, vectors[i].length, got);
         checks++;
         if (memcmp(want, got, 32) != 0) {
             failures++;
             printf("FAIL sha256 vector %u\n", i);
         }
         /* Fed in pieces, the answer has to be the same */
-        usSha256Init(&ctx);
+        usSHA256Init(&ctx);
         for (uint32_t at = 0; at < vectors[i].length; at++) {
-            usSha256Update(&ctx, vectors[i].text + at, 1);
+            usSHA256Update(&ctx, vectors[i].text + at, 1);
         }
-        usSha256Final(&ctx, got);
+        usSHA256Final(&ctx, got);
         checks++;
         if (memcmp(want, got, 32) != 0) {
             failures++;
@@ -322,7 +322,7 @@ static void testApply(void) {
     UsPatchFile parsed;
     UsPatchStats stats;
 
-    usSha256(text, sizeof(text), digest);
+    usSHA256(text, sizeof(text), digest);
     for (unsigned i = 0; i < 32; i++) {
         snprintf(hex + i * 2, 3, "%02x", digest[i]);
     }
@@ -377,7 +377,7 @@ static void testApply(void) {
 }
 
 int main(void) {
-    testSha256();
+    testSHA256();
     testApply();
     testGood();
     testRefusals();

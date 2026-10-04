@@ -22,17 +22,17 @@
  */
 #define US_UART_8250 2U
 
-void usUartInit(uint64_t base, uint32_t kind, uint32_t width);
+void usUARTInit(uint64_t base, uint32_t kind, uint32_t width);
 
-void usUartPutc(char c);
+void usUARTPutc(char c);
 
 /*
  * Text, and the two numbers. There is no formatter in the payload: it is
  * entered on a stack of a known size, and a formatter is the one thing whose
  * stack use cannot be read off the page
  */
-void usUartPuts(const char *s);
-void usUartPutHex(uint64_t value);
-void usUartPutDec(uint64_t value);
+void usUARTPuts(const char *s);
+void usUARTPutHex(uint64_t value);
+void usUARTPutDec(uint64_t value);
 
 #endif

@@ -334,18 +334,18 @@ UsConfig *usConfigParse(const char *text, size_t len, char *err, size_t errLen) 
 
     cfg->patchDir = "usPatch";
     cfg->hasDescriptorBase = false;
-    cfg->descriptorBaseRva = 0;
+    cfg->descriptorBaseRVA = 0;
     toml_table_t *kern = toml_table_table(cfg->root, "kernel");
-    if (kern != NULL && cfgHas(kern, "descriptorBaseRva")) {
+    if (kern != NULL && cfgHas(kern, "descriptorBaseRVA")) {
         int64_t rva = 0;
 
-        if (!cfgInt(kern, "descriptorBaseRva", &rva, err, errLen) || rva <= 0
+        if (!cfgInt(kern, "descriptorBaseRVA", &rva, err, errLen) || rva <= 0
             || rva > 0xFFFFFFFFLL) {
-            setErrKey(err, errLen, "not an address: ", "descriptorBaseRva");
+            setErrKey(err, errLen, "not an address: ", "descriptorBaseRVA");
             usConfigFree(cfg);
             return NULL;
         }
-        cfg->descriptorBaseRva = (uint32_t)rva;
+        cfg->descriptorBaseRVA = (uint32_t)rva;
         cfg->hasDescriptorBase = true;
     }
     toml_table_t *patch = toml_table_table(cfg->root, "patch");
@@ -364,7 +364,7 @@ UsConfig *usConfigParse(const char *text, size_t len, char *err, size_t errLen) 
      * none of them is the kernel. No base address means no serial output at
      * all, which is how a machine says it wants silence
      */
-    cfg->hasUart = false;
+    cfg->hasUART = false;
     cfg->uartType = "pl011";
     cfg->uartBase = 0;
     cfg->uartWidth = 32;
@@ -381,7 +381,7 @@ UsConfig *usConfigParse(const char *text, size_t len, char *err, size_t errLen) 
             return NULL;
         }
         cfg->uartBase = (uint64_t)base;
-        cfg->hasUart = true;
+        cfg->hasUART = true;
         if (cfgHas(uart, "type")) {
             if (!cfgStr(uart, "type", &type, &typeLen, err, errLen)) {
                 usConfigFree(cfg);

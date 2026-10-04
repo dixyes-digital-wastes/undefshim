@@ -25,19 +25,19 @@
  * without the RCpc extension has no LDAPR, so it takes an undefined
  * instruction exception on one, and the kernel that uses it stops
  */
-typedef enum UsLdaprKind_e {
-    UsLdaprNone = 0,
-    UsLdaprByte,
-    UsLdaprHalf,
-    UsLdaprWord,
-    UsLdaprXword,
-} UsLdaprKind;
+typedef enum UsLDAPRKind_e {
+    UsLDAPRNone = 0,
+    UsLDAPRByte,
+    UsLDAPRHalf,
+    UsLDAPRWord,
+    UsLDAPRXword,
+} UsLDAPRKind;
 
-typedef struct UsLdaprInsn_t {
-    UsLdaprKind kind;   /* UsLdaprNone when this is not one of them */
+typedef struct UsLDAPRInsn_t {
+    UsLDAPRKind kind;   /* UsLDAPRNone when this is not one of them */
     uint8_t     rt;     /* destination; 31 means the zero register */
     uint8_t     rn;     /* base address */
-} UsLdaprInsn;
+} UsLDAPRInsn;
 
 /*
  * Identifies the instruction and pulls out its fields
@@ -47,7 +47,7 @@ typedef struct UsLdaprInsn_t {
  * rather than a general one, which is a different instruction; it is reported
  * so the caller does not read a register that is not there
  */
-UsLdaprInsn usLdaprDecode(uint32_t insn);
+UsLDAPRInsn usLDAPRDecode(uint32_t insn);
 
 /*
  * Identifies the acquire load, which is what the four above are replaced with
@@ -58,7 +58,7 @@ UsLdaprInsn usLdaprDecode(uint32_t insn);
  * that case means is the same load, carried out once more, so it decodes into
  * the same shape
  */
-bool usLdarDecode(uint32_t insn, UsLdaprInsn *out);
+bool usLDARDecode(uint32_t insn, UsLDAPRInsn *out);
 
 /*
  * The acquire load that does the same job, more strongly
@@ -72,6 +72,6 @@ bool usLdarDecode(uint32_t insn, UsLdaprInsn *out);
  * are carried across untouched. Returns false when the instruction is not one
  * of the four, in which case nothing is written
  */
-bool usLdaprToLdar(uint32_t insn, uint32_t *out);
+bool usLDAPRToLDAR(uint32_t insn, uint32_t *out);
 
 #endif

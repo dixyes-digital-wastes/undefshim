@@ -42,28 +42,28 @@ static int emitFrame(FILE *f) {
     fprintf(f, "#define US_CONFIG_STACK_STRIDE %zu\n", sizeof(uint64_t));
     fprintf(f, "#define US_CONFIG_MAX_CPUS %zu\n",
             sizeof(((UsPayloadConfig *)0)->stackTop) / sizeof(uint64_t));
-    fprintf(f, "#define US_CONFIG_SELF_VA %zu\n", offsetof(UsPayloadConfig, selfVa));
+    fprintf(f, "#define US_CONFIG_SELF_VA %zu\n", offsetof(UsPayloadConfig, selfVA));
     fprintf(f, "#define US_CONFIG_POOL %zu\n", offsetof(UsPayloadConfig, poolBase));
     fprintf(f, "#define US_CONFIG_QUIET %zu\n", offsetof(UsPayloadConfig, quiet));
     fprintf(f, "#define US_CONFIG_CPU_COUNT %zu\n", offsetof(UsPayloadConfig, cpuCount));
     fprintf(f, "#define US_CONFIG_CPUS %zu\n", offsetof(UsPayloadConfig, cpus));
     fprintf(f, "#define US_CONFIG_SIZE %zu\n", sizeof(UsPayloadConfig));
-    fprintf(f, "#define US_CONFIG_HIGH_VA %zu\n", offsetof(UsPayloadConfig, highVa));
-    fprintf(f, "#define US_CONFIG_HIGH_POOL_VA %zu\n", offsetof(UsPayloadConfig, highPoolVa));
+    fprintf(f, "#define US_CONFIG_HIGH_VA %zu\n", offsetof(UsPayloadConfig, highVA));
+    fprintf(f, "#define US_CONFIG_HIGH_POOL_VA %zu\n", offsetof(UsPayloadConfig, highPoolVA));
     fprintf(f, "#define US_CONFIG_STUB_COUNT %zu\n", offsetof(UsPayloadConfig, stubCount));
     fprintf(f, "#define US_CONFIG_STUBS %zu\n", offsetof(UsPayloadConfig, stubs));
     fprintf(f, "#define US_STUB_STRIDE %zu\n", sizeof(UsPayloadStub));
     fprintf(f, "#define US_STUB_ADDRESS %zu\n", offsetof(UsPayloadStub, address));
     fprintf(f, "#define US_STUB_TABLE %zu\n", offsetof(UsPayloadStub, tableAddress));
     fprintf(f, "#define US_STUB_IMAGE %zu\n", offsetof(UsPayloadStub, imageAddress));
-    fprintf(f, "#define US_STUB_TABLE_PA %zu\n", offsetof(UsPayloadStub, tablePa));
-    fprintf(f, "#define US_STUB_ADDRESS_PA %zu\n", offsetof(UsPayloadStub, addressPa));
+    fprintf(f, "#define US_STUB_TABLE_PA %zu\n", offsetof(UsPayloadStub, tablePA));
+    fprintf(f, "#define US_STUB_ADDRESS_PA %zu\n", offsetof(UsPayloadStub, addressPA));
     fprintf(f, "#define US_STUB_TARGET %zu\n", offsetof(UsPayloadStub, targetIndex));
     fprintf(f, "#define US_STUB_PUBLISHED %zu\n", offsetof(UsPayloadStub, published));
 
     /* One processor entry, as the entry's lookup walks it */
-    fprintf(f, "#define US_CPU_STRIDE %zu\n", sizeof(UsPayloadCpu));
-    fprintf(f, "#define US_CPU_INDEX %zu\n", offsetof(UsPayloadCpu, index));
+    fprintf(f, "#define US_CPU_STRIDE %zu\n", sizeof(UsPayloadCPU));
+    fprintf(f, "#define US_CPU_INDEX %zu\n", offsetof(UsPayloadCPU, index));
 
     /*
      * The mask the entry applies to MPIDR_EL1. Taken from the header rather

@@ -56,13 +56,13 @@ static void dealloc(void *p) {
  * caller owns it
  */
 static char *readFile(efi_file_handle_t *file, size_t *outLen) {
-    efi_guid_t infoGuid = EFI_FILE_INFO_GUID;
+    efi_guid_t infoGUID = EFI_FILE_INFO_GUID;
     uintn_t infoSize = sizeof(efi_file_info_t);
     efi_file_info_t info;
     char *buf;
     size_t size;
 
-    if (EFI_ERROR(file->GetInfo(file, &infoGuid, &infoSize, &info))) {
+    if (EFI_ERROR(file->GetInfo(file, &infoGUID, &infoSize, &info))) {
         return NULL;
     }
     if (info.FileSize > US_CONFIG_MAX_BYTES) {
@@ -99,7 +99,7 @@ efi_handle_t usConfigVolume(void) {
 }
 
 static UsConfig *tryVolume(efi_handle_t handle, char *msg, size_t msgLen) {
-    efi_guid_t sfsGuid = EFI_SIMPLE_FILE_SYSTEM_PROTOCOL_GUID;
+    efi_guid_t sfsGUID = EFI_SIMPLE_FILE_SYSTEM_PROTOCOL_GUID;
     efi_simple_file_system_protocol_t *sfs = NULL;
     efi_file_handle_t *root = NULL;
     efi_file_handle_t *file = NULL;
@@ -107,7 +107,7 @@ static UsConfig *tryVolume(efi_handle_t handle, char *msg, size_t msgLen) {
     char *text = NULL;
     size_t textLen = 0;
 
-    if (EFI_ERROR(BS->HandleProtocol(handle, &sfsGuid, (void **)&sfs)) || sfs == NULL) {
+    if (EFI_ERROR(BS->HandleProtocol(handle, &sfsGUID, (void **)&sfs)) || sfs == NULL) {
         return NULL;
     }
     if (EFI_ERROR(sfs->OpenVolume(sfs, &root)) || root == NULL) {
@@ -159,7 +159,7 @@ static UsConfig *tryVolume(efi_handle_t handle, char *msg, size_t msgLen) {
 }
 
 UsConfigLoad usConfigLoad(UsConfig **out, char *msg, size_t msgLen) {
-    efi_guid_t sfsGuid = EFI_SIMPLE_FILE_SYSTEM_PROTOCOL_GUID;
+    efi_guid_t sfsGUID = EFI_SIMPLE_FILE_SYSTEM_PROTOCOL_GUID;
     efi_handle_t *handles = NULL;
     uintn_t count = 0;
     UsConfig *cfg = NULL;
@@ -167,7 +167,7 @@ UsConfigLoad usConfigLoad(UsConfig **out, char *msg, size_t msgLen) {
     *out = NULL;
     msg[0] = '\0';
 
-    if (EFI_ERROR(BS->LocateHandleBuffer(ByProtocol, &sfsGuid, NULL, &count, &handles))) {
+    if (EFI_ERROR(BS->LocateHandleBuffer(ByProtocol, &sfsGUID, NULL, &count, &handles))) {
         /* No simple file system at all: nothing to read, defaults apply */
         return UsConfigAbsent;
     }

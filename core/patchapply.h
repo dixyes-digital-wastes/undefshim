@@ -63,7 +63,7 @@ bool usPatchTargetMatches(const UsPatchFile *file, const char *imageName);
  * says, and that is what refused counts
  */
 UsPatchApplyResult usPatchApplyMatched(const UsPatchFile *file, const UsPatchSite *sites,
-                                       const UsPatchMatchers *matchers, uint32_t textRva,
+                                       const UsPatchMatchers *matchers, uint32_t textRVA,
                                        uint8_t *text, uint32_t textBytes,
                                        UsPatchStats *stats);
 

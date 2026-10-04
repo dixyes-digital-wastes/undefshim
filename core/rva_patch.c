@@ -38,7 +38,7 @@ UsPatchResult usPatchApply(UsImage *img, const UsPatchSpec *spec, UsPatchRange *
         return UsPatchBadWidth;
     }
 
-    at = (uint8_t *)usImageRvaSpan(img, spec->rva, &available);
+    at = (uint8_t *)usImageRVASpan(img, spec->rva, &available);
     if (at == NULL || available < spec->width) {
         return UsPatchOutOfRange;
     }

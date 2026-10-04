@@ -68,7 +68,7 @@ static uint8_t *readWhole(const char *path, size_t *outLen) {
  * are only virtual are exactly the ones with room. Reading the file alone
  * would report nothing for them, which is the opposite of the answer wanted
  */
-static bool wordAt(const UsImage *img, const UsPeSection *s, uint32_t rva,
+static bool wordAt(const UsImage *img, const UsPESection *s, uint32_t rva,
                    uint32_t *out) {
     uint32_t into = rva - s->virtualAddress;
     size_t available = 0;
@@ -78,7 +78,7 @@ static bool wordAt(const UsImage *img, const UsPeSection *s, uint32_t rva,
         *out = 0;
         return true;
     }
-    p = usImageRvaSpan(img, rva, &available);
+    p = usImageRVASpan(img, rva, &available);
     if (p == NULL || available < 4) {
         return false;
     }
@@ -116,7 +116,7 @@ int main(int argc, char **argv) {
     printf("%s sizeOfImage=0x%x sections=%u\n", argv[1], img.sizeOfImage, img.sectionCount);
 
     for (uint16_t i = 0; i < img.sectionCount; i++) {
-        const UsPeSection *s = &img.sections[i];
+        const UsPESection *s = &img.sections[i];
         bool exec = (s->characteristics & US_PE_SECTION_EXECUTABLE) != 0;
         bool writable = (s->characteristics & US_PE_SECTION_WRITABLE) != 0;
         bool loaded = s->rawSize != 0;
@@ -125,7 +125,7 @@ int main(int argc, char **argv) {
         unsigned long long bucketBytes[MAX_BUCKETS] = { 0 };
         unsigned long long bucketCounts[MAX_BUCKETS] = { 0 };
         uint32_t biggest = 0;
-        uint32_t biggestRva = 0;
+        uint32_t biggestRVA = 0;
         unsigned long long slack = 0;
 
         if (span == 0) {
@@ -170,14 +170,14 @@ int main(int argc, char **argv) {
                 }
                 if (bytes > biggest) {
                     biggest = bytes;
-                    biggestRva = s->virtualAddress + off;
+                    biggestRVA = s->virtualAddress + off;
                 }
             }
             off += bytes != 0 ? bytes : 4;
         }
 
         if (biggest != 0) {
-            printf("    max %u bytes at +0x%x\n", biggest, biggestRva);
+            printf("    max %u bytes at +0x%x\n", biggest, biggestRVA);
             for (uint32_t b = 0; b < MAX_BUCKETS; b++) {
                 if (bucketCounts[b] == 0) {
                     continue;
@@ -201,7 +201,7 @@ int main(int argc, char **argv) {
            minBytes, totalExec, totalWritable);
 
     {
-        UsVbarTables tables = usFindVbarTables(&img);
+        UsVBARTables tables = usFindVBARTables(&img);
 
         printf("vbar tables: %zu sites, %zu unresolved\n", tables.sites, tables.unresolved);
         for (size_t k = 0; k < tables.count; k++) {

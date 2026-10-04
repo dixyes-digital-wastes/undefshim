@@ -113,7 +113,7 @@ static void link(Fixture *fx) {
 
 static void testFindsTheNamedModule(void) {
     Fixture fx;
-    UsLdrModule m = { 0 };
+    UsLDRModule m = { 0 };
 
     memset(&fx, 0, sizeof(fx));
     addEntry(&fx, "ntoskrnl.exe", 0xFFFFF80053C00000ULL, 0x1249000);
@@ -121,17 +121,17 @@ static void testFindsTheNamedModule(void) {
     link(&fx);
 
     ok("the first entry is found",
-       usLdrFindModule(fx.block, "ntoskrnl.exe", &m));
+       usLDRFindModule(fx.block, "ntoskrnl.exe", &m));
     eqU64("with its base", m.base, 0xFFFFF80053C00000ULL);
     eqU64("and its size", m.size, 0x1249000);
     eqU64("and its entry point", m.entry, 0xFFFFF80053C00000ULL + 0x1000);
 
     ok("a later entry is found too",
-       usLdrFindModule(fx.block, "hal.dll", &m));
+       usLDRFindModule(fx.block, "hal.dll", &m));
     eqU64("with its own base", m.base, 0xFFFFF80055200000ULL);
 
     ok("a name that is not there is not found",
-       !usLdrFindModule(fx.block, "win32k.sys", &m));
+       !usLDRFindModule(fx.block, "win32k.sys", &m));
 }
 
 /*
@@ -142,36 +142,36 @@ static void testFindsTheNamedModule(void) {
  */
 static void testPrefixesDoNotMatch(void) {
     Fixture fx;
-    UsLdrModule m = { 0 };
+    UsLDRModule m = { 0 };
 
     memset(&fx, 0, sizeof(fx));
     addEntry(&fx, "ntoskrnl.exe", 0xFFFFF80053C00000ULL, 0x1249000);
     link(&fx);
 
     ok("a shorter name does not match a longer one",
-       !usLdrFindModule(fx.block, "ntoskrnl", &m));
+       !usLDRFindModule(fx.block, "ntoskrnl", &m));
     ok("nor does a longer one match a shorter",
-       !usLdrFindModule(fx.block, "ntoskrnl.exe.backup", &m));
+       !usLDRFindModule(fx.block, "ntoskrnl.exe.backup", &m));
     ok("but the exact name does",
-       usLdrFindModule(fx.block, "ntoskrnl.exe", &m));
+       usLDRFindModule(fx.block, "ntoskrnl.exe", &m));
 }
 
 static void testCaseDoesNotMatter(void) {
     Fixture fx;
-    UsLdrModule m = { 0 };
+    UsLDRModule m = { 0 };
 
     memset(&fx, 0, sizeof(fx));
     addEntry(&fx, "CLFS.SYS", 0xFFFFF8004D460000ULL, 0x7e000);
     link(&fx);
 
     ok("a lower case query finds an upper case name",
-       usLdrFindModule(fx.block, "clfs.sys", &m));
+       usLDRFindModule(fx.block, "clfs.sys", &m));
     eqU64("with the right base", m.base, 0xFFFFF8004D460000ULL);
 }
 
 static void testStopsAtTheEnd(void) {
     Fixture fx;
-    UsLdrModule m = { 0 };
+    UsLDRModule m = { 0 };
 
     memset(&fx, 0, sizeof(fx));
     addEntry(&fx, "kdcom.dll", 0xFFFFF8004D400000ULL, 0xb000);
@@ -179,7 +179,7 @@ static void testStopsAtTheEnd(void) {
 
     /* The ring terminates the walk, so a name that is not in it costs one
      * entry and not a lap of memory */
-    ok("the walk ends at the head", !usLdrFindModule(fx.block, "missing.dll", &m));
+    ok("the walk ends at the head", !usLDRFindModule(fx.block, "missing.dll", &m));
 }
 
 /*
@@ -189,7 +189,7 @@ static void testStopsAtTheEnd(void) {
  */
 static void testRefusesABrokenList(void) {
     Fixture fx;
-    UsLdrModule m = { 0 };
+    UsLDRModule m = { 0 };
 
     memset(&fx, 0, sizeof(fx));
     addEntry(&fx, "ntoskrnl.exe", 0xFFFFF80053C00000ULL, 0x1249000);
@@ -199,33 +199,33 @@ static void testRefusesABrokenList(void) {
     /* The first node points somewhere that is not the second entry */
     wr64(fx.entries[0], 0x0000000000000010ULL);
     ok("a node pointing outside the list is refused",
-       !usLdrFindModule(fx.block, "hal.dll", &m));
+       !usLDRFindModule(fx.block, "hal.dll", &m));
 
     /* A base that cannot be one */
     memset(&fx, 0, sizeof(fx));
     addEntry(&fx, "ntoskrnl.exe", 0x10, 0x1249000);
     link(&fx);
     ok("an implausible base is refused",
-       !usLdrFindModule(fx.block, "ntoskrnl.exe", &m));
+       !usLDRFindModule(fx.block, "ntoskrnl.exe", &m));
 
     /* A size of zero is how an uninitialised entry reads */
     memset(&fx, 0, sizeof(fx));
     addEntry(&fx, "ntoskrnl.exe", 0xFFFFF80053C00000ULL, 0);
     link(&fx);
     ok("a zero size is refused",
-       !usLdrFindModule(fx.block, "ntoskrnl.exe", &m));
+       !usLDRFindModule(fx.block, "ntoskrnl.exe", &m));
 }
 
 static void testRefusesNothing(void) {
-    UsLdrModule m = { 0 };
+    UsLDRModule m = { 0 };
     uint8_t block[0x100] = { 0 };
 
-    ok("a null block is refused", !usLdrFindModule(NULL, "ntoskrnl.exe", &m));
-    ok("a null name is refused", !usLdrFindModule(block, NULL, &m));
-    ok("a null output is refused", !usLdrFindModule(block, "ntoskrnl.exe", NULL));
+    ok("a null block is refused", !usLDRFindModule(NULL, "ntoskrnl.exe", &m));
+    ok("a null name is refused", !usLDRFindModule(block, NULL, &m));
+    ok("a null output is refused", !usLDRFindModule(block, "ntoskrnl.exe", NULL));
     /* A head that points at itself is an empty list */
     ok("an empty list has no matches",
-       !usLdrFindModule(block, "ntoskrnl.exe", &m));
+       !usLDRFindModule(block, "ntoskrnl.exe", &m));
 }
 
 int main(void) {
