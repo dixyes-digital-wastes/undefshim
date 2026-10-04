@@ -102,4 +102,35 @@ UsPageWalk usPageWalkFind(UsPhysRead read, void *ctx, uint64_t tableBase,
 /* Address mask for child table/page descriptors, not shortened TTBR roots. */
 #define US_PAGE_ADDR_MASK 0x0000FFFFFFFFF000ULL
 
+/*
+ * Where the kernel keeps the descriptor that translates a virtual address.
+ *
+ * Windows maps the translation tables into the address space and lays them out
+ * in virtual address order, so the descriptor for an address is a computation
+ * rather than a search. The base was read out of the image: every site shaped
+ * like `lsr #12; and #0xfffffffff; lsl #3; add` takes its base from a literal
+ * in .text, and three of those literals hold this value - the same one the x64
+ * kernel uses. The end of the range is the other literal seen beside them, and
+ * the check that uses these pins both down.
+ *
+ * The mask is the part that is easy to get wrong: shifting the page number of a
+ * kernel half address without it overflows 64 bits. Keeping the address bits
+ * above the page is what the kernel's own code does, and 4K granule with a
+ * 48-bit address space is what this one is.
+ */
+#define US_PTE_SELFMAP_BASE UINT64_C(0xFFFFF68000000000)
+#define US_PTE_SELFMAP_END  UINT64_C(0xFFFFF6FFFFFFFFFF)
+#define US_PTE_VA_MASK      UINT64_C(0x0000FFFFFFFFF000)
+
+static inline uint64_t usPteForAddress(uint64_t va) {
+    return US_PTE_SELFMAP_BASE + ((va & US_PTE_VA_MASK) >> 9);
+}
+
+/* AP[2] in a leaf descriptor: set means the page is read-only at EL1. */
+#define US_PTE_AP2 (UINT64_C(1) << 7)
+
+static inline uint64_t usPteWithWrite(uint64_t descriptor, bool writable) {
+    return writable ? (descriptor & ~US_PTE_AP2) : (descriptor | US_PTE_AP2);
+}
+
 #endif
