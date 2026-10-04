@@ -1,52 +1,112 @@
 /*
- * Serial output, see console.h for why it is not just printf.
+ * Serial output, see console.h for why it is not just printf, and for why a
+ * port that was not configured stays silent.
  */
 
 #include <uefi.h>
 
 #include "uefi/src/console.h"
 
-#ifndef US_UART_BASE
-#error "US_UART_BASE must be defined by the build"
-#endif
+/*
+ * The PL011 keeps its registers one word apart, so these are word indices.
+ * Its data register is where a byte goes and the flag register says whether
+ * there is room, which has to be waited for or bytes are dropped when the
+ * receiver is not being read.
+ */
+#define US_PL011_DR 0U    /* 0x00 */
+#define US_PL011_FR 6U    /* 0x18 */
+#define US_PL011_IBRD 9U  /* 0x24 */
+#define US_PL011_FBRD 10U /* 0x28 */
+#define US_PL011_LCRH 11U /* 0x2c */
+#define US_PL011_CR 12U   /* 0x30 */
+#define US_PL011_ICR 17U  /* 0x44 */
 
-/* PL011 register offsets. */
-#define US_UART_DR 0x00U
-#define US_UART_FR 0x18U
-#define US_UART_IBRD 0x24U
-#define US_UART_FBRD 0x28U
-#define US_UART_LCRH 0x2CU
-#define US_UART_CR 0x30U
-#define US_UART_ICR 0x44U
+#define US_PL011_FR_TXFF (1U << 5)
 
-#define US_UART_FR_TXFF (1U << 5)
-#define US_UART_LCRH_8N1_FIFO 0x70U
-#define US_UART_CR_UARTEN (1U << 0)
-#define US_UART_CR_TXE (1U << 8)
-#define US_UART_CR_RXE (1U << 9)
+/*
+ * The 8250 keeps its registers a byte apart, and boards that wire it to a
+ * 32 bit bus space them a word apart instead - which is what the shift below
+ * carries, and the reason the width is a setting rather than an assumption.
+ */
+#define US_8250_THR 0U
+#define US_8250_IER 1U
+#define US_8250_FCR 2U
+#define US_8250_LCR 3U
+#define US_8250_MCR 4U
+#define US_8250_LSR 5U
 
-static void writeReg(uint32_t offset, uint32_t value) {
-    *(volatile uint32_t *)((uintptr_t)US_UART_BASE + offset) = value;
+#define US_8250_LSR_THRE (1U << 5)
+
+static UsUartKind gKind = UsUartOff;
+static uintptr_t gBase;
+static uint32_t gShift;
+static uint32_t gWidth = 32U;
+
+static uintptr_t regAt(uint32_t index) {
+    return gBase + ((uintptr_t)index << gShift);
 }
 
-static uint32_t readReg(uint32_t offset) {
-    return *(volatile uint32_t *)((uintptr_t)US_UART_BASE + offset);
+static uint32_t readReg(uint32_t index) {
+    if (gWidth == 8U) {
+        return *(volatile uint8_t *)regAt(index);
+    }
+    return *(volatile uint32_t *)regAt(index);
 }
 
-void usConsoleInit(void) {
-    writeReg(US_UART_CR, 0);
-    writeReg(US_UART_ICR, 0x7FF);
-    writeReg(US_UART_IBRD, 13);
-    writeReg(US_UART_FBRD, 43);
-    writeReg(US_UART_LCRH, US_UART_LCRH_8N1_FIFO);
-    writeReg(US_UART_CR, US_UART_CR_UARTEN | US_UART_CR_TXE | US_UART_CR_RXE);
+static void writeReg(uint32_t index, uint32_t value) {
+    if (gWidth == 8U) {
+        *(volatile uint8_t *)regAt(index) = (uint8_t)value;
+        return;
+    }
+    *(volatile uint32_t *)regAt(index) = value;
+}
+
+static void bringUp(void) {
+    if (gKind == UsUartPl011) {
+        writeReg(US_PL011_CR, 0U);
+        writeReg(US_PL011_ICR, 0x7FFU);
+        writeReg(US_PL011_IBRD, 13U);
+        writeReg(US_PL011_FBRD, 43U);
+        writeReg(US_PL011_LCRH, 0x70U); /* eight bits, no parity, FIFOs on */
+        writeReg(US_PL011_CR, 0x301U);  /* enabled, transmitting, receiving */
+        return;
+    }
+    /*
+     * The 8250 gets its line settings and its FIFOs, and no baud change: the
+     * divisor depends on a clock the configuration does not state, and
+     * writing one would break a port the firmware already set up correctly.
+     */
+    writeReg(US_8250_IER, 0x00U);
+    writeReg(US_8250_LCR, 0x03U); /* eight bits, no parity, one stop, no divisor latch */
+    writeReg(US_8250_FCR, 0x07U); /* FIFOs on, both cleared */
+    writeReg(US_8250_MCR, 0x03U); /* terminal ready, request to send */
+}
+
+void usConsoleUse(UsUartKind kind, uint64_t base, uint32_t width) {
+    gKind = kind;
+    gBase = (uintptr_t)base;
+    gWidth = width == 8U ? 8U : 32U;
+    gShift = (kind == UsUartUart8250 && gWidth == 32U) ? 2U : 0U;
+    if (kind != UsUartOff && gBase != 0) {
+        bringUp();
+    }
+}
+
+static bool roomToWrite(void) {
+    if (gKind == UsUartPl011) {
+        return (readReg(US_PL011_FR) & US_PL011_FR_TXFF) == 0U;
+    }
+    return (readReg(US_8250_LSR) & US_8250_LSR_THRE) != 0U;
 }
 
 void usConsolePutc(char c) {
-    /* Bounded spin: a wrong base address must not hang the boot. */
-    for (uint32_t spin = 0; (readReg(US_UART_FR) & US_UART_FR_TXFF) != 0 && spin < 1000000U; spin++) {
+    if (gKind == UsUartOff || gBase == 0) {
+        return;
     }
-    writeReg(US_UART_DR, (uint32_t)(uint8_t)c);
+    /* Bounded spin: a wrong base address must not hang the boot. */
+    for (uint32_t spin = 0; !roomToWrite() && spin < 1000000U; spin++) {
+    }
+    writeReg(gKind == UsUartPl011 ? US_PL011_DR : US_8250_THR, (uint32_t)(uint8_t)c);
 }
 
 void usConsolePuts(const char *s) {

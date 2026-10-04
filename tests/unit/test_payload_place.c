@@ -101,7 +101,7 @@ static void placed(const UsAcpiCpus *cpus) {
     assert(memcmp(cfg->stackTop, pool.stackTop, sizeof(cfg->stackTop)) == 0);
     assert(cfg->selfVa == out.baseVa);
     assert(cfg->poolBase == (uint64_t)(uintptr_t)&pool);
-    assert(cfg->uartBase == US_UART_BASE && cfg->quiet == 1);
+    assert(cfg->uartBase == 0 && cfg->uartKind == 0 && cfg->quiet == 1);
     assert(cfg->forwardTarget == 0);
 
     /* Generator semantics have their own interpreter test. Here the complete

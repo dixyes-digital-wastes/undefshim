@@ -48,10 +48,9 @@ mkdir -p "$WORK"
 # a picture of the wrong mechanism is a picture of nothing.
 REWRITE="${REWRITE:-true}"
 cat > "$WORK/run.toml" <<EOF
-version = 1
 
 [scan]
-ldapr_rewrite = $REWRITE
+ldaprRewrite = $REWRITE
 
 [log]
 level = "info"

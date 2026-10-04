@@ -30,4 +30,3 @@ QEMU_MEM     ?= 4096
 QEMU_SMP     ?= 8,sockets=1,clusters=2,cores=4,threads=1
 
 # Console UART. QEMU virt maps PL011 at 0x09000000.
-US_UART_BASE ?= 0x09000000

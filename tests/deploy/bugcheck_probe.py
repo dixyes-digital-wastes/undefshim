@@ -321,23 +321,24 @@ def main():
 
     config = os.path.join(work, "run.toml")
     with open(config, "w") as f:
-        f.write("""version = 1
-
-[log]
+        f.write("""[log]
 level = "info"
 
 [scan]
-ldapr_rewrite = %s
+ldaprRewrite = %s
 
 [debug]
 enabled = true
 arm = %s
-arm_slot0 = %s
-spx_stack = %s
+armSlot0 = %s
+spxStack = %s
 vamap = %s
 """ % (args.rewrite, args.arm, args.arm_slot0, args.spx_stack, args.vamap))
+        # The root states where the serial output goes; without it there is
+        # none, and these runs are read from that output.
+        f.write('\nuartBase = 0x09000000\nuartType = "pl011"\nuartWidth = 32\n')
         if args.descriptor_base_rva:
-            f.write('\n[kernel]\ndescriptor_base_rva = %s\n' % args.descriptor_base_rva)
+            f.write('\n[kernel]\ndescriptorBaseRva = %s\n' % args.descriptor_base_rva)
         if args.spin_rva is not None:
             f.write("""
 [[debug.patch]]

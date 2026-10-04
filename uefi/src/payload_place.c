@@ -4,6 +4,10 @@
 
 #include <uefi.h>
 
+/* Kept in step with payload/uart.h, which the driver does not include. */
+#define US_PAYLOAD_UART_PL011 1U
+#define US_PAYLOAD_UART_8250 2U
+
 #include <stddef.h>
 
 #include "common/layout.h"
@@ -34,7 +38,18 @@ typedef void (*UsSelfTestFn)(void);
 static void writeConfig(const UsPayloadPlace *place, const UsSession *session) {
     UsPayloadConfig *cfg = (UsPayloadConfig *)(uintptr_t)place->configVa;
 
-    cfg->uartBase = US_UART_BASE;
+    /*
+     * Where to report from, as the configuration states it: a base of zero
+     * means the payload stays silent, which is what leaving it out means.
+     */
+    cfg->uartBase = session->config != NULL && session->config->hasUart
+                        ? session->config->uartBase
+                        : 0U;
+    cfg->uartKind = session->config == NULL || !session->config->hasUart
+                        ? 0U
+                        : (session->config->uartType[0] == 'p' ? US_PAYLOAD_UART_PL011
+                                                               : US_PAYLOAD_UART_8250);
+    cfg->uartWidth = session->config != NULL ? session->config->uartWidth : 32U;
     for (uint32_t i = 0; i < US_MAX_CPUS; i++) {
         cfg->stackTop[i] = session->pool->stackTop[i];
     }

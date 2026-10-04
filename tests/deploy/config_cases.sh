@@ -56,13 +56,12 @@ run_case() {
 # A file that parses, and that differs from the defaults on purpose so the
 # output proves the file was really used.
 cat > "$WORK/good.toml" <<'EOF'
-version = 1
 
 [log]
 level = "verbose"
 
 [scan]
-ldapr_rewrite = false
+ldaprRewrite = false
 
 [debug]
 enabled = true
@@ -93,7 +92,7 @@ run_case range  "$WORK/range.toml" "US-M2-FAIL" "config: broken"
 run_case absent ""                 "US-M2-DONE" "config: absent"
 
 # The loaded case has to show the file's values, not the defaults.
-if ! grep -q "log.level=3 ldapr_rewrite=0 debug.enabled=1 patches=1" "$WORK/loaded.log"; then
+if ! grep -q "log.level=3 ldaprRewrite=0 debug.enabled=1 patches=1" "$WORK/loaded.log"; then
     echo "FAIL loaded: values do not match the file"
     grep -E 'log\.level|patch\[0\]' "$WORK/loaded.log" || true
     failures=$((failures + 1))

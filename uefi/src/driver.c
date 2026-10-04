@@ -30,7 +30,7 @@ static UsSession gSession;
 static void printConfig(const UsConfig *cfg) {
     usConsolePuts("log.level=");
     usConsolePutDec((uint64_t)cfg->logLevel);
-    usConsolePuts(" ldapr_rewrite=");
+    usConsolePuts(" ldaprRewrite=");
     usConsolePutDec((uint64_t)cfg->ldaprRewrite);
     usConsolePuts(" debug.enabled=");
     usConsolePutDec((uint64_t)cfg->debugEnabled);
@@ -58,35 +58,43 @@ static void printConfig(const UsConfig *cfg) {
 
 int main(int argc, char **argv) {
     UsConfig *cfg = NULL;
+    char msg[192];
+    UsConfigLoad result;
 
     (void)argc;
     (void)argv;
 
-    usConsoleInit();
-    usConsolePuts("undefshim " US_VERSION_STRING "\n");
-
-    {
-        char msg[192];
-        UsConfigLoad result = usConfigLoad(&cfg, msg, sizeof(msg));
-
-        switch (result) {
-        case UsConfigLoaded:
-            usConsolePuts("config: loaded\n");
-            break;
-        case UsConfigAbsent:
-            usConsolePuts("config: absent, using defaults\n");
-            break;
-        case UsConfigBroken:
-            usConsolePuts("config: broken: ");
-            usConsolePuts(msg);
-            usConsolePuts("\nconfig: not arming\n");
-            usConsolePuts("US-M2-FAIL\n");
-            return 0;
-        }
-
-        printConfig(cfg);
-        usConsolePuts("US-M2-DONE\n");
+    /*
+     * The configuration is read before anything is said, because it is what
+     * says where to say it: a machine that does not name a UART wants no
+     * serial output at all, and until it is read the console stays silent.
+     * That includes the report of a broken configuration, which is why the
+     * error path is going to have to write to the screen instead.
+     */
+    result = usConfigLoad(&cfg, msg, sizeof(msg));
+    if (cfg != NULL && cfg->hasUart) {
+        usConsoleUse(cfg->uartType[0] == 'p' ? UsUartPl011 : UsUartUart8250,
+                     cfg->uartBase, cfg->uartWidth);
     }
+
+    usConsolePuts("undefshim " US_VERSION_STRING "\n");
+    switch (result) {
+    case UsConfigLoaded:
+        usConsolePuts("config: loaded\n");
+        break;
+    case UsConfigAbsent:
+        usConsolePuts("config: absent, using defaults\n");
+        break;
+    case UsConfigBroken:
+        usConsolePuts("config: broken: ");
+        usConsolePuts(msg);
+        usConsolePuts("\nconfig: not arming\n");
+        usConsolePuts("US-M2-FAIL\n");
+        return 0;
+    }
+
+    printConfig(cfg);
+    usConsolePuts("US-M2-DONE\n");
 
     /* From here on the driver has to be resident to be useful, so this is
      * where the work of staying in the loop starts. */
@@ -100,8 +108,8 @@ int main(int argc, char **argv) {
      * The switches that change what the boot does are debugging decisions
      * like any other, so they come from the configuration file. */
     gSession.armEnabled = usConfigDebugBool(cfg, "arm", false);
-    gSession.armSlot0 = usConfigDebugBool(cfg, "arm_slot0", true);
-    gSession.spxStack = usConfigDebugBool(cfg, "spx_stack", false);
+    gSession.armSlot0 = usConfigDebugBool(cfg, "armSlot0", true);
+    gSession.spxStack = usConfigDebugBool(cfg, "spxStack", false);
     gSession.vamapEnabled = usConfigDebugBool(cfg, "vamap", gSession.armEnabled);
     /*
      * Not from the debug section: this one is a scanning decision and is

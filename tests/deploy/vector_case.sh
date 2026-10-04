@@ -46,7 +46,6 @@ fi
 
 mkdir -p "$WORK"
 cat > "$WORK/armed.toml" <<EOF
-version = 1
 
 [log]
 level = "info"
@@ -59,7 +58,7 @@ arm = true
 # The exception path is what this checks, so the replacement that would keep
 # the instructions from faulting in the first place is turned off. With it on
 # there is nothing to take over and nothing to enter.
-ldapr_rewrite = false
+ldaprRewrite = false
 EOF
 
 log="$WORK/armed.log"
@@ -121,9 +120,9 @@ grep -a 'arm: vbar' "$log" | tail -2
 # nothing to do. A key read from the wrong configuration section looks exactly
 # like a check that found nothing, so it is asserted rather than assumed: that
 # mistake has already been made once.
-if ! grep -q 'ldapr_rewrite=0' "$log"; then
+if ! grep -q 'ldaprRewrite=0' "$log"; then
     echo "FAIL: the replacement is on, so this checks nothing"
-    grep -a 'ldapr_rewrite' "$log" | head -2
+    grep -a 'ldaprRewrite' "$log" | head -2
     exit 1
 fi
 

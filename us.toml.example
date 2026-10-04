@@ -1,0 +1,90 @@
+# A demonstration of every setting this driver reads.
+#
+# The file the driver actually loads is named us.toml (the name is matched
+# without regard to case) and sits on the volume it is loaded from, beside the
+# list directory it names below. This copy lives in the repository to document
+# the shape; it is not read from here.
+#
+# Keys are camelCase. There is no version field: the format has never been
+# released, so there is nothing to tell apart. Keys this parser does not know
+# are ignored, so a typo is silent - copy from here rather than from memory.
+#
+# The serial settings are at the root rather than under a table, because they
+# are needed in several places, and they must appear before the first table
+# header, since after that every key belongs to that table.
+#
+# Leaving the serial settings out means no serial output at all: the console
+# stays silent, and so does everything that reports through it.
+
+# Where the serial port is, what kind it is, and how wide its registers are
+# read. All three are optional, but uartBase is what switches it on.
+uartBase = 0x09000000   # any address; omit it and nothing is printed
+uartType = "pl011"      # "pl011" (32 bit registers) or "uart8250"
+uartWidth = 32          # 8 or 32; an 8250 on a 32 bit bus wants 32
+
+[log]
+# How much the driver says. Options, least to most:
+#   "off" | "error" | "info" | "verbose" | "debug"
+level = "info"
+
+[scan]
+# Replace the RCpc loads in the images with the equivalent LDAR before they
+# run. This is the boot-time list application and is on by default.
+ldaprRewrite = true
+
+# Replace RCpc loads in user mode pages while the kernel runs, by taking the
+# exception, writing the instruction in place and handing control back. Turn
+# it off to keep the kernel from ever writing to a page it does not own.
+el0InPlace = true
+
+[stats]
+# Keep a count, in the pool, of the addresses traps are taken at. It costs a
+# lookup on every exception, so it is off unless asked for; the count is read
+# with gdb or from the pool dump, not by the machine itself.
+enabled = false
+
+[kernel]
+# The RVA of the variable that holds the kernel's page table base, for the
+# build this configuration is written for. Optional: without it no page table
+# descriptor is rewritten at all, and every RCpc load keeps taking the
+# exception. It is never trusted - the handler checks it against the hardware's
+# own translation and carries on without it if the two disagree.
+# 0xE06368 is the value for the 26100 PE kernel used in development.
+descriptorBaseRva = 0xE06368
+
+[patch]
+# Directory of patch list files, relative to the volume this configuration was
+# read from. Each file names the build it is for; see clean-room/plan.md.
+# An empty string turns the feature off. The volume root is refused.
+dir = "usPatch"
+
+[debug]
+# Everything below changes what the boot does rather than what it is for, so
+# it is off by default and the individual switches follow.
+enabled = false
+
+# Arm the exception vectors at all. With this off the driver loads, reports
+# and does nothing else.
+arm = true
+
+# Arm the EL1t slot as well as EL1h. Turning it off is known to bugcheck very
+# early (0x1AA), which is why it is on by default.
+armSlot0 = true
+
+# Let the stub push on the SPx vector too. This is how it was determined which
+# vector Windows actually arrives on; leave it off.
+spxStack = false
+
+# Register for the runtime notification that publishes a virtual address for
+# the pool.
+vamap = true
+
+# [[debug.patch]] entries replace instructions in an image before it runs,
+# by name and RVA, without a list file. One table per site:
+#
+# [[debug.patch]]
+# target = "ntoskrnl"   # matched on the image name, without the extension
+# rva    = 0x203bd4     # an image RVA
+# value  = 0x14000000   # what to write there
+# width  = 4            # bytes, 1 to 8
+# tag    = "vbar write site"   # optional, only for the report

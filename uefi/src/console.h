@@ -5,17 +5,28 @@
  * boot, and the whole point of this driver is to still be reporting at that
  * point, so the UART is driven directly. Everything the driver wants to say
  * after the early stages goes here rather than through printf.
+ *
+ * Where it writes is not decided here: the configuration says which port it
+ * is and how wide its registers are read, and leaving that out is how a
+ * machine asks for no serial output at all.
  */
 
 #ifndef US_CONSOLE_H
 #define US_CONSOLE_H
 
+typedef enum {
+    UsUartOff = 0,   /* nothing is written */
+    UsUartPl011,     /* ARM's own, 32 bits per register */
+    UsUartUart8250,  /* the one that turns up on PC-derived boards */
+} UsUartKind;
+
 /*
- * Brings the UART up. The firmware may not have left it enabled, and with it
- * disabled the FIFO flags report permanently full, so this has to run before
- * anything is written.
+ * Points the console at a port and brings it up. Until this is called nothing
+ * is written. The width is the access size the port needs - 32 for a PL011,
+ * 8 or 32 for an 8250, whose registers are a byte apart when read a byte at a
+ * time and a word apart when read as words.
  */
-void usConsoleInit(void);
+void usConsoleUse(UsUartKind kind, uint64_t base, uint32_t width);
 
 void usConsolePutc(char c);
 void usConsolePuts(const char *s);

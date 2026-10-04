@@ -65,7 +65,7 @@ test_payload_place: placement-payload $(PLACEMENT_SRCS) $(PLACEMENT_HEADERS)
 	$(CC) -std=gnu23 -O2 -Wall -Wextra -fshort-wchar -fno-builtin \
 	    -Ipayload_place_host -I$(ROOT) -I$(TOML) \
 	    -I$(ROOT)/third_party/posix-uefi/uefi \
-	    -I$(PLACEMENT_PAYLOAD_DIR) $(TOML_DEFS) -DUS_UART_BASE=0x09000000 \
+	    -I$(PLACEMENT_PAYLOAD_DIR) $(TOML_DEFS) \
 	    $(PLACEMENT_SRCS) -o $@
 
 test_cfg: test_cfg.c $(ROOT)/core/cfg.c $(TOML)/toml.c
