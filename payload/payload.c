@@ -166,6 +166,43 @@ static uint64_t loadAcquire(UsLdaprKind kind, uint64_t address) {
 }
 
 /*
+ * The same loads, done as the interrupted code would have been allowed to.
+ *
+ * An EL0 instruction has to be carried out with EL0's own permissions: from
+ * EL1 a plain load would succeed on a page the user may not touch and hand the
+ * value back, which is the one thing the acceptance criterion for EL0 forbids.
+ * The unprivileged loads (LDTR and its widths) make the hardware do that check
+ * itself, so a page the user may not read faults here exactly as it would have
+ * there - and what faults is a real access, not a guess.
+ *
+ * An acquire load is the strength being stood in for, and the unprivileged
+ * form with a barrier behind it is that strength: DMB ISHLD keeps later
+ * accesses from being observed before this one, which is what makes a load an
+ * acquire. LDAR would say it in one instruction but is privileged, so it would
+ * answer the wrong question.
+ */
+static uint64_t loadUserAcquire(UsLdaprKind kind, uint64_t address) {
+    uint64_t value = 0;
+
+    switch (kind) {
+    case UsLdaprByte:
+        __asm__ volatile("ldtrb %w0, [%1]" : "=r"(value) : "r"(address) : "memory");
+        break;
+    case UsLdaprHalf:
+        __asm__ volatile("ldtrh %w0, [%1]" : "=r"(value) : "r"(address) : "memory");
+        break;
+    case UsLdaprWord:
+        __asm__ volatile("ldtr %w0, [%1]" : "=r"(value) : "r"(address) : "memory");
+        break;
+    default:
+        __asm__ volatile("ldtr %x0, [%1]" : "=r"(value) : "r"(address) : "memory");
+        break;
+    }
+    __asm__ volatile("dmb ishld" ::: "memory");
+    return value;
+}
+
+/*
  * Performs the instruction the frame was trapped on.
  *
  * Returns false when it is not one of ours, in which case nothing has been
@@ -178,6 +215,7 @@ static bool emulateLdapr(UsFrame *frame, int cpu) {
     uint64_t address;
     uint64_t value;
     bool pan;
+    bool user = (frame->spsr & 0xFU) == 0U;
 
     if (decoded.kind == UsLdaprNone) {
         return false;
@@ -206,7 +244,11 @@ static bool emulateLdapr(UsFrame *frame, int cpu) {
     if (!pan) {
         usPanOff();
     }
-    value = loadAcquire(decoded.kind, address);
+    if (user) {
+        value = loadUserAcquire(decoded.kind, address);
+    } else {
+        value = loadAcquire(decoded.kind, address);
+    }
     if (!pan) {
         usPanOn();
     }
@@ -462,6 +504,12 @@ UsFrame *usPayloadFault(void) {
         /* The emulated access: the kernel's handler for the slot the
          * exception was taken through is where its instruction's fault
          * belongs, in the context it was interrupted from. */
+        if (usSlotOfSpsr(outer->spsr) == UsStubSlotEl0) {
+            /* The instruction was the user's, so the fault has to read as one
+             * the user took; the fault status and the direction are the same
+             * either way. */
+            outer->esr = usEsrAsLowerEl(outer->esr);
+        }
         gActive[cpu].loading = false;
         if (!usPayloadSlotTail(vbar, outer->spsr, &outer->landing)) {
             return NULL;

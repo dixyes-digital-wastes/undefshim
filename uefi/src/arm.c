@@ -115,7 +115,7 @@ bool usArmTransfer(UsSession *s) {
  * that reaches them is relative and the image moves when the address space is
  * rebuilt.
  */
-#define US_STUB_SLOTS 2U
+#define US_STUB_SLOTS 3U
 
 typedef struct UsArmTarget_t {
     UsImage   *image;
@@ -123,6 +123,22 @@ typedef struct UsArmTarget_t {
     uint32_t   stubRva;
     UsVectorSlot slot;
 } UsArmTarget;
+
+/*
+ * Which stub shape a vector slot needs. The three synchronous entries differ in
+ * what they may use to keep x18 and in whether a data abort has to reach the
+ * payload; see core/thunk.h.
+ */
+static UsStubSlot stubSlotOf(UsVectorSlot slot) {
+    switch (slot) {
+    case UsVectorSlotEl1hSync:
+        return UsStubSlotEl1h;
+    case UsVectorSlotEl0Sync32:
+        return UsStubSlotEl0;
+    default:
+        return UsStubSlotEl1t;
+    }
+}
 
 static bool armSlot(UsSession *s, const UsArmTarget *target, uint32_t next) {
     uint32_t stub[US_SLOT_RUNTIME_WORDS];
@@ -134,17 +150,16 @@ static bool armSlot(UsSession *s, const UsArmTarget *target, uint32_t next) {
     uint32_t tail0;
     uint32_t tail1;
     /*
-     * Whether this slot's stub may spend a stack word, and with it whether the
-     * entry reads the saved x18 from the interrupted stack or rebuilds it.
+     * What the slot's stub has to do about x18 and about faults of our own.
      *
-     * Only the EL1h vector may: there SP is the interrupted kernel stack, and
-     * the ABI red zone below it is guaranteed not to be disturbed by the
-     * exception itself. On the EL1t vector SP is the entry bank's value, not a
-     * stack the interrupted code was using, so nothing is pushed and the
-     * entry rebuilds x18 from TPIDR_EL1, exactly as the kernel's own handler
-     * for that vector does.
+     * The EL1t and EL1h vectors are kernel mode, where x18 is the per-CPU block
+     * and is rebuilt from TPIDR_EL1 rather than saved - and there is no stack
+     * word to be had on the EL1t vector, whose SP the interrupted code was not
+     * using. EL0 is the one vector whose x18 is user state and therefore has to
+     * be pushed somewhere; the kernel's own entry there uses SP_EL1 as the
+     * thread's kernel stack, so the red zone below it is that somewhere.
      */
-    bool save = target->slot == UsVectorSlotEl1hSync;
+    UsStubSlot stubSlot = stubSlotOf(target->slot);
     uint32_t entryOffset = US_PAYLOAD_ENTRY_OFFSET;
 
     slotAt = (uint8_t *)(uintptr_t)usImageRvaToPtr(target->image,
@@ -189,8 +204,11 @@ static bool armSlot(UsSession *s, const UsArmTarget *target, uint32_t next) {
      * with every register but NZCV flags as the exception left them.
      */
     {
-        uint32_t tailIndex = usSlotStubTailIndex(save);
-        uint32_t from = target->stubRva + (tailIndex + 1U) * 4U;
+        uint32_t tailIndex = usSlotStubTailIndex(stubSlot);
+        /* The branch the tail ends with is the last of its words, and the
+         * encoder decides how many that is per slot. */
+        uint32_t from = target->stubRva
+                        + (tailIndex + usSlotStubTailWords(stubSlot) - 1U) * 4U;
         uint32_t slotRva = target->tableRva + (uint32_t)target->slot * 0x80U;
 
         if ((original & 0xFC000000U) == 0x14000000U) {
@@ -220,7 +238,7 @@ static bool armSlot(UsSession *s, const UsArmTarget *target, uint32_t next) {
     }
 
     usEncodeSlotStub(stub, s->payloadPlace.baseVa + entryOffset, tail0, tail1,
-                     save);
+                     stubSlot);
     usEncodeSlotTarget(stub + US_SLOT_STUB_WORDS,
                        s->payloadPlace.baseVa + entryOffset);
     memcpy(stubAt, stub, sizeof(stub));
@@ -231,7 +249,7 @@ static bool armSlot(UsSession *s, const UsArmTarget *target, uint32_t next) {
         .imageAddress = (uintptr_t)target->image->base,
         .tablePa = tablePa,
         .addressPa = stubPa,
-        .targetIndex = usSlotStubTargetIndex(save),
+        .targetIndex = usSlotStubTargetIndex(stubSlot),
     };
 
     /* The slot last: until the stub is there, a branch into it would be a
@@ -254,16 +272,29 @@ static bool armSlot(UsSession *s, const UsArmTarget *target, uint32_t next) {
 
 static bool armImage(UsSession *s, UsImageKind kind, size_t *armed) {
     /*
-     * The SPx slot always, the SP0 slot when asked for. Both are synchronous
-     * entries and an exception lands in whichever matches the stack pointer
-     * in use at the time, so leaving one out means the other covers only part
-     * of the exceptions.
+     * The SPx slot always, the others when asked for. All three are synchronous
+     * entries: EL1t and EL1h for the kernel's own code, EL0 for the user's, and
+     * an LDAPR in any of them is an undefined instruction on this hardware.
+     * Leaving one out means that one's loads are not carried out at all.
      */
     const UsVectorSlot slots[US_STUB_SLOTS] = {
         UsVectorSlotEl1tSync,
         UsVectorSlotEl1hSync,
+        UsVectorSlotEl0Sync32,
     };
-    const size_t slotCount = s->armSlot0 ? US_STUB_SLOTS : 1U;
+    /*
+     * The EL0 entry is taken over in the kernel's own table only. The loader's
+     * tables are the ones in force while the loader runs, and nothing runs at
+     * EL0 then: the exception level is not carried down to a user mode until
+     * the kernel has installed this table and started a process. Taking that
+     * slot in the loader buys nothing and costs a stub - and, in the loader,
+     * hole space that turned out to matter: the boot stopped in the loader
+     * with every stub in place and nothing ever entering the payload.
+     */
+    const size_t slotCount = s->armSlot0
+                                 ? (kind == UsImageNtoskrnl ? US_STUB_SLOTS
+                                                            : US_STUB_SLOTS - 1U)
+                                 : 1U;
     UsImage *img = usRegistryGet(&s->registry, kind);
     UsVbarTables tables;
     UsSpareSlot hole;

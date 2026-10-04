@@ -69,15 +69,30 @@ usSyncOwnStack:
     str     x17, [x16, #US_FRAME_SPSR]
 
     /*
-     * x18 is rebuilt rather than saved. In kernel mode it is the per-CPU
-     * block, and TPIDR_EL1 holds its address, which is exactly how the
-     * kernel's own handlers rebuild it; nothing had to be pushed to keep it,
-     * which is what makes an entry whose SP_EL1 is stale harmless. (EL0 is
-     * not taken by this entry yet; when it is, its x18 is user state and will
-     * need somewhere else to live.)
+     * Where the interrupted x18 comes from depends on the exception level.
+     *
+     * In kernel mode it is the per-CPU block, and TPIDR_EL1 holds its
+     * address: rebuilding it is exactly what the kernel's own handlers do,
+     * costs no stack, and is what makes an entry whose SP_EL1 is stale
+     * harmless. At EL0 it is user state that cannot be rebuilt, so the stub
+     * for that vector pushed it below the entry SP_EL1 - which is a kernel
+     * stack there, as the kernel's own entry for that vector also assumes -
+     * and this reads it back and puts SP the way it found it.
      */
+    mrs     x17, spsr_el1
+    and     x17, x17, #0xF
+    cbz     x17, usSyncSavedX18
     mrs     x18, tpidr_el1
     and     x18, x18, #0xfffffffffffff000
+    b       usSyncHaveX18
+
+usSyncSavedX18:
+    ldr     x17, [x16, #US_FRAME_STRIDE]
+    ldr     x18, [x17]
+    add     x17, x17, #16
+    str     x17, [x16, #US_FRAME_STRIDE]
+
+usSyncHaveX18:
     str     x18, [x16, #US_FRAME_X18]
 
     /*

@@ -135,7 +135,8 @@ static void init(void) {
             .tableAddress = image + 0x800 + (i % 2) * 0x800,
             .tablePa = 0x50000800 + i * 0x800,
             .addressPa = 0x60001000 + i * US_SLOT_RUNTIME_BYTES,
-            .targetIndex = usSlotStubTargetIndex((i & 1) != 0),
+            .targetIndex = usSlotStubTargetIndex(i == 0 ? UsStubSlotEl1t
+                                                       : UsStubSlotEl1h),
         };
     }
     memcpy(original, stubs, sizeof(original));

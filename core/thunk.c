@@ -48,20 +48,25 @@ void usEncodeSlotTarget(uint32_t out[US_SLOT_TARGET_WORDS], uint64_t target) {
 }
 
 /*
- * Where the destination and the tail are, counted out for each of the two
- * layouts the encoder writes. They differ only by the fault branch, which
- * only the form used at the EL1h vector carries; neither touches memory.
+ * Where the destination and the tail are, counted out for each of the three
+ * layouts the encoder writes. They differ by the fault branch, which only the
+ * EL1h form carries, and by what happens on the way out: a push and pop of
+ * x18 for EL0, a rebuild from TPIDR_EL1 for the two kernel-mode slots.
  */
-uint32_t usSlotStubTargetIndex(bool save) {
-    return save ? 11U : 9U;
+uint32_t usSlotStubTargetIndex(UsStubSlot slot) {
+    return slot == UsStubSlotEl1h ? 11U : slot == UsStubSlotEl0 ? 10U : 9U;
 }
 
-uint32_t usSlotStubTailIndex(bool save) {
-    return save ? 18U : 16U;
+uint32_t usSlotStubTailIndex(UsStubSlot slot) {
+    return slot == UsStubSlotEl1h ? 18U : 16U;
+}
+
+uint32_t usSlotStubTailWords(UsStubSlot slot) {
+    return slot == UsStubSlotEl0 ? 3U : 2U;
 }
 
 void usEncodeSlotStub(uint32_t *out, uint64_t target, uint32_t tail0,
-                      uint32_t tail1, bool save) {
+                      uint32_t tail1, UsStubSlot slot) {
     uint32_t n = 0;
     uint32_t classBranch;
     uint32_t faultBranch = 0;
@@ -69,9 +74,18 @@ void usEncodeSlotStub(uint32_t *out, uint64_t target, uint32_t tail0,
     uint32_t restore;
     uint32_t targetAt;
 
+    if (slot == UsStubSlotEl0) {
+        /*
+         * User x18 cannot be rebuilt, and this vector's SP_EL1 is the
+         * interrupted thread's kernel stack, which the kernel's own entry for
+         * it also uses - so the red zone below it is a place to keep one word.
+         * The entry reads it back and restores SP before the tail runs.
+         */
+        out[n++] = 0xF81F0FF2U; /* str x18, [sp, #-16]! */
+    }
     out[n++] = 0xD5385212U; /* mrs x18, esr_el1 */
     out[n++] = 0xD35AFE52U; /* lsr x18, x18, #26 */
-    if (save) {
+    if (slot == UsStubSlotEl1h) {
         /*
          * A data abort taken at this slot is a fault of the payload's own
          * stack, because this is the slot its code runs under. It is sent to
@@ -98,12 +112,29 @@ void usEncodeSlotStub(uint32_t *out, uint64_t target, uint32_t tail0,
     usEncodeSlotTarget(out + n, target);
     n += US_SLOT_TARGET_WORDS;
 
-    /* What happens when the exception is not ours: x18 is rebuilt the way
-     * the kernel rebuilds it itself, which costs no stack and is the reason
-     * an entry whose SP_EL1 is stale cannot fault here. */
+    /*
+     * What happens when the exception is not ours. In kernel mode x18 is
+     * rebuilt the way the kernel rebuilds it itself, which costs no stack and
+     * is the reason an entry whose SP_EL1 is stale cannot fault here; at EL0
+     * the word the push put in the red zone comes back and SP with it.
+     */
     restore = n;
-    out[n++] = 0xD538D092U; /* mrs x18, tpidr_el1 */
-    out[n++] = 0x9274CE52U; /* and x18, x18, #~0xfff */
+    if (slot == UsStubSlotEl0) {
+        out[n++] = 0xF84107F2U; /* ldr x18, [sp], #16 */
+    } else {
+        out[n++] = 0xD538D092U; /* mrs x18, tpidr_el1 */
+        out[n++] = 0x9274CE52U; /* and x18, x18, #~0xfff */
+    }
+    if (slot == UsStubSlotEl0) {
+        /*
+         * The first tail word, and so where a handed-back frame branches: put
+         * back the interrupted x18 from the word the push left below the SP
+         * the entry restored. Both ways of reaching the tail arrive with SP
+         * there - the stub's own pop takes it back, and the entry's restore
+         * never spent it - so one load serves both.
+         */
+        out[n++] = 0xF85F03F2U; /* ldur x18, [sp, #-16] */
+    }
     out[n++] = tail0;
     out[n++] = tail1;
     while (n < US_SLOT_STUB_WORDS) {

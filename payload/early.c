@@ -49,7 +49,7 @@ bool usPayloadSlotTail(uint64_t vbar, uint64_t spsr, uint64_t *tail) {
     uint64_t stubVa;
     uint64_t at;
     const UsPayloadStub *slot = NULL;
-    bool save = (spsr & 0xFU) == 5U;
+    UsStubSlot which = usSlotOfSpsr(spsr);
 
     if (tail == NULL || cfg->stubCount == 0 || cfg->stubCount > US_PAYLOAD_MAX_STUBS
         || !usTranslateAddress(vbar, false, &tablePa)) {
@@ -64,7 +64,7 @@ bool usPayloadSlotTail(uint64_t vbar, uint64_t spsr, uint64_t *tail) {
     for (uint64_t i = 0; i < cfg->stubCount; i++) {
         const UsPayloadStub *stub = &cfg->stubs[i];
 
-        if (stub->tablePa != tablePa || stub->targetIndex != usSlotStubTargetIndex(save)
+        if (stub->tablePa != tablePa || stub->targetIndex != usSlotStubTargetIndex(which)
             || stub->imageAddress == 0 || stub->tableAddress < stub->imageAddress
             || stub->address < stub->imageAddress) {
             continue;
@@ -84,7 +84,7 @@ bool usPayloadSlotTail(uint64_t vbar, uint64_t spsr, uint64_t *tail) {
     if (!usTranslateAddress(stubVa, false, &at) || at != slot->addressPa) {
         return false;
     }
-    *tail = stubVa + (uint64_t)usSlotStubTailIndex(save) * 4U;
+    *tail = stubVa + (uint64_t)usSlotStubTailIndex(which) * 4U;
     return true;
 }
 
@@ -104,8 +104,9 @@ bool usPayloadPublish(uint64_t vbar) {
         const UsPayloadStub *stub = &cfg->stubs[i];
         if (stub->imageAddress == 0 || stub->tableAddress < stub->imageAddress
             || stub->address < stub->imageAddress || (stub->address & 3U) != 0
-            || (stub->targetIndex != usSlotStubTargetIndex(false)
-                && stub->targetIndex != usSlotStubTargetIndex(true))) {
+            || (stub->targetIndex != usSlotStubTargetIndex(UsStubSlotEl1t)
+                && stub->targetIndex != usSlotStubTargetIndex(UsStubSlotEl1h)
+                && stub->targetIndex != usSlotStubTargetIndex(UsStubSlotEl0))) {
             return false;
         }
         if (stub->tablePa == tablePa) {

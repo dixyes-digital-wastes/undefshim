@@ -35,32 +35,38 @@
 void usEncodeThunk(uint32_t out[US_THUNK_WORDS], uint64_t target);
 
 /*
- * The vector-slot stub filters the exception class and instruction before
- * entering the payload. Only the four RCpc load widths leave the stub;
- * other exceptions rebuild x18 and run the slot's original two-word tail
+ * Which synchronous vector slot a stub is for.
  *
- * The slot a fault inside the payload is taken through - the synchronous one
- * at offset 0x200, which is the one the saving form is used for - also lets a
- * data abort through, because that is what a fault on the emulated access
- * looks like and the payload is the only thing that can tell it from a fault
- * of its own and pass it on as the interrupted instruction's
+ * The three differ in two ways that decide the shape of the stub: where the
+ * interrupted code's x18 can be got back from, and whether the slot is the one
+ * a fault inside the payload arrives at.
  *
- * Neither form touches memory. x18 is the one register spent, and in kernel
- * mode it is the per-CPU block, which TPIDR_EL1 names: the stub rebuilds it
- * on the way out exactly as the kernel's own handlers do. Saving it in the
- * interrupted stack's red zone was tried instead and is wrong: an exception
- * taken at EL1h can arrive with a stale SP_EL1 - the kernel's own EL1t
- * handler runs there for its first instructions before deriving its stack
- * from SP_EL0 - and the push would then fault where the exception was, with
- * the faulting store's address unchanged, which is an endless loop
-
- * x18 is the only register the stub spends, and it is the one register whose
- * value every vector can have back: on EL0 and EL1h there is a stack, and the
- * `save` form pushes it into the ABI red zone first; on EL1t the kernel
- * rebuilds it from TPIDR_EL1, which is what its own handler does. Nothing is
- * pushed on EL1t, because there the SP the CPU left is not a stack the
- * interrupted code was using.
+ * EL1t and EL1h are kernel mode, where x18 is the per-CPU block and TPIDR_EL1
+ * names it, so the stub rebuilds it exactly as the kernel's own handlers do and
+ * touches no memory at all. That is not a refinement: an exception taken at
+ * EL1h can arrive with a stale SP_EL1 - the kernel's own EL1t handler runs
+ * there for its first instructions, before deriving its stack from SP_EL0 - and
+ * a push would then fault where the exception was, with the faulting store's
+ * address unchanged, which is an endless loop.
+ *
+ * An EL0 exception is different in both respects. Its x18 is user state and
+ * cannot be rebuilt, and the kernel's own entry for that vector shows what may
+ * be used to keep it: `sub sp, sp, #0x370` straight away, so SP_EL1 really is
+ * the thread's kernel stack there. This stub pushes x18 into the red zone below
+ * it and the entry reads it back; the entry puts SP back before anything else
+ * runs, so the tail sees the SP the exception left.
+ *
+ * Only the EL1h slot lets a data abort through: that is what a fault on the
+ * emulated access looks like, and the payload is the only thing that can tell
+ * it from a fault of its own. The other two send everything else to the tail,
+ * which is the handler the slot originally held.
  */
+typedef enum UsStubSlot_e {
+    UsStubSlotEl1t = 0, /* the synchronous slot at offset 0x000 */
+    UsStubSlotEl1h = 1, /* at 0x200, the one the payload itself runs under */
+    UsStubSlotEl0 = 2,  /* at 0x400, the kernel's lower EL entry */
+} UsStubSlot;
+
 #define US_SLOT_STUB_WORDS 20U
 #define US_SLOT_STUB_BYTES (US_SLOT_STUB_WORDS * 4U)
 #define US_SLOT_TARGET_WORDS 5U
@@ -72,17 +78,24 @@ void usEncodeThunk(uint32_t out[US_THUNK_WORDS], uint64_t target);
 void usEncodeSlotTarget(uint32_t out[US_SLOT_TARGET_WORDS], uint64_t target);
 
 /* Atomically replace this first MOVZ with B after staging/cache maintenance. */
-uint32_t usSlotStubTargetIndex(bool save);
+uint32_t usSlotStubTargetIndex(UsStubSlot slot);
 
 void usEncodeSlotStub(uint32_t *out, uint64_t target, uint32_t tail0,
-                      uint32_t tail1, bool save);
+                      uint32_t tail1, UsStubSlot slot);
 
 /*
- * The index of the first of the two tail words. A caller that has to encode a
- * branch into them needs it, because a relative branch is relative to its own
- * address.
+ * The index of the first tail word, which is also where the entry branches when
+ * the exception is handed back. A caller that has to encode a branch into the
+ * tail needs the index and the length, because a relative branch is relative to
+ * its own address.
+ *
+ * The EL0 tail is one word longer than the others: the entry hands the frame
+ * back through x18, and the kernel's own EL0 entry saves x18 into its trap
+ * frame as user state rather than rebuilding it, so the first thing the tail
+ * does is put the interrupted x18 back from the word the stub pushed.
  */
-uint32_t usSlotStubTailIndex(bool save);
+uint32_t usSlotStubTailIndex(UsStubSlot slot);
+uint32_t usSlotStubTailWords(UsStubSlot slot);
 
 /*
  * arm64's unconditional branch: a 26 bit word offset, in instructions, so it
