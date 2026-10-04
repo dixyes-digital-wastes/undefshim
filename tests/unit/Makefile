@@ -100,4 +100,5 @@ check: all
 	./test_acpi
 	./test_ldr
 	python3 check_entry_frame.py $(ROOT)/payload/entry.S
+	python3 check_rewrite.py
 	python3 check_machine_watch.py

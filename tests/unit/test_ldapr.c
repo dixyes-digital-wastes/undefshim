@@ -188,7 +188,50 @@ static void testSubstitution(void) {
     }
 }
 
+
+/*
+ * --- replacing an RCpc load with the acquire one ------------------------
+ *
+ * The rewrite is a property of the encoding: the replacement has to say the
+ * same thing about size, base and destination, and differ only in being an
+ * acquire load. Each pair here is the two encodings the assembler produces
+ * for the same operands, so a conversion that drifts by one field fails
+ * rather than looking plausible.
+ *
+ * The pairs cover every width, the stack pointer as the base (register 31
+ * means SP here, not the zero register) and the zero register as the
+ * destination.
+ */
+static const struct {
+    uint32_t ldapr;
+    uint32_t ldar;
+    const char *what;
+} kConversions[] = {
+    { 0xB8BFC020U, 0x88DFFC20U, "ldar w0, [x1]" },
+    { 0xF8BFC3E2U, 0xC8DFFFE2U, "ldar x2, [sp]" },
+    { 0xF8BFC07FU, 0xC8DFFC7FU, "ldar xzr, [x3]" },
+    { 0xB8BFC0A4U, 0x88DFFCA4U, "ldar w4, [x5]" },
+    { 0x38BFC0E6U, 0x08DFFCE6U, "ldarb w6, [x7]" },
+    { 0x78BFC128U, 0x48DFFD28U, "ldarh w8, [x9]" },
+    { 0xF8BFC16AU, 0xC8DFFD6AU, "ldar x10, [x11]" },
+};
+
+static void testRewriteConversion(void) {
+    for (size_t i = 0; i < sizeof(kConversions) / sizeof(kConversions[0]); i++) {
+        uint32_t out = 0;
+
+        ok("the conversion accepts an RCpc load", usLdaprToLdar(kConversions[i].ldapr, &out));
+        eqHex(kConversions[i].what, out, kConversions[i].ldar);
+        /* And nothing else: an acquire load is not one to convert, and
+         * neither is a word that happens to be data. */
+        ok("an acquire load is not converted again", !usLdaprToLdar(kConversions[i].ldar, &out));
+    }
+    ok("a word of data is not converted", !usLdaprToLdar(0xDEADBEEFU, NULL));
+    ok("zero is not converted", !usLdaprToLdar(0U, NULL));
+}
+
 int main(void) {
+    testRewriteConversion();
     testWidths();
     testScannerAgrees();
     testRefusals();
