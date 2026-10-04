@@ -579,7 +579,8 @@ int usPayloadHandle(UsFrame *frame) {
         usUartPuts("US-PAYLOAD not-ours\n");
     }
     if (usPayloadSlotTail(vbar, frame->spsr, &frame->landing)
-        || usPayloadSlotTailCached(vbar, frame->spsr, &frame->landing)) {
+        || usPayloadSlotTailCached(vbar, frame->spsr, &frame->landing)
+        || usPayloadSlotTailLast(frame->spsr, &frame->landing)) {
         if (cfg->poolBase != 0) {
             UsPool *pool = (UsPool *)(uintptr_t)cfg->poolBase;
 
@@ -657,7 +658,8 @@ UsFrame *usPayloadFault(void) {
         }
         gActive[cpu].loading = false;
         if (!usPayloadSlotTail(vbar, outer->spsr, &outer->landing)
-            && !usPayloadSlotTailCached(vbar, outer->spsr, &outer->landing)) {
+            && !usPayloadSlotTailCached(vbar, outer->spsr, &outer->landing)
+            && !usPayloadSlotTailLast(outer->spsr, &outer->landing)) {
             return NULL;
         }
     } else {

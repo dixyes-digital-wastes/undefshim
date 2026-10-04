@@ -140,6 +140,26 @@ bool usPayloadSlotTailCached(uint64_t vbar, uint64_t spsr, uint64_t *tail) {
     return true;
 }
 
+/*
+ * The last landing worked out for this slot, whatever table it was for.
+ *
+ * This is the answer of last resort, and it is worse than the one above: the
+ * handler it names may belong to another image's table. It is still better
+ * than the alternative, which is a processor that stops and is waited for
+ * forever - the kernel has no way to know an exception was never delivered,
+ * and a machine that keeps running with the wrong handler fails where it can
+ * be seen.
+ */
+bool usPayloadSlotTailLast(uint64_t spsr, uint64_t *tail) {
+    UsStubSlot which = usSlotOfSpsr(spsr);
+
+    if (tail == NULL || which > UsStubSlotEl0 || gLanding[which] == 0) {
+        return false;
+    }
+    *tail = gLanding[which];
+    return true;
+}
+
 bool usPayloadPublish(uint64_t vbar) {
     UsPayloadConfig *cfg = usPayloadConfig();
     uint64_t highVa = __atomic_load_n(&cfg->highVa, __ATOMIC_ACQUIRE);

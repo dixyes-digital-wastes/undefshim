@@ -90,6 +90,10 @@ uint32_t usSlotStubTargetIndex(UsStubSlot slot);
  */
 bool usPayloadSlotTailCached(uint64_t vbar, uint64_t spsr, uint64_t *tail);
 
+/* The last one worked out for this slot, whatever table it was for: the answer
+ * of last resort, used only where the alternative is a stopped processor. */
+bool usPayloadSlotTailLast(uint64_t spsr, uint64_t *tail);
+
 void usEncodeSlotStub(uint32_t *out, uint64_t target, uint32_t tail0,
                       uint32_t tail1, UsStubSlot slot);
 

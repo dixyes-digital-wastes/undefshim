@@ -93,8 +93,14 @@ def main():
             offsets = pool_dump.entryOffsets()
             rewritten = word(pool + 8 + offsets["rewriteWritten"])
         moving = "start" if last is None else ("+" if n != last else "  ")
-        print("%5.0fs  entries=%-10s %s  rewritten=%-8s pc0=0x%x  busy=%d"
-              % (time.monotonic() - start, n, moving, rewritten,
+        # A processor that stopped is the one thing that turns "slow" into
+        # "never": it says so in the pool, and the slot and table say where.
+        stuck = word(pool + 8 + 8 * 6) if pool else None
+        kind = word(pool + 8 + 8 * 7) if pool else None
+        vbar = word(pool + 8 + 8 * 11) if pool else None
+        print("%5.0fs  entries=%-10s %s  rewritten=%-8s stuck=%s/%s vbar=%s pc0=0x%x  busy=%d"
+              % (time.monotonic() - start, n, moving, rewritten, stuck, kind,
+                 hex(vbar) if vbar else "-",
                  pcs[0] if pcs else 0, sum(1 for p in pcs if p)), flush=True)
         last = n
         time.sleep(args.every)
