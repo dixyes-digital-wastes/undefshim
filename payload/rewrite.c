@@ -47,15 +47,6 @@ typedef struct UsRead_t {
     bool refused;
 } UsRead;
 
-/* TEMPORARY: what the handler saw, for bringing the rewrite up. */
-static void diag(unsigned index, uint64_t value) {
-    UsPayloadConfig *cfg = usPayloadConfig();
-
-    if (cfg->poolBase != 0 && index < 4) {
-        ((UsPool *)(uintptr_t)cfg->poolBase)->entry.rewriteDiag[index] = value;
-    }
-}
-
 /*
  * The stack bank the accesses that may fault are made under.
  *
@@ -87,7 +78,6 @@ static UsProbeBank probeBankEnter(void) {
     uint64_t sp;
 
     __asm__ volatile("mrs %0, spsel" : "=r"(spsel));
-    diag(0, spsel);
     if (spsel != 0) {
         return bank;              /* already on the bank that answers faults */
     }
@@ -97,7 +87,6 @@ static UsProbeBank probeBankEnter(void) {
     __asm__ volatile("msr spsel, #1" ::: "memory");
     __asm__ volatile("mov sp, %0" ::"r"(sp - US_PROBE_STACK_BYTES));
     bank.restoreSp = sp;
-    diag(1, sp);
     return bank;
 }
 
@@ -163,7 +152,6 @@ static uint64_t descriptorBase(uint64_t *triedOut, uint64_t *valueOut) {
      * again, and by then the table will be the kernel's.
      */
     (void)usTranslateAddress(vbar, false, &tablePa);
-    diag(2, 22);                       /* which table is in force is known */
     if (tablePa == 0) {
         return 0;
     }
@@ -187,12 +175,9 @@ static uint64_t descriptorBase(uint64_t *triedOut, uint64_t *valueOut) {
          */
         imageVa = vbar - (stub->tableAddress - stub->imageAddress);
         *triedOut = imageVa + stub->descriptorBaseRva;
-        diag(3, *triedOut);
-        diag(2, 23);                   /* about to read the candidate */
         if (!usPayloadProbeRead(*triedOut, &value)) {
             continue;
         }
-        diag(2, 24);                   /* the read answered */
         *valueOut = value;
         if ((value & 0xFFF) == 0
             && ((value >> 47) == 0x1FFFF || (value >> 48) == 0xFFFF)) {
@@ -251,7 +236,6 @@ static void step(uint64_t site, uint64_t insn, uint64_t where) {
         slot->descriptor = 0;
     }
     slot->result = where;
-    diag(2, where);
 }
 
 static void record(uint64_t site, uint64_t insn, const UsLeaf *leaf, uint64_t result) {
@@ -288,7 +272,7 @@ UsRewriteResult usRewriteSite(uint64_t site) {
     bool relaxed = false;
     bool written = false;
     bool restored = true;
-    UsProbeBank bank = { 0 };
+    UsProbeBank bank;
 
     if (site == 0 || (site & 3) != 0 || cfg->poolBase == 0) {
         return UsRewriteRefused;
@@ -298,42 +282,29 @@ UsRewriteResult usRewriteSite(uint64_t site) {
     /*
      * Everything below this point reads and writes addresses whose mapping is
      * not known in advance, so it runs on the bank whose faults come back.
+     *
+     * PAN goes off for the same stretch. The sites are as often in user code
+     * as in the kernel - the demo this exists for is an EL0 program - and
+     * reading or writing a user page at EL1 is what PAN stops. The exception
+     * being handled came from EL0, so the access being replaced is one EL0 is
+     * allowed to make; making it with PAN clear is the same thing the kernel
+     * does when it copies to a user address. What PAN is left as does not
+     * matter: the entry restores the interrupted state from the SPSR, and
+     * sets PAN on the way out for a hand-back, which is what a real entry to
+     * EL1 does.
      */
     bank = probeBankEnter();
+    usPanOff();
 
     /*
-     * TEMPORARY: one read of an address that cannot translate, to prove that a
-     * refused access comes back to the payload rather than to the kernel.
-     */
-    {
-        static bool tested;
-        UsPoolRewrite *slot = attemptSlot();
-
-        if (!tested && slot != NULL && bank.restoreSp != 0) {
-            uint64_t value = 0;
-
-            tested = true;
-            slot->site = site;
-            slot->insn = 0x50524F42U;         /* "BORP" */
-            slot->descriptorVa = 0x0000400000000000ULL;   /* not canonical */
-            slot->descriptor = 0;
-            slot->result = 20;
-            (void)usPayloadProbeRead(0x0000400000000000ULL, &value);
-            slot->descriptor = value ? value : 0xFFFFFFFFFFFFFFFFULL;
-            slot->result = 21;
-            ((UsPool *)(uintptr_t)cfg->poolBase)->entry.rewriteCount++;
-            probeBankLeave(&bank);
-            return UsRewriteRefused;
-        }
-    }
-
-    /*
-     * What is there now. A site another processor has already replaced reads
-     * as the acquire load, and the only work left is this processor's own
-     * stale copy: the caller has carried the load out, and the instruction
-     * has to be fetched again here.
+     * The instruction as it is now. A site another processor has already
+     * replaced reads as the acquire load, and the only work left is this
+     * processor's own stale copy: the caller has carried the load out, and
+     * the instruction has to be fetched again here.
      */
     if (!usPayloadProbeRead(site, &now)) {
+        usPanOn();
+        probeBankLeave(&bank);
         record(site, 0, NULL, UsRewriteRefused);
         return UsRewriteRefused;
     }
@@ -343,18 +314,20 @@ UsRewriteResult usRewriteSite(uint64_t site) {
 
         if (usLdarDecode(insn, &acquire)) {
             publishInstruction(site);
+            usPanOn();
+            probeBankLeave(&bank);
             record(site, insn, NULL, UsRewriteAlready);
             return UsRewriteAlready;
         }
+        usPanOn();
+        probeBankLeave(&bank);
         record(site, insn, NULL, UsRewriteNotRcpc);
         return UsRewriteNotRcpc;
     }
-    bank = probeBankEnter();
     step(site, insn, UsRewriteReadingBase);
 
     base = descriptorBase(&baseTried, &baseValue);
     if (base == 0) {
-        probeBankLeave(&bank);
         /* What it tried and what came back, which is the difference between
          * "nothing was read" and "what was read was not a base". */
         UsPoolRewrite *slot = attemptSlot();
@@ -363,12 +336,16 @@ UsRewriteResult usRewriteSite(uint64_t site) {
             slot->descriptorVa = baseTried;
             slot->descriptor = baseValue;
         }
+        usPanOn();
+        probeBankLeave(&bank);
         record(site, insn, NULL, UsRewriteNoBase);
         return UsRewriteNoBase;
     }
+
     step(site, insn, UsRewriteWalking);
     leaf = usLeafFind(base, readProbed, &state, site);
     if (state.refused || !leaf.found) {
+        usPanOn();
         probeBankLeave(&bank);
         record(site, insn, NULL, UsRewriteUnmapped);
         return UsRewriteUnmapped;
@@ -378,12 +355,13 @@ UsRewriteResult usRewriteSite(uint64_t site) {
     /*
      * The descriptor has to be writable for this to be possible at all, and
      * the page it lives on is a page table: the kernel writes those all the
-     * time, so it normally is. The probe is the same value it already holds,
-     * so a refusal leaves everything as it was.
+     * time, so it normally is. The probe is the value it already holds, so a
+     * refusal leaves everything as it was.
      */
     if ((original & US_PTE_AP2) != 0) {
         step(site, insn, UsRewriteProbing);
         if (!usPayloadProbeWrite(leaf.descriptorVa, original)) {
+            usPanOn();
             probeBankLeave(&bank);
             record(site, insn, &leaf, UsRewriteReadOnly);
             return UsRewriteReadOnly;
@@ -391,6 +369,7 @@ UsRewriteResult usRewriteSite(uint64_t site) {
         step(site, insn, UsRewriteClearing);
         if (!usPayloadProbeWrite(leaf.descriptorVa, original & ~US_PTE_AP2)) {
             (void)usPayloadProbeWrite(leaf.descriptorVa, original);
+            usPanOn();
             probeBankLeave(&bank);
             record(site, insn, &leaf, UsRewriteReadOnly);
             return UsRewriteReadOnly;
@@ -402,34 +381,42 @@ UsRewriteResult usRewriteSite(uint64_t site) {
      * and would still refuse the store. */
     invalidateTranslation(site);
 
-    /*
-     * The store itself, with PAN off: a page in the user half is one EL1 may
-     * only touch with PAN clear, and clearing AP[2] is what makes it writable
-     * once it does.
-     */
     step(site, insn, UsRewriteStoring);
-    usPanOff();
     written = usPayloadProbeWriteWord(site, replacement);
-    usPanOn();
 
     if (written) {
         step(site, insn, UsRewritePublishing);
         publishInstruction(site);
     }
 
-    /* The permission goes back before anything else: a page left writable is
-     * worse than an instruction left unreplaced. */
+    /*
+     * The permission goes back before anything else: a page left writable is
+     * worse than an instruction left unreplaced. Only if the descriptor still
+     * holds what this attempt put there, though: it belongs to the kernel, and
+     * if the kernel has changed it in the meantime - these are the tables a
+     * running system edits - then its value is the one to keep, and writing
+     * the old one back would undo its change.
+     */
     if (relaxed) {
+        uint64_t underlying = 0;
+        bool ours = true;
+
         step(site, insn, UsRewriteRestoring);
-        restored = usPayloadProbeWrite(leaf.descriptorVa, original);
+        if (usPayloadProbeRead(leaf.descriptorVa, &underlying)
+            && underlying != (original & ~US_PTE_AP2)) {
+            ours = false;
+        }
+        if (ours) {
+            restored = usPayloadProbeWrite(leaf.descriptorVa, original);
+        }
         invalidateTranslation(site);
     }
+    usPanOn();
+    probeBankLeave(&bank);
     if (!restored) {
-        probeBankLeave(&bank);
         record(site, insn, &leaf, UsRewriteStuck);
         return UsRewriteStuck;
     }
-    probeBankLeave(&bank);
     record(site, insn, &leaf, written ? UsRewriteWritten : UsRewriteRefused);
     return written ? UsRewriteWritten : UsRewriteRefused;
 }

@@ -250,13 +250,15 @@ usSyncLanding:
 usSyncNoStack:
     mov     x0, #2
     bl      usPayloadStuck
+usSyncNoStackHalt:
     wfi
-    b       usSyncNoStack
+    b       usSyncNoStackHalt
 usSyncNoForward:
     mov     x0, #1
     bl      usPayloadStuck
+usSyncNoForwardHalt:
     wfi
-    b       usSyncNoForward
+    b       usSyncNoForwardHalt
 
     .size   usSyncEntry, . - usSyncEntry
     .size   usSyncEntrySp0, . - usSyncEntrySp0
