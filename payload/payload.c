@@ -437,7 +437,7 @@ static bool emulateLdapr(UsFrame *frame, int cpu) {
      *
      * Whether even that is wanted is the configuration's business: a machine
      * that should not have foreign code patched underneath it either sets
-     * el0_in_place to false, and then every RCpc load keeps taking the
+     * [scan] el0InPlace to false, and then every RCpc load keeps taking the
      * exception, which is slower and always correct.
      */
     if (usPayloadConfig()->el0InPlace != 0
@@ -591,7 +591,7 @@ int usPayloadHandle(UsFrame *frame) {
      * survivable, so the quiet flag is obeyed rather than discovered.
      */
     if (cfg->quiet == 0) {
-        usUartInit(cfg->uartBase);
+        usUartInit(cfg->uartBase, (uint32_t)cfg->uartKind, (uint32_t)cfg->uartWidth);
     }
 
     if (frame == NULL) {
@@ -772,7 +772,7 @@ void usPayloadSelfTest(void) {
     UsPayloadConfig *cfg = usPayloadConfig();
     UsSelfMap self;
 
-    usUartInit(cfg->uartBase);
+    usUartInit(cfg->uartBase, (uint32_t)cfg->uartKind, (uint32_t)cfg->uartWidth);
     usUartPuts("US-PAYLOAD alive cpu=");
     usUartPutDec((uint64_t)currentCpu());
     usUartPuts(" frame=");

@@ -151,7 +151,7 @@ def main():
         f.write("""version = 1
 
 [scan]
-ldapr_rewrite = true
+ldaprRewrite = true
 
 [log]
 level = "info"

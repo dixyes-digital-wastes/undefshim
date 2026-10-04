@@ -37,6 +37,17 @@ static void setErrKey(char *err, size_t errLen, const char *what, const char *ke
 
 /* Presence test: non-NULL for every value kind, including ones the typed
  * accessors cannot represent. */
+static bool sameStr(const char *text, int length, const char *wanted) {
+    int i = 0;
+
+    for (; i < length && wanted[i] != '\0'; i++) {
+        if (text[i] != wanted[i]) {
+            return false;
+        }
+    }
+    return i == length && wanted[i] == '\0';
+}
+
 static bool cfgHas(const toml_table_t *t, const char *key) {
     return t != NULL && toml_table_unparsed(t, key) != NULL;
 }
@@ -257,7 +268,6 @@ UsConfig *usConfigParse(const char *text, size_t len, char *err, size_t errLen) 
         return NULL;
     }
 
-    cfg->version = 1;
     cfg->logLevel = UsLogInfo;
     cfg->ldaprRewrite = true;
     cfg->debugEnabled = false;
@@ -285,19 +295,6 @@ UsConfig *usConfigParse(const char *text, size_t len, char *err, size_t errLen) 
         return NULL;
     }
 
-    cfg->version = 1;
-    if (!cfgInt(cfg->root, "version", &n, err, errLen)) {
-        usConfigFree(cfg);
-        return NULL;
-    }
-    if (cfgHas(cfg->root, "version")) {
-        if (n != 1) {
-            setErrKey(err, errLen, "unsupported config version: ", "version");
-            usConfigFree(cfg);
-            return NULL;
-        }
-        cfg->version = (int)n;
-    }
 
     toml_table_t *log = toml_table_table(cfg->root, "log");
     int levelLen = 0;
@@ -314,7 +311,7 @@ UsConfig *usConfigParse(const char *text, size_t len, char *err, size_t errLen) 
     }
 
     toml_table_t *scan = toml_table_table(cfg->root, "scan");
-    if (!cfgBool(scan, "ldapr_rewrite", &cfg->ldaprRewrite, err, errLen)) {
+    if (!cfgBool(scan, "ldaprRewrite", &cfg->ldaprRewrite, err, errLen)) {
         usConfigFree(cfg);
         return NULL;
     }
@@ -322,7 +319,7 @@ UsConfig *usConfigParse(const char *text, size_t len, char *err, size_t errLen) 
      * what makes a user-mode RCpc load stop taking an exception, and it is
      * not something the kernel's integrity check has an opinion about. */
     cfg->el0InPlace = true;
-    if (!cfgBool(scan, "el0_in_place", &cfg->el0InPlace, err, errLen)) {
+    if (!cfgBool(scan, "el0InPlace", &cfg->el0InPlace, err, errLen)) {
         usConfigFree(cfg);
         return NULL;
     }
@@ -340,12 +337,12 @@ UsConfig *usConfigParse(const char *text, size_t len, char *err, size_t errLen) 
     cfg->hasDescriptorBase = false;
     cfg->descriptorBaseRva = 0;
     toml_table_t *kern = toml_table_table(cfg->root, "kernel");
-    if (kern != NULL && cfgHas(kern, "descriptor_base_rva")) {
+    if (kern != NULL && cfgHas(kern, "descriptorBaseRva")) {
         int64_t rva = 0;
 
-        if (!cfgInt(kern, "descriptor_base_rva", &rva, err, errLen) || rva <= 0
+        if (!cfgInt(kern, "descriptorBaseRva", &rva, err, errLen) || rva <= 0
             || rva > 0xFFFFFFFFLL) {
-            setErrKey(err, errLen, "not an address: ", "descriptor_base_rva");
+            setErrKey(err, errLen, "not an address: ", "descriptorBaseRva");
             usConfigFree(cfg);
             return NULL;
         }
@@ -359,6 +356,55 @@ UsConfig *usConfigParse(const char *text, size_t len, char *err, size_t errLen) 
 
         if (dir != NULL) {
             cfg->patchDir = dir;
+        }
+    }
+
+    /*
+     * Serial output, stated at the root: the driver, the payload and anything
+     * reporting later all need it, so it does not belong under a table of its
+     * own. No base means no serial output at all.
+     */
+    cfg->hasUart = false;
+    cfg->uartType = "pl011";
+    cfg->uartBase = 0;
+    cfg->uartWidth = 32;
+    if (cfgHas(cfg->root, "uartBase")) {
+        int64_t base = 0;
+        int64_t width = 0;
+        const char *type = NULL;
+        int typeLen = 0;
+
+        if (!cfgInt(cfg->root, "uartBase", &base, err, errLen) || base <= 0) {
+            setErrKey(err, errLen, "not an address: ", "uartBase");
+            usConfigFree(cfg);
+            return NULL;
+        }
+        cfg->uartBase = (uint64_t)base;
+        cfg->hasUart = true;
+        if (cfgHas(cfg->root, "uartType")) {
+            if (!cfgStr(cfg->root, "uartType", &type, &typeLen, err, errLen)) {
+                usConfigFree(cfg);
+                return NULL;
+            }
+            if (sameStr(type, typeLen, "pl011")) {
+                cfg->uartWidth = 32;
+            } else if (sameStr(type, typeLen, "uart8250")) {
+                cfg->uartWidth = 8;
+            } else {
+                setErrKey(err, errLen, "unknown uart type: ", "uartType");
+                usConfigFree(cfg);
+                return NULL;
+            }
+            cfg->uartType = type;
+        }
+        if (cfgHas(cfg->root, "uartWidth")) {
+            if (!cfgInt(cfg->root, "uartWidth", &width, err, errLen)
+                || (width != 8 && width != 32)) {
+                setErrKey(err, errLen, "must be 8 or 32: ", "uartWidth");
+                usConfigFree(cfg);
+                return NULL;
+            }
+            cfg->uartWidth = (uint32_t)width;
         }
     }
 

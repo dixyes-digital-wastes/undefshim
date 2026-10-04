@@ -46,7 +46,6 @@ typedef struct UsPatch_t {
 typedef struct UsConfig_t {
     char         *text;   /* owned copy, the document's storage */
     toml_table_t *root;   /* owned, NULL when the config is empty */
-    int           version;
     UsLogLevel    logLevel;
     bool          ldaprRewrite;
     /* Whether user-mode instructions may be replaced while the kernel runs. */
@@ -71,6 +70,15 @@ typedef struct UsConfig_t {
      */
     bool          hasDescriptorBase;
     uint32_t      descriptorBaseRva;
+    /*
+     * Where to report from. It is needed in too many places to live under a
+     * table of its own, and leaving it out is how a machine says it wants no
+     * serial output at all.
+     */
+    bool          hasUart;
+    const char   *uartType;    /* "pl011" or "uart8250"; points into the document */
+    uint64_t      uartBase;
+    uint32_t      uartWidth;   /* bits per access: 8 or 32 */
     bool          debugEnabled;
     UsPatch      *patches;    /* owned array */
     uint32_t      patchCount;

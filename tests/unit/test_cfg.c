@@ -74,9 +74,10 @@ static void testDefaults(void) {
     if (c == NULL) {
         return;
     }
-    eqInt("default version", c->version, 1);
     eqInt("default log level", c->logLevel, UsLogInfo);
-    eqInt("default ldapr_rewrite", c->ldaprRewrite, 1);
+    eqInt("default ldaprRewrite", c->ldaprRewrite, 1);
+    eqInt("default el0InPlace", c->el0InPlace, 1);
+    ok("default no uart", c->hasUart == false);
     eqInt("default debug.enabled", c->debugEnabled, 0);
     eqInt("default patch count", c->patchCount, 0);
     eqInt("debug bag fallback", usConfigDebugBool(c, "nope", true), 1);
@@ -87,13 +88,11 @@ static void testDefaults(void) {
 
 static void testShippedShape(void) {
     static const char doc[] =
-        "version = 1\n"
-        "\n"
         "[log]\n"
         "level = \"verbose\"\n"
         "\n"
         "[scan]\n"
-        "ldapr_rewrite = false\n"
+        "ldaprRewrite = false\n"
         "\n"
         "[debug]\n"
         "enabled = true\n"
@@ -119,9 +118,8 @@ static void testShippedShape(void) {
         return;
     }
 
-    eqInt("version", c->version, 1);
     eqInt("log level", c->logLevel, UsLogVerbose);
-    eqInt("ldapr_rewrite", c->ldaprRewrite, 0);
+    eqInt("ldaprRewrite", c->ldaprRewrite, 0);
     eqInt("debug.enabled", c->debugEnabled, 1);
 
     eqInt("debug.flag1", usConfigDebugBool(c, "flag1", false), 1);
@@ -154,8 +152,10 @@ static void testRejections(void) {
     reject("int level", "[log]\nlevel = 3\n");
     reject("unknown level", "[log]\nlevel = \"chatty\"\n");
 
-    reject("bool as string", "[scan]\nldapr_rewrite = \"yes\"\n");
-    reject("version 2", "version = 2\n");
+    reject("bool as string", "[scan]\nldaprRewrite = \"yes\"\n");
+    reject("unknown uart type", "uartBase = 0x9000000\nuartType = \"pl012\"\n");
+    reject("bad uart width", "uartBase = 0x9000000\nuartWidth = 16\n");
+    reject("bad uart base", "uartBase = 0\n");
 
     reject("patch missing target", "[[debug.patch]]\nrva = 1\nvalue = 1\nwidth = 4\n");
     reject("patch missing rva", "[[debug.patch]]\ntarget = \"ntoskrnl\"\nvalue = 1\nwidth = 4\n");

@@ -1,12 +1,39 @@
 # Runtime configuration, read from the first volume that provides it.
-
-version = 1
+#
+# Where the serial output goes, stated here because several parts of the
+# system use it. Leaving it out means no serial output at all.
+uartBase = 0x09000000
+uartType = "pl011"   # pl011 | uart8250
+uartWidth = 32       # 8 | 32
 
 [log]
-level = "info"
+level = "info"       # off | error | info | verbose | debug
 
 [scan]
-ldapr_rewrite = true
+# Replace the RCpc loads in the images before they run.
+ldaprRewrite = true
+# Replace them in user mode while the kernel runs. Turn it off to keep the
+# kernel from ever writing to a page it does not own.
+el0InPlace = true
+
+[stats]
+# Count where traps are taken, in the pool. It costs a lookup per trap.
+enabled = false
+
+[kernel]
+# The RVA of the variable holding the kernel's page table base, for the build
+# this configuration is for. Optional: without it no descriptor is rewritten.
+descriptorBaseRva = 0xE06368
+
+[patch]
+# Directory of patch list files, relative to this volume. Empty turns the
+# feature off; the volume root itself is refused.
+dir = "usPatch"
 
 [debug]
+# The switches below change what the boot does, for investigating it.
 enabled = false
+arm = true        # arm the exception vectors at all
+armSlot0 = true   # arm the EL1t slot as well; false is known to bugcheck early
+spxStack = false  # let the stub push on the SPx vector too
+vamap = true      # register the runtime VA notification

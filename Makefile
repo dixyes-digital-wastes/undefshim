@@ -80,7 +80,6 @@ US_DRIVER_CFLAGS := --target=$(TARGET_TRIPLE) -std=gnu23 -ffreestanding \
                     -fomit-frame-pointer -O2 -Wall -Wextra \
                     -I. -I$(POSIX_UEFI) -I$(SHIMS) -I$(TOML) -I$(PAYLOAD_BUILD) \
                     -DTOML_NO_FLOAT -DTOML_NO_TIMESTAMP -DTOML_NO_FILE \
-                    -DUS_UART_BASE=$(US_UART_BASE) \
                     -DUS_BUILD_ID=\"$(BUILD_ID)\"
 
 US_DRIVER_LDFLAGS := --target=$(TARGET_TRIPLE) -nostdlib -fuse-ld=lld-link \

@@ -215,6 +215,8 @@ typedef struct UsPayloadStub_t {
 typedef struct UsPayloadConfig_t {
     /* Where to write. A direct MMIO address, since there is no firmware. */
     uint64_t uartBase;
+    uint64_t uartKind;   /* 1 pl011, 2 uart8250, 0 silent */
+    uint64_t uartWidth;  /* bits per access: 8 or 32 */
 
     /* Stack tops indexed by the firmware CPU index, not a raw affinity byte */
     uint64_t stackTop[8];
