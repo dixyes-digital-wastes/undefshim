@@ -294,6 +294,8 @@ def main():
                     help="whether to register the runtime VA notification")
     ap.add_argument("--spx-stack", default="false",
                     help="whether the stub may push on the SPx vector too")
+    ap.add_argument("--descriptor-base-rva", default="",
+                    help="the RVA of the kernel's page table base variable, for the build under test")
     ap.add_argument("--spin-rva", type=lambda value: int(value, 0),
                     help="replace this ntoskrnl RVA with b . before boot; useful for capturing registers at an ASLR-independent point")
     ap.add_argument("--watch-abort", action="store_true",
@@ -334,6 +336,8 @@ arm_slot0 = %s
 spx_stack = %s
 vamap = %s
 """ % (args.rewrite, args.arm, args.arm_slot0, args.spx_stack, args.vamap))
+        if args.descriptor_base_rva:
+            f.write('\n[kernel]\ndescriptor_base_rva = %s\n' % args.descriptor_base_rva)
         if args.spin_rva is not None:
             f.write("""
 [[debug.patch]]

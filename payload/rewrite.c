@@ -350,6 +350,29 @@ UsRewriteResult usRewriteSite(uint64_t site) {
         record(site, insn, NULL, UsRewriteUnmapped);
         return UsRewriteUnmapped;
     }
+
+    /*
+     * Whatever produced the base - the configuration stating a build's
+     * address, or the image itself - the walk it drives has to agree with the
+     * hardware. The site's own address is the cheapest thing to check it on:
+     * the translation the hardware performs for it must name the same
+     * physical page the descriptor we are about to edit names. A wrong base
+     * cannot pass this, and the attempt is abandoned exactly as it is when
+     * there is no base at all, so a configuration written for another build
+     * costs nothing but the rewrite.
+     */
+    {
+        uint64_t hardwarePa = 0;
+
+        if (!usTranslateAddress(site, false, &hardwarePa)
+            || (hardwarePa & ~(uint64_t)(leaf.size - 1U))
+               != (leaf.pa & ~(uint64_t)(leaf.size - 1U))) {
+            usPanOn();
+            probeBankLeave(&bank);
+            record(site, insn, &leaf, UsRewriteNoBase);
+            return UsRewriteNoBase;
+        }
+    }
     original = leaf.descriptor;
 
     /*
