@@ -43,10 +43,12 @@ def sections(data):
     for index in range(count):
         at = pe + 24 + optSize + index * 40
         name = data[at:at + 8].rstrip(b"\0").decode("ascii", "replace")
-        virtualSize, virtualAddress, rawSize, rawOffset = struct.unpack_from(
-            "<IIII", data, at + 8)
-        out[name] = {"rva": virtualAddress, "vsize": virtualSize,
-                     "raw": rawOffset, "rawSize": rawSize}
+        (virtualSize, virtualAddress, rawSize, rawOffset, _reloc, _lines,
+         _relocCount, _linesCount, characteristics) = struct.unpack_from(
+            "<IIIIIIHHI", data, at + 8)
+        out[name] = {"rva": virtualAddress, "vsize": virtualSize, "name": name,
+                     "raw": rawOffset, "rawSize": rawSize,
+                     "characteristics": characteristics}
     opt = pe + 24
     directoriesAt = opt + 112
     directories = struct.unpack_from("<I", data, opt + 108)[0]
@@ -192,6 +194,11 @@ def main():
     byName, directories = sections(args.kernel and data)
     text = byName[".text"]
     textRva, textBytes = text["rva"], text["rawSize"]
+    # Every section the loader maps as code: the kernel keeps plenty of
+    # instructions outside .text, in paged sections that are still executed,
+    # and a load there takes the same exception. The digest below stays the
+    # text's, so a list written this way still names the build it was made for.
+    executable = [v for v in byName.values() if v["characteristics"] & 0x20000000]
     textRaw = data[text["raw"]:text["raw"] + textBytes]
     symbols = loadSymbols(args.symbols)
     digest = digestFor(textRaw, textRva, textBytes, byName, directories, data)
@@ -204,6 +211,8 @@ def main():
 
     md = capstone.Cs(capstone.CS_ARCH_ARM64, capstone.CS_MODE_ARM)
     md.detail = True
+    for section in executable:
+        section["limit"] = section["rva"] + max(section["vsize"], section["rawSize"])
 
     # Decode from each function's entry point and follow what it can reach,
     # rather than sweeping to the next function: a literal pool or a jump
@@ -218,12 +227,30 @@ def main():
     decoded = set()
     worklist = sorted(byAddress)
     limit = textRva + textBytes
+    def sectionOf(rva):
+        for section in executable:
+            if section["rva"] <= rva < section["limit"]:
+                return section
+        return None
+    def wordAt(rva):
+        section = sectionOf(rva)
+        if section is None:
+            return None
+        at = section["raw"] + (rva - section["rva"])
+        if at + 4 > section["raw"] + section["rawSize"]:
+            return None
+        return data[at:at + 4]
+    for section in executable:
+        # A paged section has no exception directory entry to start from, so
+        # it is entered at its beginning.
+        if not any(section["rva"] <= begin < section["limit"] for begin in byAddress):
+            worklist.append(section["rva"])
     while worklist:
         pc = worklist.pop()
-        while textRva <= pc < limit and pc not in decoded:
+        while sectionOf(pc) is not None and pc not in decoded:
             decoded.add(pc)
-            start = text["raw"] + (pc - textRva)
-            insn = next(md.disasm(data[start:start + 4], pc), None)
+            raw = wordAt(pc)
+            insn = next(md.disasm(raw, pc), None) if raw is not None else None
             if insn is None:
                 break
             word = (insn.bytes[0] | (insn.bytes[1] << 8) | (insn.bytes[2] << 16)
@@ -239,7 +266,7 @@ def main():
                     target = insn.operands[0].imm
                 except (IndexError, AttributeError):
                     target = None
-                if target is not None and textRva <= target < limit:
+                if target is not None and sectionOf(target) is not None:
                     worklist.append(target)
             if mnemonic in ("ret", "br", "eret", "udf"):
                 break

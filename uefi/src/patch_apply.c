@@ -81,13 +81,6 @@ static uint8_t *imageText(UsImage *image, uint32_t *outBytes) {
     return (uint8_t *)(uintptr_t)(image->base + text->virtualAddress);
 }
 
-/* Where that text sits in the image's address space. */
-static uint32_t imageTextRva(UsImage *image) {
-    const UsPeSection *text = usImageFindSection(image, ".text");
-
-    return text != NULL ? text->virtualAddress : 0U;
-}
-
 /* Defined below, used by the application above it. */
 static void digestText(UsImage *image, uint8_t *code, uint32_t bytes, uint8_t out[32]);
 
@@ -170,9 +163,17 @@ static void applyOne(UsImage *image, const char *name, const char *text,
     matchers.digest = digest;
     matchers.identity = imageIdentity(image, &identity) ? &identity : NULL;
     stats.files = 1;
-    UsPatchApplyResult result = usPatchApplyMatched(&file, sites, &matchers,
-                                                    imageTextRva(image), code, textBytes,
-                                                    &stats);
+    /*
+     * Sites are image RVAs and they are not all in .text: the kernel keeps
+     * plenty of instructions in paged sections that are executed just the
+     * same, and a list written from the file names those too. So the range a
+     * site is checked against is the whole image, and what keeps a write from
+     * landing somewhere it should not is the match against the bytes already
+     * there, which every site carries.
+     */
+    UsPatchApplyResult result = usPatchApplyMatched(&file, sites, &matchers, 0U,
+                                                    (uint8_t *)(uintptr_t)image->base,
+                                                    image->sizeOfImage, &stats);
     if (result == UsPatchApplied) {
         usConsolePuts(" applied ");
         usConsolePutDec(stats.applied);
