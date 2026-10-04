@@ -29,7 +29,7 @@ except ImportError:
 
 LDAPR_MASK = 0x3FFFFC00
 LDAPR_FIXED = 0x38BFC000
-LDAR_BASE = 0xC8DFFC00
+LDAR_BASE = 0x08DFFC00
 MAX_WIDTH = 4
 
 
@@ -226,7 +226,7 @@ def main():
              ""]
     for rva, raw, mnemonic in sites[:args.limit or None]:
         word = raw[0] | (raw[1] << 8) | (raw[2] << 16) | (raw[3] << 24)
-        ld = LDAR_BASE | (word & 0x1FE0) | (word & 0x1F)
+        ld = (word & 0xC0000000) | LDAR_BASE | (word & 0x1FE0) | (word & 0x1F)
         lines.append("0x%x %08x %08x  # %s: %s" % (rva, word, ld, symbolFor(symbols, rva, None), mnemonic))
     with open(args.out, "w", encoding="ascii") as handle:
         handle.write("\n".join(lines) + "\n")
