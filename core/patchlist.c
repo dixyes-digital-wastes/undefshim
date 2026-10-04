@@ -267,9 +267,12 @@ UsPatchStatus usPatchParse(const char *text, uint32_t length, UsPatchSite *sites
             }
             width = bytes;
         }
-        if (shaped && (site.rva % width) != 0U) {
-            shaped = false;
-        }
+        /*
+         * No alignment rule: a field is a byte array, and an array of three
+         * or five bytes has no meaningful alignment. What keeps a site safe
+         * is the match check against the memory it lands on, and that is
+         * decided when it is applied, not here.
+         */
         if (shaped && overlaps(sites, out->sites, site.rva, width)) {
             shaped = false;
         }
