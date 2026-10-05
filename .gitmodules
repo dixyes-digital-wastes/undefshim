@@ -7,3 +7,6 @@
 [submodule "third_party/musl"]
 	path = third_party/musl
 	url = https://git.musl-libc.org/git/musl
+[submodule "third_party/EightBit-Atari-Fonts"]
+	path = third_party/EightBit-Atari-Fonts
+	url = https://github.com/a8bit/EightBit-Atari-Fonts.git
