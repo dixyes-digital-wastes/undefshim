@@ -447,24 +447,42 @@ tag = "spin probe"
             log(regs.get("return", "register read failed"))
             return 0
 
-        # What happens next is one of three things, and the watcher tells them
-        # apart with two signals, because neither is enough alone: the program
-        # counter says whether the machine is doing anything at all, and the
-        # screen colour says whether it gave up. A frozen PC with a blue
-        # screen is a crash; a frozen PC without one is a halt; a moving PC is
-        # neither yet.
+        # What happens next is one of three things, and telling them apart
+        # takes two readers because each answers half of it. The screen says
+        # whether Windows gave up -- it paints the whole frame a known blue
+        # the moment it does -- and the program counters say whether the
+        # machine is doing anything at all. A blue screen is a crash; a frozen
+        # PC with no blue is a halt; a moving PC is neither yet.
         #
-        # Its output goes straight through rather than being collected: this
+        # The two are asked one after the other rather than together: the
+        # monitor takes one conversation at a time, and running both at once
+        # would have them fighting over it.
+        #
+        # Their output goes straight through rather than being collected: this
         # is the longest wait there is, and a caller that sees nothing for a
         # minute cannot tell a slow boot from a hung one. Unbuffered, for the
         # same reason -- a pipe is not a terminal and Python buffers it.
-        log("waiting for the machine to crash, halt, or keep going")
-        verdict = subprocess.call(
-            [sys.executable, "-u", "tests/deploy/machine_watch.py",
-             "--qmp-port", str(args.qmp_port),
-             "--timeout", str(args.catch_timeout),
-             "--shots", os.path.join(work, "shots")]
-            + (["--no-screen"] if args.no_screen else []))
+        verdict = 1
+        if not args.no_screen:
+            log("waiting for the machine to paint a bugcheck")
+            seen = subprocess.call(
+                [sys.executable, "-u", "tests/deploy/screenread.py",
+                 "--qmp-port", str(args.qmp_port),
+                 "--want", "bugcheck", "--wait",
+                 "--timeout", str(args.catch_timeout),
+                 "--keep", os.path.join(work, "shots", "bluescreen.ppm")])
+            if seen == 2:
+                log("the screen cannot be read, so this cannot be told apart")
+                return 1
+            if seen == 0:
+                verdict = 0
+
+        if verdict != 0:
+            log("no bugcheck; waiting for the machine to halt or keep going")
+            verdict = subprocess.call(
+                [sys.executable, "-u", "tests/deploy/watch.py",
+                 "--qmp-port", str(args.qmp_port),
+                 "--timeout", str(args.catch_timeout)])
         if verdict == 1:
             log("the machine was still working when the watch ran out")
             return 1

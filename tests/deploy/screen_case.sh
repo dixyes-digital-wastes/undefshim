@@ -8,9 +8,9 @@
 # screen is then the only channel it has. This boots such a machine, watches
 # the framebuffer for the line that is expected, and stops it again.
 #
-# The screen is read with tesseract, which may not be installed. Without it
-# the case is skipped, not failed: what a machine can check is not the same
-# as what this one can.
+# The screen is read by screenread.py, whose text engine may not be installed.
+# Without it the case is skipped, not failed: what a machine can check is not
+# the same as what this one can.
 #
 #   screen_case.sh <esp> <qmp-port> <expected-text> [timeout]
 #
@@ -51,22 +51,12 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-deadline=$((SECONDS + TIMEOUT))
-found=0
-while [ "$SECONDS" -lt "$deadline" ]; do
-    if tests/deploy/screentext.py --qmp-port "$QMP_PORT" >"$text" 2>/dev/null; then
-        if grep -q "$EXPECT" "$text"; then
-            found=1
-            break
-        fi
-    fi
-    sleep 3
-done
-
-if [ "$found" -eq 1 ]; then
+if tests/deploy/screenread.py --qmp-port "$QMP_PORT" \
+        --poll "$EXPECT" --timeout "$TIMEOUT" >"$text" 2>&1; then
     echo "PASS: the screen says \"$EXPECT\""
     exit 0
 fi
+
 echo "FAIL: the screen never said \"$EXPECT\""
 echo "--- what it did say ---"
 cat "$text" 2>/dev/null || true
