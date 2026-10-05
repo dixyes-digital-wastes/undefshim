@@ -61,7 +61,7 @@ int usPatchApplyPending(UsSession *s) {
 
         r = usPatchApply(img, &spec, &range);
         if (r != UsPatchOk) {
-            usConsolePuts("patch: ");
+            usConsoleLog("patch", UsLogError);
             reportName(p);
             usConsolePuts(" failed: ");
             usConsolePuts(usPatchResultName(r));
@@ -77,7 +77,7 @@ int usPatchApplyPending(UsSession *s) {
          */
         usCacheFlushRange(range.addr, range.bytes);
 
-        usConsolePuts("patch: ");
+        usConsoleLog("patch", UsLogVerbose);
         reportName(p);
         usConsolePuts(" at ");
         usConsolePutHex((uint64_t)(uintptr_t)range.addr);
@@ -97,7 +97,7 @@ int usPatchApplyPending(UsSession *s) {
      * would cut the report in half
      */
     if (applied > 0) {
-        usConsolePuts("US-M4-PATCH\n");
+        usConsoleMilestone("M4 patched");
     }
 
     return applied;
@@ -112,7 +112,8 @@ void usPatchReportPending(const UsSession *s) {
 
     for (uint32_t i = 0; i < cfg->patchCount; i++) {
         if (i >= US_PATCH_MAX) {
-            usConsolePuts("patch: table longer than ");
+            usConsoleLog("patch", UsLogWarn);
+            usConsolePuts("table longer than ");
             usConsolePutDec(US_PATCH_MAX);
             usConsolePuts(", the rest is ignored\n");
             return;
@@ -120,7 +121,7 @@ void usPatchReportPending(const UsSession *s) {
         if (isApplied(s, i)) {
             continue;
         }
-        usConsolePuts("patch: ");
+        usConsoleLog("patch", UsLogWarn);
         reportName(&cfg->patches[i]);
         usConsolePuts(" never matched an image\n");
     }

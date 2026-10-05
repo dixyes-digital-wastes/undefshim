@@ -130,15 +130,15 @@ static efi_status_t EFIAPI gmmHook(uintn_t *memoryMapSize, efi_memory_descriptor
         return status;
     }
 
-    usConsolePutc('g');
+    usConsoleProgress('g');
 
     req.map = memoryMap;
     req.mapSize = *memoryMapSize;
     req.descSize = *descriptorSize;
     req.added = 0;
-    usConsolePuts("1");
+    usConsoleProgress('1');
     usStackRunOn(gSession->bootStackTop, scanOnOwnStack, &req);
-    usConsolePuts("2");
+    usConsoleProgress('2');
 
     {
         UsImage *winload = usRegistryGet(&gSession->registry, UsImageWinload);
@@ -146,23 +146,26 @@ static efi_status_t EFIAPI gmmHook(uintn_t *memoryMapSize, efi_memory_descriptor
 
         if (winload != NULL && !gReportedWinload) {
             gReportedWinload = true;
-            usConsolePuts("\ngmm: winload found at ");
+            usConsoleLog("gmm", UsLogVerbose);
+            usConsolePuts("winload found at ");
             usConsolePutHex((uint64_t)(uintptr_t)winload->base);
             usConsolePuts("\n");
 
             UsLeafSite leaf = usLocateTransferLeaf(winload);
+            usConsoleLog("gmm", leaf.found ? UsLogInfo : UsLogWarn);
             if (leaf.found) {
-                usConsolePuts("gmm: winload leaf found\n");
+                usConsolePuts("winload leaf found\n");
             } else if (leaf.matches == 0) {
-                usConsolePuts("gmm: no winload leaf\n");
+                usConsolePuts("no winload leaf\n");
             } else {
-                usConsolePuts("gmm: winload leaf ambiguous\n");
+                usConsolePuts("winload leaf ambiguous\n");
             }
         }
 
         if (kernel != NULL && !gReportedKernel) {
             gReportedKernel = true;
-            usConsolePuts("gmm: ntoskrnl found at ");
+            usConsoleLog("gmm", UsLogVerbose);
+            usConsolePuts("ntoskrnl found at ");
             usConsolePutHex((uint64_t)(uintptr_t)kernel->base);
             usConsolePuts("\n");
         }
@@ -179,7 +182,7 @@ static efi_status_t EFIAPI gmmHook(uintn_t *memoryMapSize, efi_memory_descriptor
      */
     usStackRunOn(gSession->bootStackTop, applyPatchesOnOwnStack, NULL);
 
-    usConsolePuts("3");
+    usConsoleProgress('3');
 
     /*
      * The kernel is what this is really waiting for; the loader is reported on
@@ -190,7 +193,8 @@ static efi_status_t EFIAPI gmmHook(uintn_t *memoryMapSize, efi_memory_descriptor
         || ++gScans >= US_GMM_MAX_SCANS) {
         usServiceHookRemove(&gHook);
         gDone = true;
-        usConsolePuts("\ngmm: done\n");
+        usConsoleLog("gmm", UsLogInfo);
+        usConsolePuts("done\n");
         usPatchReportPending(gSession);
 
         /* Everything the plan is built from is in memory now */
@@ -198,7 +202,7 @@ static efi_status_t EFIAPI gmmHook(uintn_t *memoryMapSize, efi_memory_descriptor
             usWorkCollect(gSession);
         }
     }
-    usConsolePuts("4");
+    usConsoleProgress('4');
 
     return status;
 }

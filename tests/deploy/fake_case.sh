@@ -69,7 +69,7 @@ mcopy -i "$ESP" -o "$FAKE_DIR/ntoskrnl.efi" ::/ntoskrnl.efi
 rm -f "${SERIAL_SOCK:-$BUILD_DIR/serial.sock}"
 
 ESP="$ESP" SERIAL_LOG="$SERIAL_LOG" STOP_PATTERN="FAKEK: PASS" \
-    ARM_PATTERN="US-M6.5-ARMED" BOOT_TIMEOUT="${BOOT_TIMEOUT:-180}" \
+    ARM_PATTERN="M6.5 armed" BOOT_TIMEOUT="${BOOT_TIMEOUT:-180}" \
     bash tests/deploy/run.sh >/dev/null 2>&1 || true
 
 echo "--- the fake kernel's report"

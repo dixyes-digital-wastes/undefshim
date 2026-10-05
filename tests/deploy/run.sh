@@ -23,7 +23,7 @@ BUILD_DIR="${BUILD_DIR:-build}"
 ESP="${ESP:-$BUILD_DIR/esp.img}"
 SERIAL_SOCK="${SERIAL_SOCK:-$BUILD_DIR/serial.sock}"
 SERIAL_LOG="${SERIAL_LOG:-$BUILD_DIR/serial.log}"
-STOP_PATTERN="${STOP_PATTERN:-US-M2-DONE}"
+STOP_PATTERN="${STOP_PATTERN:-M2 done}"
 ARM_PATTERN="${ARM_PATTERN:-}"
 GRACE="${GRACE:-0}"
 # A run that is going to be looked at rather than read: the machine is left

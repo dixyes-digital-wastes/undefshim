@@ -165,11 +165,13 @@ void usPayloadReport(const UsSession *session) {
     UsSelfTestFn selfTest;
 
     if (!session->payloadPlaced) {
-        usConsolePuts("payload: not placed\n");
+        usConsoleLog("payload", UsLogError);
+        usConsolePuts("not placed\n");
         return;
     }
 
-    usConsolePuts("payload: at ");
+    usConsoleLog("payload", UsLogVerbose);
+    usConsolePuts("at ");
     usConsolePutHex(place->baseVA);
     usConsolePuts(" bytes=");
     usConsolePutDec(place->bytes);
@@ -192,5 +194,5 @@ void usPayloadReport(const UsSession *session) {
     /* Printed last, on its own line: the deployment checks stop the machine
      * the moment they see a marker, and stopping on the payload's own output
      * would cut it in half */
-    usConsolePuts("US-M6-PAYLOAD\n");
+    usConsoleMilestone("M6 payload placed");
 }

@@ -73,12 +73,12 @@ trap stop EXIT INT TERM
 
 # Wait for the patch to be reported, then for the kernel to take over.
 for _ in $(seq 1 200); do
-    grep -q 'US-M4-PATCH' "$log" 2>/dev/null && break
+    grep -q 'M4 patched' "$log" 2>/dev/null && break
     sleep 1
 done
-if ! grep -q 'US-M4-PATCH' "$log"; then
+if ! grep -q 'M4 patched' "$log"; then
     echo "FAIL: the patch was never applied"
-    grep -aE 'patch|gmm|US-M' "$log" | tail -5
+    grep -aE 'patch|gmm|milestone' "$log" | tail -5
     exit 1
 fi
 

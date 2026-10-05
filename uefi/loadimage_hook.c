@@ -94,11 +94,12 @@ static efi_status_t EFIAPI loadImageHook(boolean_t bootPolicy, efi_handle_t pare
      * One character in, fixed strings out, and the real work on our own stack:
      * this runs on the caller's, and the caller may be anything
      */
-    usConsolePutc('h');
+    usConsoleProgress('h');
 
     status = gOriginal(bootPolicy, parent, path, sourceBuffer, sourceSize, image);
     if (EFI_ERROR(status) || image == NULL || *image == NULL) {
-        usConsolePuts("\nloadimage: original failed\n");
+        usConsoleLog("loadimage", UsLogError);
+        usConsolePuts("original failed\n");
         return status;
     }
 
@@ -110,7 +111,8 @@ static efi_status_t EFIAPI loadImageHook(boolean_t bootPolicy, efi_handle_t pare
      */
     if (EFI_ERROR(BS->HandleProtocol(*image, &lipGUID, (void **)&lip)) || lip == NULL
         || lip->ImageBase == NULL || lip->ImageSize == 0) {
-        usConsolePuts("\nloadimage: no loaded image\n");
+        usConsoleLog("loadimage", UsLogError);
+        usConsolePuts("no loaded image\n");
         return status;
     }
 
@@ -120,7 +122,8 @@ static efi_status_t EFIAPI loadImageHook(boolean_t bootPolicy, efi_handle_t pare
         usStackRunOn(gSession->bootStackTop, registerOnOwnStack, &req);
         /* And its instructions replaced, before anything runs out of it */
         usStackRunOn(gSession->bootStackTop, rewriteOnOwnStack, &req);
-        usConsolePuts(req.recorded ? "\nloadimage: registered at " : "\nloadimage: seen at ");
+        usConsoleLog("loadimage", req.recorded ? UsLogInfo : UsLogVerbose);
+        usConsolePuts(req.recorded ? "registered at " : "seen at ");
         usConsolePutHex((uint64_t)(uintptr_t)lip->ImageBase);
         usConsolePuts("\n");
     }

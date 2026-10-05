@@ -49,6 +49,8 @@ void usCacheFlushRange(const void *address, size_t bytes) {
 void usConsolePuts(const char *text) { (void)text; }
 void usConsolePutHex(uint64_t value) { (void)value; }
 void usConsolePutDec(uint64_t value) { (void)value; }
+void usConsoleLog(const char *tag, UsLogLevel level) { (void)tag; (void)level; }
+void usConsoleMilestone(const char *what) { (void)what; }
 
 static void rejected(const UsACPICPUs *cpus) {
     UsSession session = { .cpus = *cpus };

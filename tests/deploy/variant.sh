@@ -73,7 +73,7 @@ WIN_DISK="$WIN_DISK" \
     timeout $((BOOT_TIMEOUT + 60)) tests/deploy/run.sh >"$out" 2>&1
 
 faults=$(grep -c 'Synchronous' "$log" 2>/dev/null)
-started=$(grep -c 'US-M4-SETUP' "$log" 2>/dev/null)
+started=$(grep -c 'M4 setup' "$log" 2>/dev/null)
 chainload=$(grep -c 'chainloading' "$log" 2>/dev/null)
 reset=$(grep -c 'QEMU exited' "$out" 2>/dev/null)
 

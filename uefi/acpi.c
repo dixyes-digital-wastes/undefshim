@@ -57,7 +57,8 @@ UsACPICPUs usACPIProbeCPUs(void) {
     const void *madt = usACPIFindMADT(rsdp);
 
     if (madt == NULL) {
-        usConsolePuts("acpi: no processor list, falling back to one CPU\n");
+        usConsoleLog("acpi", UsLogWarn);
+        usConsolePuts("no processor list, falling back to one CPU\n");
         return (UsACPICPUs){ 0 };
     }
     return usACPICollectCPUs(madt);

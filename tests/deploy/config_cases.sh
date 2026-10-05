@@ -86,21 +86,21 @@ cat > "$WORK/range.toml" <<'EOF'
 version = 99999999999999999999
 EOF
 
-run_case loaded "$WORK/good.toml"  "US-M2-DONE" "config: loaded"
-run_case broken "$WORK/bad.toml"   "US-M2-FAIL" "config: broken"
-run_case range  "$WORK/range.toml" "US-M2-FAIL" "config: broken"
-run_case absent ""                 "US-M2-DONE" "config: absent"
+run_case loaded "$WORK/good.toml"  "M2 done" "config: loaded"
+run_case broken "$WORK/bad.toml"   "M2 failed" "broken:"
+run_case range  "$WORK/range.toml" "M2 failed" "broken:"
+run_case absent ""                 "M2 done" "config: absent"
 
 # The loaded case has to show the file's values, not the defaults.
-if ! grep -q "log.level=3 ldaprRewrite=0 debug.enabled=1 patches=1" "$WORK/loaded.log"; then
+if ! grep -q "config: level=4 rewrite=0 debug=1 patches=1" "$WORK/loaded.log"; then
     echo "FAIL loaded: values do not match the file"
-    grep -E 'log\.level|patch\[0\]' "$WORK/loaded.log" || true
+    grep -E 'level=' "$WORK/loaded.log" || true
     failures=$((failures + 1))
 else
     echo "PASS loaded: values came from the file"
 fi
 
-if ! grep -q "not a simple quoted string\|parse failed\|config:" "$WORK/broken.log"; then
+if ! grep -q "broken:\|not a simple quoted string\|parse failed" "$WORK/broken.log"; then
     echo "FAIL broken: no reason was reported"
     failures=$((failures + 1))
 else

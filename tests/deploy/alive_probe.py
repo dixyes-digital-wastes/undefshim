@@ -100,7 +100,7 @@ def main():
         while time.monotonic() < deadline:
             if os.path.exists(serialLog):
                 text = open(serialLog, "rb").read().decode("latin1")
-                if "US-M6.5-ARMED" in text or "US-M7-REWRITTEN" in text:
+                if "M6.5 armed" in text or "M7 rewritten" in text:
                     break
             if qemu.poll() is not None:
                 print("qemu exited during boot, rc=%s" % qemu.returncode, flush=True)

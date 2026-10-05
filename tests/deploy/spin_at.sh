@@ -87,12 +87,12 @@ trap 'kill $qpid 2>/dev/null || true' EXIT INT TERM
 # will say: everything after it happens on the kernel's side, where there is
 # no console.
 for _ in $(seq 1 300); do
-    grep -q 'US-M4-PATCH' "$log" 2>/dev/null && break
+    grep -q 'M4 patched' "$log" 2>/dev/null && break
     sleep 1
 done
-if ! grep -q 'US-M4-PATCH' "$log" 2>/dev/null; then
+if ! grep -q 'M4 patched' "$log" 2>/dev/null; then
     echo "FAIL: the spin was never written"
-    grep -aE 'patch|gmm|US-M' "$log" | tail -5
+    grep -aE 'patch|gmm|milestone' "$log" | tail -5
     exit 1
 fi
 
