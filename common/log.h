@@ -1,4 +1,8 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * Copyright (C) 2026 Yun Dou <dixyes@gmail.com>
+ *
  * How much a message is worth saying, and what it is drawn in
  *
  * The boot writes to two places that do not know about each other - a serial

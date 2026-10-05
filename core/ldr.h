@@ -1,4 +1,8 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * Copyright (C) 2026 Yun Dou <dixyes@gmail.com>
+ *
  * The loader's module list, see ldr.c
  *
  * The loader knows where every module it mapped ended up, and it says so in a

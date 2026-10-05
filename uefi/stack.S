@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//
+// Copyright (C) 2026 Yun Dou <dixyes@gmail.com>
+//
 // Switching to one of our own stacks, see stack.h for why
 //
 // void usStackRunOn(uint64_t stackTop, void (*fn)(void *), void *arg)

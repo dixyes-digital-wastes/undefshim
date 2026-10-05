@@ -1,4 +1,8 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * Copyright (C) 2026 Yun Dou <dixyes@gmail.com>
+ *
  * Getting the runtime pool from firmware memory
  *
  * The pool has to survive the handover to the kernel, which rules out the

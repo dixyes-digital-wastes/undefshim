@@ -1,4 +1,8 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * Copyright (C) 2026 Yun Dou <dixyes@gmail.com>
+ *
  * The descriptors of an address, see pgtable.h
  *
  * Four levels, 4KB granule. The page that holds a table's descriptors is

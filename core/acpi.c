@@ -1,4 +1,8 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * Copyright (C) 2026 Yun Dou <dixyes@gmail.com>
+ *
  * Reading the processor list out of ACPI, see acpi.h
  *
  * The layouts are from the ACPI 6.5 specification: the root pointer, the

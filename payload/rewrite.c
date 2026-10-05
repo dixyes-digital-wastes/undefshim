@@ -1,4 +1,8 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * Copyright (C) 2026 Yun Dou <dixyes@gmail.com>
+ *
  * Replacing an RCpc load where it stands, on the exception that trapped on it
  *
  * Carrying out the load on every exception is correct and far too slow. An

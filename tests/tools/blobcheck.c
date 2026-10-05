@@ -1,4 +1,8 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * Copyright (C) 2026 Yun Dou <dixyes@gmail.com>
+ *
  * blobcheck - catch a leaked address in the payload blob
  *
  * The blob is copied to an address the linker never knew about, so any word

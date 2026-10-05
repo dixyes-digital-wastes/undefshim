@@ -1,4 +1,8 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * Copyright (C) 2026 Yun Dou <dixyes@gmail.com>
+ *
  * planprobe - print the plan for a pair of images, on the host
  *
  * The plan is built the same way here as it is in the driver, over a file

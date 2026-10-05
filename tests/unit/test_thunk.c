@@ -1,4 +1,8 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * Copyright (C) 2026 Yun Dou <dixyes@gmail.com>
+ *
  * Checks for the thunk that carries a branch out of an image
  *
  * The encoder is checked by running what it produced, not by comparing it

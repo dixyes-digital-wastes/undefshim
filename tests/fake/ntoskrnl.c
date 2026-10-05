@@ -1,4 +1,8 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * Copyright (C) 2026 Yun Dou <dixyes@gmail.com>
+ *
  * A stand-in for the kernel
  *
  * The real check of this shim needs Windows, and Windows takes ten minutes

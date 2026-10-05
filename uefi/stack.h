@@ -1,4 +1,8 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * Copyright (C) 2026 Yun Dou <dixyes@gmail.com>
+ *
  * Running a piece of work on our own stack
  *
  * Hooks installed in the firmware's tables are called on the caller's stack,

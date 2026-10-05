@@ -1,4 +1,8 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * Copyright (C) 2026 Yun Dou <dixyes@gmail.com>
+ *
  * Intercepting GetMemoryMap, and the reason it is the right place
  *
  * winload is loaded by bootmgfw, which does not go through the boot services

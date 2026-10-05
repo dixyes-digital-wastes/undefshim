@@ -1,4 +1,8 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * Copyright (C) 2026 Yun Dou <dixyes@gmail.com>
+ *
  * PAN, the state that keeps EL1 out of the pages EL0 is allowed to touch
  *
  * It matters here because an exception entry to EL1 sets it and nothing about

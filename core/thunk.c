@@ -1,4 +1,10 @@
-/* Image-local branches and exception stubs */
+/*
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * Copyright (C) 2026 Yun Dou <dixyes@gmail.com>
+ *
+ * Image-local branches and exception stubs
+ */
 
 #include "core/thunk.h"
 

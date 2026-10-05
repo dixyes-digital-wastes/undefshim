@@ -1,4 +1,8 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * Copyright (C) 2026 Yun Dou <dixyes@gmail.com>
+ *
  * Walking the loader's module list, see ldr.h
  *
  * The offsets are from the loader's own structures on arm64, where every

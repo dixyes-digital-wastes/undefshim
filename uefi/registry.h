@@ -1,4 +1,8 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * Copyright (C) 2026 Yun Dou <dixyes@gmail.com>
+ *
  * The images the driver has found, indexed by role
  *
  * Only bootmgfw arrives with a protocol attached to it; winload and the

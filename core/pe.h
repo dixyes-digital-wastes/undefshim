@@ -1,4 +1,8 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * Copyright (C) 2026 Yun Dou <dixyes@gmail.com>
+ *
  * ARM64 PE images, as views rather than as file formats
  *
  * The same code has to describe an image twice: once as a file on disk, while

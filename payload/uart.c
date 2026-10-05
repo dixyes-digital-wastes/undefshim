@@ -1,4 +1,8 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * Copyright (C) 2026 Yun Dou <dixyes@gmail.com>
+ *
  * The PL011, as little of it as reporting needs
  *
  * Only two registers are used. The data register is where a byte goes, and

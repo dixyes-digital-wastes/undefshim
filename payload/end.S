@@ -1,4 +1,8 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * Copyright (C) 2026 Yun Dou <dixyes@gmail.com>
+ *
  * The end of the payload, and the configuration block's position
  *
  * The blob is copied as a byte range, so it needs a symbol that marks its

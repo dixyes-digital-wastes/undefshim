@@ -1,4 +1,8 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * Copyright (C) 2026 Yun Dou <dixyes@gmail.com>
+ *
  * Writing to the serial port, with no firmware behind it
  *
  * The console the firmware provides stops being usable partway through a

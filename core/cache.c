@@ -1,4 +1,8 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * Copyright (C) 2026 Yun Dou <dixyes@gmail.com>
+ *
  * Cache maintenance, see cache.h for why this is not optional
  *
  * The line size is read from the system registers rather than assumed: it is

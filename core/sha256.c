@@ -1,3 +1,9 @@
+/*
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * Copyright (C) 2026 Yun Dou <dixyes@gmail.com>
+ */
+
 #include "core/sha256.h"
 
 static const uint32_t k[64] = {

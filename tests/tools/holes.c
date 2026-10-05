@@ -1,4 +1,8 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * Copyright (C) 2026 Yun Dou <dixyes@gmail.com>
+ *
  * holes - report the runs of zero words inside an image's sections
  *
  * Where the payload goes is a question about space, and space is something an

@@ -1,3 +1,9 @@
+/*
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * Copyright (C) 2026 Yun Dou <dixyes@gmail.com>
+ */
+
 #ifndef US_STACKGEN_H
 #define US_STACKGEN_H
 

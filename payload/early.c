@@ -1,4 +1,10 @@
-/* Consume UEFI aliases separately from publishing targets in kernel images */
+/*
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * Copyright (C) 2026 Yun Dou <dixyes@gmail.com>
+ *
+ * Consume UEFI aliases separately from publishing targets in kernel images
+ */
 
 #include "core/cache.h"
 #include "core/thunk.h"

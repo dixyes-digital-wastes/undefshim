@@ -1,4 +1,10 @@
-/* Save and resume one synchronous exception on the CPU's own stack */
+/*
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * Copyright (C) 2026 Yun Dou <dixyes@gmail.com>
+ *
+ * Save and resume one synchronous exception on the CPU's own stack
+ */
 
 #include "layout_defs.inc"
 #include "core/stackgen.h"

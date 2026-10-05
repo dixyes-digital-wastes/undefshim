@@ -1,4 +1,10 @@
-/* Real notification/publisher, with firmware, translation and cache mocks */
+/*
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * Copyright (C) 2026 Yun Dou <dixyes@gmail.com>
+ *
+ * Real notification/publisher, with firmware, translation and cache mocks
+ */
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>

@@ -1,4 +1,8 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * Copyright (C) 2026 Yun Dou <dixyes@gmail.com>
+ *
  * Catching the address change, see vamap.h
  *
  * The firmware's SetVirtualAddressMap is what carries the change, and calling

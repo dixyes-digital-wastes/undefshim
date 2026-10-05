@@ -1,4 +1,8 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * Copyright (C) 2026 Yun Dou <dixyes@gmail.com>
+ *
  * Applying the patch lists named by the configuration to the image they are
  * for, at the moment the image is loaded and before anything of it has run
  *

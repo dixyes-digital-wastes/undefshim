@@ -1,4 +1,8 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * Copyright (C) 2026 Yun Dou <dixyes@gmail.com>
+ *
  * The machine's processor list, from the firmware's own description
  *
  * The payload indexes everything it keeps per CPU by an index, and the
