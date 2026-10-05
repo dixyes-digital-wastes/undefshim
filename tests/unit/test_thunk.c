@@ -56,12 +56,18 @@ static void eq64(const char *name, uint64_t got, uint64_t want) {
 #define HW(insn) (((insn) >> 21) & 3U)
 
 /*
- * The offset a branch encodes, sign extended. The field is 26 bits and counts
- * instructions, so the sign lives in bit 25 and has to be carried up before
- * the scale is applied
+ * The offset a branch encodes, as the implementation reads it back. The
+ * arithmetic is not repeated here: what is under test is that encoding a
+ * branch and reading it back agree, and two copies of the same expression
+ * would agree with each other whatever they said
  */
 static int64_t branchOffset(uint32_t insn) {
-    return (int64_t)((int32_t)(insn << 6) >> 6) * 4;
+    int64_t offset = 0;
+
+    if (!usDecodeBranch(insn, &offset)) {
+        return 0;
+    }
+    return offset;
 }
 
 /* --- the branch --------------------------------------------------------- */
@@ -93,6 +99,20 @@ static void testBranchRange(void) {
          (uint64_t)branchOffset(word), (uint64_t)(int64_t)-(int64_t)US_BRANCH_RANGE);
     ok("just past it is not",
        !usEncodeBranch((uint32_t)US_BRANCH_RANGE + 4, 0, &word));
+
+    /* Reading one back: what is not a branch is refused, and the offset is
+     * then the caller's to leave alone */
+    {
+        int64_t offset = 0xA5A5;
+
+        ok("a non-branch is not", !usDecodeBranch(0xD503201FU, &offset));
+        eq64("and leaves the offset alone", (uint64_t)offset, 0xA5A5);
+        ok("a branch is recognised", usDecodeBranch(US_BRANCH_OPCODE, &offset));
+        eq64("and reads back as a branch to itself", (uint64_t)offset, 0);
+        ok("a caller with no offset to give still gets the answer",
+           usDecodeBranch(US_BRANCH_OPCODE, NULL)
+               && !usDecodeBranch(0xD503201FU, NULL));
+    }
 }
 
 static void testBranchAlignment(void) {

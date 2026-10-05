@@ -3,6 +3,7 @@
  */
 
 #include "core/scan.h"
+#include "core/thunk.h"
 
 /* ---------------------------------------------------------------------------
  * The signatures
@@ -434,19 +435,6 @@ UsSpareSlot usLocateSpareSlot(UsImage *img, uint32_t minBytes) {
 #define US_VECTOR_SLOT_BYTES 0x80U
 #define US_VECTOR_SLOTS 16U
 
-/* A branch: the top six bits are the opcode, the rest is the offset */
-#define US_BRANCH_CLASS_MASK 0xFC000000U
-#define US_BRANCH_CLASS 0x14000000U
-
-static bool isBranch(uint32_t word) {
-    return (word & US_BRANCH_CLASS_MASK) == US_BRANCH_CLASS;
-}
-
-/* The offset a branch encodes, sign extended */
-static int64_t branchOffset(uint32_t word) {
-    return (int64_t)((int32_t)(word << 6) >> 6) * 4;
-}
-
 /*
  * Following the register a vector table write puts in VBAR_EL1
  *
@@ -574,7 +562,7 @@ UsVBARTables usFindVBARTables(UsImage *img) {
                                                        * US_VECTOR_SLOT_BYTES);
 
                         out.syncWord[out.count] = slot;
-                        out.syncUsable[out.count] = isBranch(slot);
+                        out.syncUsable[out.count] = usDecodeBranch(slot, NULL);
                         out.rvas[out.count++] = tableRVA;
                     } else {
                         out.overflow = true;
@@ -598,16 +586,17 @@ UsLDAPRCounts usCountLDAPR(UsImage *img) {    UsLDAPRCounts c = { 0 };    c.word
 bool usVectorSlotBranch(UsImage *img, uint32_t tableRVA, UsVectorSlot slot,
                         int32_t *displacement) {
     uint32_t word;
+    int64_t offset;
 
     if (img == NULL || !img->valid || (uint32_t)slot >= US_VECTOR_SLOTS) {
         return false;
     }
     word = readInsn(img, tableRVA + (uint32_t)slot * US_VECTOR_SLOT_BYTES);
-    if (!isBranch(word)) {
+    if (!usDecodeBranch(word, &offset)) {
         return false;
     }
     if (displacement != NULL) {
-        *displacement = (int32_t)branchOffset(word) / 4;
+        *displacement = (int32_t)(offset / 4);
     }
     return true;
 }

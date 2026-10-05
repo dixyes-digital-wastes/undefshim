@@ -6,6 +6,10 @@
 /* Migrate only the runtime regions supplied by the UEFI notification */
 bool usPayloadEarly(void);
 
+/* Point every stub at the payload's runtime address, from the handover. The
+ * kernel's runtime base is the loader block's, or zero when it named none */
+void usPayloadPublishAll(uint64_t kernelBase);
+
 /* Publish pending stubs in the image identified by the current VBAR */
 bool usPayloadPublish(uint64_t vbar);
 
@@ -15,9 +19,8 @@ bool usPayloadPublish(uint64_t vbar);
  * entry of the handler the kernel wrote there. Branching to it hands the
  * exception to that handler in the state a real entry would have left
  *
- * Which slot is the one the exception came through is in the SPSR it
- * interrupted: EL1h is the slot at offset 0x200 and everything else is the
- * one at offset zero
+ * The slot is the one the interrupted SPSR names, and the stub it is found
+ * through is the one the boot left at the end of that slot's chain
  */
 bool usPayloadSlotTail(uint64_t vbar, uint64_t spsr, uint64_t *tail);
 

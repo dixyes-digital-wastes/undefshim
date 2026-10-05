@@ -29,6 +29,14 @@
 #include "uefi/src/session.h"
 
 /*
+ * Takes over the handover: the branch the loader enters the kernel with is
+ * redirected to a stub, and the stub enters the payload first
+ *
+ * Returns false when the loader has no such branch, or no room for the stub
+ */
+bool usArmTransfer(UsSession *session);
+
+/*
  * Draws the exception path into the payload
  *
  * The loader's vector table is what is in force when the kernel first

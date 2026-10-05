@@ -17,6 +17,7 @@
 #define US_THUNK_H
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 /*
@@ -97,6 +98,19 @@ void usEncodeSlotStub(uint32_t *out, uint64_t target, uint32_t tail0,
 uint32_t usSlotStubTailIndex(UsStubSlot slot);
 uint32_t usSlotStubTailWords(UsStubSlot slot);
 
+/* Where the synchronous entry of this kind sits in a table. The architecture
+ * fixes the sixteen entries at 0x80 bytes each */
+static inline uint64_t usStubSlotOffset(UsStubSlot slot) {
+    switch (slot) {
+    case UsStubSlotEL1h:
+        return 0x200U;
+    case UsStubSlotEL0:
+        return 0x400U;
+    default:
+        return 0U;
+    }
+}
+
 /*
  * arm64's unconditional branch: a 26 bit word offset, in instructions, so it
  * reaches 128 MB either way and only between addresses that agree in their
@@ -108,8 +122,26 @@ uint32_t usSlotStubTailWords(UsStubSlot slot);
  */
 #define US_BRANCH_RANGE (1U << 27)
 #define US_BRANCH_OPCODE 0x14000000U
+#define US_BRANCH_CLASS_MASK 0xFC000000U
 
 bool usEncodeBranch(uint32_t from, uint32_t to, uint32_t *out);
+
+/*
+ * Reads a branch back: where it goes, in bytes from its own address
+ *
+ * This is the arithmetic the encoder above does, run backwards, and the two
+ * have to agree. False means the word is not a branch, and offset is then
+ * untouched; NULL says the caller only wants that answer
+ */
+static inline bool usDecodeBranch(uint32_t word, int64_t *offset) {
+    if ((word & US_BRANCH_CLASS_MASK) != US_BRANCH_OPCODE) {
+        return false;
+    }
+    if (offset != NULL) {
+        *offset = (int64_t)((int32_t)(word << 6) >> 6) * 4;
+    }
+    return true;
+}
 
 /* The instruction that does nothing, for a tail whose slot needs no
  * instruction replayed */

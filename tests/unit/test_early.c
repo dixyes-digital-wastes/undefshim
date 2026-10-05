@@ -13,11 +13,25 @@
 #define PAYLOAD_PA UINT64_C(0x12345000)
 #define PAYLOAD_VA UINT64_C(0xFFFFF80030000000)
 #define POOL_VA UINT64_C(0xFFFFF80040000000)
+/* One vector table per fixture stub, big enough for the EL0 slot: the landing
+ * is worked out by following the branch the slot holds, so the fixture has to
+ * hold one */
+#define TABLE_WORDS 0x180U
 
 static UsPayloadConfig cfg;
 static _Alignas(US_PAGE_SIZE) unsigned char poolStorage[US_POOL_BYTES];
 static uint32_t stubs[4][US_SLOT_RUNTIME_WORDS];
 static uint32_t original[4][US_SLOT_RUNTIME_WORDS];
+static uint32_t tables[4][TABLE_WORDS];
+/* Which slot each fixture stub is for, and so which slot of the table above
+ * reaches it. The first three are the ones the landing cache is exercised
+ * with, in the order its SPSRs name them */
+static const UsStubSlot kinds[4] = {
+    UsStubSlotEL1t,
+    UsStubSlotEL1h,
+    UsStubSlotEL0,
+    UsStubSlotEL1h,
+};
 static unsigned flushes;
 static unsigned converts;
 static unsigned writeChecks[4];
@@ -32,8 +46,7 @@ UsPayloadConfig *usPayloadConfig(void) {
 }
 
 static uint64_t tableVA(unsigned index) {
-    unsigned first = index < 2 ? 0 : 2;
-    return (uintptr_t)stubs[first] - 0x1000 + 0x800 + (index % 2) * 0x800;
+    return (uintptr_t)tables[index];
 }
 
 bool usTranslateAddress(uint64_t va, bool write, uint64_t *pa) {
@@ -41,6 +54,12 @@ bool usTranslateAddress(uint64_t va, bool write, uint64_t *pa) {
         for (unsigned i = 0; i < 4; i++) {
             if (va == tableVA(i)) {
                 *pa = cfg.stubs[i].tablePA;
+                return true;
+            }
+            /* The stub itself: where the chain ends, and how the landing is
+             * told which stub it reached */
+            if (va == (uintptr_t)stubs[i]) {
+                *pa = cfg.stubs[i].addressPA;
                 return true;
             }
         }
@@ -125,21 +144,42 @@ static void init(void) {
         pool->stackTop[i] = cfg.stackTop[i];
     }
     for (unsigned i = 0; i < 4; i++) {
-        uint64_t image = i < 2 ? UINT64_C(0x100000000) : UINT64_C(0x40000000);
         usEncodeSlotStub(stubs[i], PAYLOAD_PA + cfg.entryOffset, US_NOP,
-                         US_BRANCH_OPCODE, (i & 1) != 0);
+                         US_BRANCH_OPCODE, kinds[i] != UsStubSlotEL1t);
         usEncodeSlotTarget(stubs[i] + US_SLOT_STUB_WORDS, PAYLOAD_PA + cfg.entryOffset);
         cfg.stubs[i] = (UsPayloadStub){
-            .address = image + 0x1000 + (i % 2) * US_SLOT_RUNTIME_BYTES,
-            .imageAddress = image,
-            .tableAddress = image + 0x800 + (i % 2) * 0x800,
+            /*
+             * The publisher works a stub's address out from its image's, so
+             * the image's base is the fixture's own and the two addresses are
+             * the host's: that is what makes the store the mock accepts the
+             * store this test is about. Two images, so that a publish for one
+             * of them leaves the other
+             */
+            .address = (uintptr_t)stubs[i],
+            .imageAddress = i < 2 ? UINT64_C(0x1000) : UINT64_C(0x2000),
+            .tableAddress = (uintptr_t)tables[i],
             .tablePA = 0x50000800 + i * 0x800,
             .addressPA = 0x60001000 + i * US_SLOT_RUNTIME_BYTES,
-            .targetIndex = usSlotStubTargetIndex(i == 0 ? UsStubSlotEL1t
-                                                       : UsStubSlotEL1h),
+            .targetIndex = usSlotStubTargetIndex(kinds[i]),
         };
     }
     memcpy(original, stubs, sizeof(original));
+    /*
+     * The chain the landing is worked out through. The table the exception is
+     * taken through is not the one the boot armed, in general: the kernel
+     * installs a table per processor whose synchronous slots branch into the
+     * armed one, so the fixture gets both steps - a slot branch to the armed
+     * table, and that table's slot branch to the stub
+     */
+    memset(tables, 0, sizeof(tables));
+    for (unsigned i = 0; i < 4; i++) {
+        uint32_t branch;
+        uint32_t offset = (uint32_t)usStubSlotOffset(kinds[i]);
+
+        assert(usEncodeBranch((uint32_t)(tableVA(i) + offset),
+                              (uint32_t)(uintptr_t)stubs[i], &branch));
+        tables[i][offset / 4U] = branch;
+    }
     usVAMapRecord = (UsVAMapRecord){
         .poolBefore = cfg.poolPA,
         .payloadBefore = PAYLOAD_PA,
@@ -188,7 +228,10 @@ static void testLandingCache(void) {
             assert(!usPayloadSlotTailCached(tableVA(i), spsr[(i + 1) % 3], &cached));
         }
     }
-    assert(known[0] || known[1] || known[2]);
+    /* Every one of them, since each has a stub at the end of its chain: a
+     * landing that only works for one of the three slots is a landing the
+     * other two exceptions never reach */
+    assert(known[0] && known[1] && known[2]);
     /* Nor is another table's */
     uint64_t cached = 0;
     assert(!usPayloadSlotTailCached(0xdead000, spsr[0], &cached));

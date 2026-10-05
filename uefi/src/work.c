@@ -70,6 +70,14 @@ void usWorkCollect(UsSession *session) {
     usConsolePuts(req.complete ? "US-M5-PLAN\n" : "US-M5-INCOMPLETE\n");
 
     /*
+     * Taking over the handover comes first: it is the branch the loader jumps
+     * into the kernel with, and the stub left in its place is what points
+     * every other stub at the payload's runtime address before the kernel runs
+     */
+    if (req.complete && session->armEnabled && usArmTransfer(session)) {
+        usConsolePuts("US-M6.5-TRANSFER\n");
+    }
+    /*
      * Drawing the exception path covers what the replacement cannot reach:
      * code generated after the boot, and images that were never scanned. It
      * is done from the boot because everything it needs -- the loader's table,

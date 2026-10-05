@@ -199,7 +199,7 @@ typedef struct UsPayloadStub_t {
      * offset from the image's base, passed with the stub
      */
     uint32_t descriptorBaseRVA;
-    uint32_t reserved;
+    uint32_t reserved;   /* keeps the stride a multiple of eight */
 } UsPayloadStub;
 
 /*
