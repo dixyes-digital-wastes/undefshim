@@ -134,19 +134,24 @@ $(PAYLOAD_BUILD)/layout_defs.inc: tests/tools/layoutgen.c $(PAYLOAD_DIR)/payload
 	$(CC) -std=gnu23 -O2 -Wall -Wextra -I. $< -o $(PAYLOAD_BUILD)/layoutgen
 	$(PAYLOAD_BUILD)/layoutgen $@
 
-$(PAYLOAD_BUILD)/%.o: $(PAYLOAD_DIR)/%.c | $(PAYLOAD_BUILD)
+# Every source here includes at least one of these headers, and the ones in
+# common/ are where the structures both halves share are defined. Without the
+# dependency a header change rebuilds the driver and leaves the payload as it
+# was, which is silent: the two halves then disagree about a layout or a
+# constant and the machine runs the older idea of it
+$(PAYLOAD_BUILD)/%.o: $(PAYLOAD_DIR)/%.c $(US_HEADERS) | $(PAYLOAD_BUILD)
 	$(CC) $(PAYLOAD_CFLAGS) -c $< -o $@
 
 # A core source in the payload: the same file the driver builds, compiled for
 # the blob's world instead. It is freestanding either way, which is the point
 # of keeping it in core.
-$(PAYLOAD_BUILD)/%.o: core/%.c | $(PAYLOAD_BUILD)
+$(PAYLOAD_BUILD)/%.o: core/%.c $(US_HEADERS) | $(PAYLOAD_BUILD)
 	$(CC) $(PAYLOAD_CFLAGS) -c $< -o $@
 
-$(PAYLOAD_BUILD)/entry.o: $(PAYLOAD_DIR)/entry.S $(PAYLOAD_BUILD)/layout_defs.inc | $(PAYLOAD_BUILD)
+$(PAYLOAD_BUILD)/entry.o: $(PAYLOAD_DIR)/entry.S $(PAYLOAD_BUILD)/layout_defs.inc $(US_HEADERS) | $(PAYLOAD_BUILD)
 	$(CC) $(PAYLOAD_CFLAGS) -c $< -o $@
 
-$(PAYLOAD_BUILD)/%.o: $(PAYLOAD_DIR)/%.S | $(PAYLOAD_BUILD)
+$(PAYLOAD_BUILD)/%.o: $(PAYLOAD_DIR)/%.S $(US_HEADERS) | $(PAYLOAD_BUILD)
 	$(CC) $(PAYLOAD_CFLAGS) -c $< -o $@
 
 # Linked at zero with no libraries. --no-relax is not optional: a relaxation
