@@ -1,4 +1,8 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * Copyright (C) 2026 Yun Dou <dixyes@gmail.com>
+ *
  * Replacing an entry in the boot services table
  *
  * Both hooks this driver installs work the same way: the firmware's table is

@@ -1,4 +1,8 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * Copyright (C) 2026 Yun Dou <dixyes@gmail.com>
+ *
  * The memory map hook, see gmm_hook.h for why this is the moment to act
  */
 

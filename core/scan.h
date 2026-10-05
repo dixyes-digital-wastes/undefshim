@@ -1,4 +1,8 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * Copyright (C) 2026 Yun Dou <dixyes@gmail.com>
+ *
  * Finding things inside an image
  *
  * Every locator returns the number of matches it saw and, when asked, the

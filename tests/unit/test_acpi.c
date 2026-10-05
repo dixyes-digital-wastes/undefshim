@@ -1,4 +1,8 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * Copyright (C) 2026 Yun Dou <dixyes@gmail.com>
+ *
  * Checks for reading the processor list out of ACPI
  *
  * The tables are built here rather than taken from a machine, so the test says

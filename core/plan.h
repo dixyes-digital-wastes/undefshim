@@ -1,4 +1,8 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * Copyright (C) 2026 Yun Dou <dixyes@gmail.com>
+ *
  * The work order
  *
  * Everything the boot intends to do is collected into one object before any

@@ -1,4 +1,8 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * Copyright (C) 2026 Yun Dou <dixyes@gmail.com>
+ *
  * Replacing the instructions the hardware does not have
  *
  * An image that is in memory and not yet running can simply have its RCpc

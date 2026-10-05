@@ -1,4 +1,8 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * Copyright (C) 2026 Yun Dou <dixyes@gmail.com>
+ *
  * Intercepting the firmware's image loader
  *
  * bootmgfw is the only stage this driver gets told about: the firmware calls

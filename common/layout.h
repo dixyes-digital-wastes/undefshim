@@ -1,4 +1,8 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * Copyright (C) 2026 Yun Dou <dixyes@gmail.com>
+ *
  * The runtime pool, its layout, and the one thing everything else depends on
  *
  * The pool is a single contiguous, identity mapped region holding the code

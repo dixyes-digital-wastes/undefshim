@@ -1,4 +1,8 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * Copyright (C) 2026 Yun Dou <dixyes@gmail.com>
+ *
  * Checks for the memory scan that finds winload and the kernel
  *
  * The images are built here rather than taken from a corpus, so the test says

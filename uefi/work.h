@@ -1,4 +1,8 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * Copyright (C) 2026 Yun Dou <dixyes@gmail.com>
+ *
  * The point at which the boot has everything it needs
  *
  * The images all arrive at different times: the firmware loads the first, and

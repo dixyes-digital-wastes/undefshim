@@ -1,4 +1,8 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * Copyright (C) 2026 Yun Dou <dixyes@gmail.com>
+ *
  * Writing bytes into a loaded image
  *
  * This is the mechanism behind the debug patch table: name an image, name an

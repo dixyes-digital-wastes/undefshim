@@ -1,4 +1,9 @@
-/* Real placement and generator, with only firmware allocation/cache/IO mocked.
+/*
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * Copyright (C) 2026 Yun Dou <dixyes@gmail.com>
+ *
+ * Real placement and generator, with only firmware allocation/cache/IO mocked.
  * The AArch64 blob is copied and inspected, never executed on the host.
  * Keep host libc headers out: posix-uefi supplies its own libc declarations
  */

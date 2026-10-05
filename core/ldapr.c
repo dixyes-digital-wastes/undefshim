@@ -1,4 +1,8 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * Copyright (C) 2026 Yun Dou <dixyes@gmail.com>
+ *
  * Decoding the RCpc loads, see ldapr.h
  *
  * The four instructions differ only in the size field, so they are one

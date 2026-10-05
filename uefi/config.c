@@ -1,4 +1,8 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * Copyright (C) 2026 Yun Dou <dixyes@gmail.com>
+ *
  * Locates, reads and parses the configuration file
  *
  * See config.h for the policy. Every step here can fail, and the failure

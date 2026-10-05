@@ -1,4 +1,8 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * Copyright (C) 2026 Yun Dou <dixyes@gmail.com>
+ *
  * Replacing an RCpc load where it stands, see rewrite.c
  *
  * The question the caller has is only whether it happened: a site that was not

@@ -1,4 +1,8 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * Copyright (C) 2026 Yun Dou <dixyes@gmail.com>
+ *
  * The record the address change notification fills in, see vamap.h
  *
  * It lives here, in the payload, rather than in the driver, because of where

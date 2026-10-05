@@ -1,4 +1,8 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * Copyright (C) 2026 Yun Dou <dixyes@gmail.com>
+ *
  * SHA-256, for checking that a patch list was written for the binary it is
  * about to be applied to. The structure follows the implementation musl
  * carries: no allocation, no libc, usable from the driver and from the

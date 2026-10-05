@@ -1,4 +1,8 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * Copyright (C) 2026 Yun Dou <dixyes@gmail.com>
+ *
  * peprobe - run the locators over a directory of Windows images
  *
  * This is a host tool, not part of the driver. It answers the question the

@@ -1,4 +1,8 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * Copyright (C) 2026 Yun Dou <dixyes@gmail.com>
+ *
  * What runs when an exception arrives, and the state it needs to do it
  *
  * See payload.h for the interface. This file is the C half; the assembly

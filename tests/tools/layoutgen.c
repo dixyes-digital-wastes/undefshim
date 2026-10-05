@@ -1,4 +1,8 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * Copyright (C) 2026 Yun Dou <dixyes@gmail.com>
+ *
  * layoutgen - turn the payload's structures into assembly constants
  *
  * The frame is described once, in C, and both the handler and the assembly

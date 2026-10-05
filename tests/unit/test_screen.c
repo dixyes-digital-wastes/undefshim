@@ -1,4 +1,8 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * Copyright (C) 2026 Yun Dou <dixyes@gmail.com>
+ *
  * The screen drawer, so far as it can be checked without looking at a screen
  *
  * What this checks is that nothing is written outside the frame buffer,

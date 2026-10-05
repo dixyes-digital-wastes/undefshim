@@ -1,4 +1,8 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * Copyright (C) 2026 Yun Dou <dixyes@gmail.com>
+ *
  * Asking the hardware to translate an address, see translate.h
  *
  * Two questions are answered here and they are not the same one. The first is

@@ -1,4 +1,8 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * Copyright (C) 2026 Yun Dou <dixyes@gmail.com>
+ *
  * Getting the payload into memory, and putting it where it can be entered
  *
  * The blob is built as position independent code and linked at zero, so where

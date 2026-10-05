@@ -1,4 +1,8 @@
 /*
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * Copyright (C) 2026 Yun Dou <dixyes@gmail.com>
+ *
  * Reading the machine's processor list out of ACPI
  *
  * The payload needs to tell one CPU from another, because everything it keeps
