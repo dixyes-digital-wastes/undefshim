@@ -24,7 +24,7 @@ enabled = false
 [kernel]
 # The RVA of the variable holding the kernel's page table base, for the build
 # this configuration is for. Optional: without it no descriptor is rewritten.
-descriptorBaseRva = 0xE06368
+descriptorBaseRVA = 0xE06368
 
 [patch]
 # Directory of patch list files, relative to this volume. Empty turns the

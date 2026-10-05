@@ -56,6 +56,9 @@ typedef struct UsArmTarget_t {
     UsVectorSlot slot;
     /* RVA of the image's descriptor base, or zero when it has none */
     uint32_t   descriptorBaseRVA;
+    /* Whether the image is the kernel, whose stubs have to be published from
+     * the address change rather than from the payload's first run */
+    bool       kernelImage;
 } UsArmTarget;
 
 /*
@@ -185,6 +188,7 @@ static bool armSlot(UsSession *s, const UsArmTarget *target) {
         .addressPA = stubPA,
         .targetIndex = usSlotStubTargetIndex(stubSlot),
         .descriptorBaseRVA = target->descriptorBaseRVA,
+        .kernelImage = target->kernelImage ? 1U : 0U,
     };
 
     /* The slot last: until the stub is there, a branch into it would be a
@@ -282,6 +286,7 @@ static bool armImage(UsSession *s, UsImageKind kind, size_t *armed) {
                                              && s->config->hasDescriptorBase
                                          ? s->config->descriptorBaseRVA
                                          : 0U,
+                .kernelImage = kind == UsImageNtoskrnl,
             };
 
             if (armSlot(s, &target)) {
