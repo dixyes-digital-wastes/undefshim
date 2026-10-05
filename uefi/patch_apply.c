@@ -132,7 +132,8 @@ static void applyOne(UsImage *image, const char *name, const char *text,
     memset(&file, 0, sizeof(file));
     memset(&stats, 0, sizeof(stats));
     if (code == NULL) {
-        usConsolePuts("patch: no text in ");
+        usConsoleLog("patch", UsLogError);
+        usConsolePuts("no text in ");
         usConsolePuts(name);
         usConsolePuts("\n");
         return;
@@ -145,7 +146,7 @@ static void applyOne(UsImage *image, const char *name, const char *text,
     }
     UsPatchStatus status = usPatchParse(text, (uint32_t)length, sites, capacity, &file);
 
-    usConsolePuts("patch: ");
+    usConsoleLog("patch", status != UsPatchOk ? UsLogError : UsLogInfo);
     usConsolePuts(name);
     if (status != UsPatchOk) {
         usConsolePuts(" not usable, status ");
@@ -174,18 +175,20 @@ static void applyOne(UsImage *image, const char *name, const char *text,
     UsPatchApplyResult result = usPatchApplyMatched(&file, sites, &matchers, 0U,
                                                     (uint8_t *)(uintptr_t)image->base,
                                                     image->sizeOfImage, &stats);
-    if (result == UsPatchApplied) {
-        usConsolePuts(" applied ");
-        usConsolePutDec(stats.applied);
-        usConsolePuts(" refused ");
-        usConsolePutDec(stats.refused);
-        usConsolePuts(" out of range ");
-        usConsolePutDec(stats.outOfRange);
-    } else if (result == UsPatchWrongBuild) {
-        usConsolePuts(" is for another build");
-    } else {
-        usConsolePuts(" is for another image");
+    if (result != UsPatchApplied) {
+        usConsoleLog("patch", UsLogWarn);
+        usConsolePuts(name);
+        usConsolePuts(result == UsPatchWrongBuild ? " is for another build\n"
+                                                  : " is for another image\n");
+        BS->FreePool(sites);
+        return;
     }
+    usConsolePuts(" applied ");
+    usConsolePutDec(stats.applied);
+    usConsolePuts(" refused ");
+    usConsolePutDec(stats.refused);
+    usConsolePuts(" out of range ");
+    usConsolePutDec(stats.outOfRange);
     usConsolePuts("\n");
     BS->FreePool(sites);
 }
@@ -295,7 +298,8 @@ static void reportTextHash(UsImage *image) {
         return;
     }
     digestText(image, code, bytes, digest);
-    usConsolePuts("patch: text sha256 ");
+    usConsoleLog("patch", UsLogDebug);
+    usConsolePuts("text sha256 ");
     for (uint32_t i = 0; i < 32U; i++) {
         static const char digits[] = "0123456789abcdef";
 
@@ -321,7 +325,8 @@ void usPatchApplyLists(UsSession *session, UsImage *image) {
         return;
     }
     if (namesVolumeRoot(path)) {
-        usConsolePuts("patch: refusing the volume root as a list directory\n");
+        usConsoleLog("patch", UsLogError);
+        usConsolePuts("refusing the volume root as a list directory\n");
         return;
     }
     volume = usConfigVolume();
@@ -344,7 +349,8 @@ void usPatchApplyLists(UsSession *session, UsImage *image) {
     wide[i] = 0;
 
     if (EFI_ERROR(root->Open(root, &dir, wide, EFI_FILE_MODE_READ, 0)) || dir == NULL) {
-        usConsolePuts("patch: no list directory ");
+        usConsoleLog("patch", UsLogError);
+        usConsolePuts("no list directory ");
         usConsolePuts(path);
         usConsolePuts("\n");
         root->Close(root);
@@ -387,7 +393,7 @@ void usPatchApplyLists(UsSession *session, UsImage *image) {
     }
     dir->Close(dir);
     root->Close(root);
-    usConsolePuts("patch: ");
+    usConsoleLog("patch", UsLogVerbose);
     usConsolePutDec(files);
     usConsolePuts(" list file(s) from ");
     usConsolePuts(path);

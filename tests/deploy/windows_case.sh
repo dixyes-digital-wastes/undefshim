@@ -86,7 +86,7 @@ trap stop EXIT INT TERM
 # Wait for the shim to be armed, which is the last thing our side can say.
 armed=no
 for _ in $(seq 1 $((WATCH + 240))); do
-    if grep -q 'US-M6.5-ARMED' "$log" 2>/dev/null; then
+    if grep -q 'M6.5 armed' "$log" 2>/dev/null; then
         armed=yes
         break
     fi
@@ -94,7 +94,7 @@ for _ in $(seq 1 $((WATCH + 240))); do
 done
 if [ "$armed" != "yes" ]; then
     echo "FAIL: the shim was never armed"
-    grep -aE 'arm:|US-M5' "$log" | tail -6
+    grep -aE 'arm:|M5' "$log" | tail -6
     exit 1
 fi
 echo "armed: $(grep -a 'arm: vbar' "$log" | tail -1)"

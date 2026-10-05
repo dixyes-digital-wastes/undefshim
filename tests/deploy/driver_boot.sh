@@ -17,17 +17,17 @@ BUILD_DIR="${BUILD_DIR:-build}"
 SERIAL_LOG="${SERIAL_LOG:-$BUILD_DIR/driver-boot.log}"
 
 SERIAL_LOG="$SERIAL_LOG" \
-STOP_PATTERN='US-M4-SETUP|US-M4-FAIL|US-M2-FAIL' \
+STOP_PATTERN='M4 setup|M4 failed|M2 failed' \
 BOOT_TIMEOUT="${BOOT_TIMEOUT:-60}" \
     tests/deploy/run.sh || exit 1
 
 fail() {
     echo "FAIL: $1"
-    grep -E 'pool|config|loadimage|US-M' "$SERIAL_LOG" | tail -8
+    grep -E 'pool|config|loadimage|milestone' "$SERIAL_LOG" | tail -8
     exit 1
 }
 
-grep -q 'US-M4-SETUP' "$SERIAL_LOG" || fail "the driver did not finish bringing up"
+grep -q 'M4 setup' "$SERIAL_LOG" || fail "the driver did not finish bringing up"
 grep -q 'config: loaded' "$SERIAL_LOG" || fail "the configuration was not read"
 grep -q 'pool: ready' "$SERIAL_LOG" || fail "the pool was not allocated"
 

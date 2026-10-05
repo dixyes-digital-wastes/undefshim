@@ -37,7 +37,7 @@ fi
 # reported what it saw.
 WIN_DISK="$WIN_DISK" \
 SERIAL_LOG="$SERIAL_LOG" \
-STOP_PATTERN='loadimage: registered|loadimage: rejected|US-M4-FAIL' \
+STOP_PATTERN='loadimage: registered|loadimage: rejected|M4 failed' \
 BOOT_TIMEOUT="${BOOT_TIMEOUT:-420}" \
     tests/deploy/run.sh
 

@@ -402,7 +402,7 @@ tag = "spin probe"
         # waiting for it then waits out the whole timeout on a machine that is
         # already running.
         log("waiting for the driver to finish")
-        if ser.waitFor(r"US-M6\.5-ARMED|US-M7-REWRITTEN", args.find_timeout) is None:
+        if ser.waitFor(r"M6\.5 armed|M7 rewritten", args.find_timeout) is None:
             log("the driver never reported; last serial output:")
             tail = open(serialLog, "rb").read().decode("latin1")[-800:]
             log(tail)

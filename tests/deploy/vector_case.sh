@@ -100,18 +100,18 @@ trap stop EXIT INT TERM
 # than a step the driver takes.
 armed=no
 for _ in $(seq 1 $((SETTLE + 240))); do
-    if grep -q 'US-M6.5-ARMED' "$log" 2>/dev/null; then
+    if grep -q 'M6.5 armed' "$log" 2>/dev/null; then
         armed=yes
         break
     fi
-    if grep -qaE 'US-M5-INCOMPLETE|arm: nothing taken over' "$log" 2>/dev/null; then
+    if grep -qaE 'M5 incomplete|nothing taken over' "$log" 2>/dev/null; then
         break
     fi
     sleep 1
 done
 if [ "$armed" != "yes" ]; then
     echo "FAIL: the vector table was never taken over"
-    grep -aE 'arm:|plan: vbar|US-M5' "$log" | tail -10
+    grep -aE 'arm:|plan: vbar|M5' "$log" | tail -10
     exit 1
 fi
 grep -a 'arm: vbar' "$log" | tail -2

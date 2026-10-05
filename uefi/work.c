@@ -64,10 +64,11 @@ static void collectOnOwnStack(void *arg) {
 void usWorkCollect(UsSession *session) {
     CollectRequest req = { .session = session, .complete = false };
 
-    usConsolePuts("work: collecting\n");
+    usConsoleLog("work", UsLogInfo);
+    usConsolePuts("collecting\n");
     usStackRunOn(session->bootStackTop, collectOnOwnStack, &req);
 
-    usConsolePuts(req.complete ? "US-M5-PLAN\n" : "US-M5-INCOMPLETE\n");
+    usConsoleMilestone(req.complete ? "M5 planned" : "M5 incomplete");
 
     /*
      * Taking over the handover comes first: it is the branch the loader jumps
@@ -75,7 +76,7 @@ void usWorkCollect(UsSession *session) {
      * every other stub at the payload's runtime address before the kernel runs
      */
     if (req.complete && session->armEnabled && usArmTransfer(session)) {
-        usConsolePuts("US-M6.5-TRANSFER\n");
+        usConsoleMilestone("M6.5 transfer");
     }
     /*
      * Drawing the exception path covers what the replacement cannot reach:
@@ -85,7 +86,7 @@ void usWorkCollect(UsSession *session) {
      * writable there
      */
     if (req.complete && session->armEnabled && usArmVectorTable(session)) {
-        usConsolePuts("US-M6.5-ARMED\n");
+        usConsoleMilestone("M6.5 armed");
     }
     /*
      * Replacing the instructions happens after the arming, not before.
@@ -98,6 +99,6 @@ void usWorkCollect(UsSession *session) {
     if (req.complete && session->ldaprRewrite) {
         size_t replaced = usRewriteLDAPR(session);
 
-        usConsolePuts(replaced != 0 ? "US-M7-REWRITTEN\n" : "US-M7-NOREWRITE\n");
+        usConsoleMilestone(replaced != 0 ? "M7 rewritten" : "M7 nothing to rewrite");
     }
 }

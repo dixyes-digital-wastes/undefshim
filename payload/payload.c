@@ -610,7 +610,7 @@ int usPayloadHandle(UsFrame *frame) {
 
     if (frame == NULL) {
         if (cfg->quiet == 0) {
-            usUARTPuts("US-PAYLOAD no-frame\n");
+            usUARTPuts("payload: no-frame\n");
         }
         return 0;
     }
@@ -624,7 +624,7 @@ int usPayloadHandle(UsFrame *frame) {
 
     ec = (uint32_t)US_ESR_EC(frame->esr);
     if (cfg->quiet == 0) {
-        usUARTPuts("US-PAYLOAD ec=");
+        usUARTPuts("payload: ec=");
         usUARTPutHex(ec);
         usUARTPuts(" elr=");
         usUARTPutHex(frame->elr);
@@ -640,7 +640,7 @@ int usPayloadHandle(UsFrame *frame) {
             ((UsPool *)(uintptr_t)cfg->poolBase)->entry.handled++;
         }
         if (cfg->quiet == 0) {
-            usUARTPuts("US-PAYLOAD emulated\n");
+            usUARTPuts("payload: emulated\n");
         }
         /* Claimed: the entry resumes at the instruction after this one */
         usPayloadLeave(cpu);
@@ -658,7 +658,7 @@ int usPayloadHandle(UsFrame *frame) {
      * worked out, and the SPSR says which slot it was
      */
     if (cfg->quiet == 0) {
-        usUARTPuts("US-PAYLOAD not-ours\n");
+        usUARTPuts("payload: not-ours\n");
     }
     if (usPayloadSlotTail(vbar, frame->spsr, &frame->landing)
         || usPayloadSlotTailCached(vbar, frame->spsr, &frame->landing)
@@ -787,7 +787,7 @@ void usPayloadSelfTest(void) {
     UsSelfMap self;
 
     usUARTInit(cfg->uartBase, (uint32_t)cfg->uartKind, (uint32_t)cfg->uartWidth);
-    usUARTPuts("US-PAYLOAD alive cpu=");
+    usUARTPuts("payload: alive cpu=");
     usUARTPutDec((uint64_t)currentCPU());
     usUARTPuts(" frame=");
     usUARTPutDec(sizeof(UsFrame));
@@ -804,7 +804,7 @@ void usPayloadSelfTest(void) {
      * matters
      */
     self = usSelfMapFind(cfg->selfVA, US_POOL_BYTES, cfg->selfVA);
-    usUARTPuts("US-PAYLOAD selfmap ");
+    usUARTPuts("payload: selfmap ");
     if (self.found) {
         usUARTPuts("va=");
         usUARTPutHex(self.va);

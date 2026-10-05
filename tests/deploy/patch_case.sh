@@ -64,7 +64,7 @@ if ! CONFIG="$WORK/patch.toml" ESP="$WORK/patch.img" tests/deploy/build_esp.sh \
 fi
 
 if ! ESP="$WORK/patch.img" SERIAL_LOG="$log" WIN_DISK="$WIN_DISK" \
-     STOP_PATTERN='US-M4-PATCH|US-M4-FAIL' BOOT_TIMEOUT="${BOOT_TIMEOUT:-420}" \
+     STOP_PATTERN='M4 patched|M4 failed' BOOT_TIMEOUT="${BOOT_TIMEOUT:-420}" \
      tests/deploy/run.sh >"$WORK/patch.run" 2>&1; then
     echo "FAIL: the patch was never applied"
     grep -E 'loadimage|gmm|patch' "$log" | tail -8

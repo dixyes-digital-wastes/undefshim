@@ -48,14 +48,14 @@ mkdir -p "$WORK"
 # The driver's own dump. It runs against the Windows volume that WIN_DISK
 # names, so WIN_DISK and PLAN_CORPUS have to be the same build.
 if ! ESP="$BUILD_DIR/esp.img" SERIAL_LOG="$SERIAL_LOG" \
-     STOP_PATTERN='US-M5-PLAN|US-M5-INCOMPLETE' BOOT_TIMEOUT="${BOOT_TIMEOUT:-300}" \
+     STOP_PATTERN='M5 planned|M5 incomplete' BOOT_TIMEOUT="${BOOT_TIMEOUT:-300}" \
      WIN_DISK="$WIN_DISK" tests/deploy/run.sh >"$WORK/plan.run" 2>&1; then
     echo "FAIL: the driver never produced a plan"
     tr -d '\r' <"$SERIAL_LOG" | grep -aE 'gmm|work|plan' | tail -8
     exit 1
 fi
 
-if grep -q 'US-M5-INCOMPLETE' "$SERIAL_LOG"; then
+if grep -q 'M5 incomplete' "$SERIAL_LOG"; then
     echo "FAIL: the driver's plan is not complete"
     tr -d '\r' <"$SERIAL_LOG" | grep -a 'plan:' | tail -20
     exit 1

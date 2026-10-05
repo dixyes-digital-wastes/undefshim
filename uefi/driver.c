@@ -29,11 +29,12 @@
 static UsSession gSession;
 
 static void printConfig(const UsConfig *cfg) {
-    usConsolePuts("log.level=");
+    usConsoleLog("config", UsLogVerbose);
+    usConsolePuts("level=");
     usConsolePutDec((uint64_t)cfg->logLevel);
-    usConsolePuts(" ldaprRewrite=");
+    usConsolePuts(" rewrite=");
     usConsolePutDec((uint64_t)cfg->ldaprRewrite);
-    usConsolePuts(" debug.enabled=");
+    usConsolePuts(" debug=");
     usConsolePutDec((uint64_t)cfg->debugEnabled);
     usConsolePuts(" patches=");
     usConsolePutDec((uint64_t)cfg->patchCount);
@@ -41,11 +42,10 @@ static void printConfig(const UsConfig *cfg) {
 
     for (uint32_t i = 0; i < cfg->patchCount; i++) {
         const UsPatch *p = &cfg->patches[i];
-        usConsolePuts("patch[");
-        usConsolePutDec((uint64_t)i);
-        usConsolePuts("] ");
+
+        usConsoleLog("patch", UsLogVerbose);
         usConsolePuts(p->target != NULL ? p->target : "-");
-        usConsolePuts(" + ");
+        usConsolePuts(" +");
         usConsolePutHex((uint64_t)p->rva);
         usConsolePuts(" = ");
         usConsolePutHex(p->value);
@@ -82,30 +82,37 @@ int main(int argc, char **argv) {
                      cfg->uartBase, cfg->uartWidth);
     }
 
-    usConsolePuts("undefshim " US_VERSION_STRING "\n");
+    usConsoleLog("undefshim", UsLogInfo);
+    usConsolePuts(US_VERSION_STRING "\n");
     switch (result) {
     case UsConfigLoaded:
-        usConsolePuts("config: loaded\n");
+        usConsoleLog("config", UsLogInfo);
+        usConsolePuts("loaded\n");
         break;
     case UsConfigAbsent:
-        usConsolePuts("config: absent, using defaults\n");
+        usConsoleLog("config", UsLogInfo);
+        usConsolePuts("absent, using defaults\n");
         break;
     case UsConfigBroken:
-        usConsolePuts("config: broken: ");
+        usConsoleLog("config", UsLogError);
+        usConsolePuts("broken: ");
         usConsolePuts(msg);
-        usConsolePuts("\nconfig: not arming\n");
-        usConsolePuts("US-M2-FAIL\n");
+        usConsoleLog("config", UsLogError);
+        usConsolePuts("not arming\n");
+        usConsoleMilestone("M2 failed");
         return 0;
     }
 
+    usConsoleLevel(cfg->logLevel);
     printConfig(cfg);
-    usConsolePuts("US-M2-DONE\n");
+    usConsoleMilestone("M2 done");
 
     /* From here on the driver has to be resident to be useful, so this is
      * where the work of staying in the loop starts */
     if (!usSessionInit(&gSession)) {
-        usConsolePuts("session: no pool\n");
-        usConsolePuts("US-M4-FAIL\n");
+        usConsoleLog("session", UsLogError);
+        usConsolePuts("no pool\n");
+        usConsoleMilestone("M4 failed");
         return 0;
     }
 
@@ -128,7 +135,8 @@ int main(int argc, char **argv) {
     /* Handed over rather than freed: the patch table names stages that are
      * loaded long after this function has returned */
     gSession.config = cfg;
-    usConsolePuts("pool: pa=");
+    usConsoleLog("pool", UsLogVerbose);
+    usConsolePuts("pa=");
     usConsolePutHex(gSession.poolAlloc.basePA);
     usConsolePuts(" va=");
     usConsolePutHex(gSession.poolAlloc.baseVA);
@@ -138,11 +146,16 @@ int main(int argc, char **argv) {
     usConsolePutDec((uint64_t)gSession.pool->stackSlots);
     usConsolePuts("\n");
 
-    usConsolePuts("pool: stack[0]=");
+    usConsoleLog("pool", UsLogVerbose);
+    usConsolePuts("stack[0]=");
     usConsolePutHex(gSession.pool->stackTop[0]);
-    usConsolePuts(" stack[7]=");
+    usConsolePuts(" stack[");
+    usConsolePutDec(US_MAX_CPUS - 1U);
+    usConsolePuts("]=");
     usConsolePutHex(gSession.pool->stackTop[US_MAX_CPUS - 1]);
-    usConsolePuts("\npool: ready\n");
+    usConsolePuts("\n");
+    usConsoleLog("pool", UsLogInfo);
+    usConsolePuts("ready\n");
 
     /* The payload goes into place before anything is armed against it: if it
      * cannot be placed there is nothing to enter, and every later step would
@@ -151,36 +164,42 @@ int main(int argc, char **argv) {
         UsPayloadPlace place;
 
         if (!usPayloadPlace(&gSession, &place)) {
-            usConsolePuts("payload: no executable memory\n");
-            usConsolePuts("US-M6-FAIL\n");
+            usConsoleLog("payload", UsLogError);
+            usConsolePuts("no executable memory\n");
+            usConsoleMilestone("M6 failed");
             return 0;
         }
         usPayloadReport(&gSession);
     }
 
     if (!usLoadImageHookInstall(&gSession)) {
-        usConsolePuts("loadimage: hook failed\n");
-        usConsolePuts("US-M4-FAIL\n");
+        usConsoleLog("loadimage", UsLogError);
+        usConsolePuts("hook failed\n");
+        usConsoleMilestone("M4 failed");
         return 0;
     }
-    usConsolePuts("loadimage: hooked\n");
+    usConsoleLog("loadimage", UsLogInfo);
+    usConsolePuts("hooked\n");
 
     /* winload and the kernel arrive without a protocol, so a point in the
      * boot where they are both in memory has to be waited for */
     if (!usGmmHookInstall(&gSession)) {
-        usConsolePuts("gmm: hook failed\n");
-        usConsolePuts("US-M4-FAIL\n");
+        usConsoleLog("gmm", UsLogError);
+        usConsolePuts("hook failed\n");
+        usConsoleMilestone("M4 failed");
         return 0;
     }
-    usConsolePuts("gmm: armed\n");
+    usConsoleLog("gmm", UsLogInfo);
+    usConsolePuts("armed\n");
 
     /* The notification publishes high-VA exception targets before low VAs retire */
     if (gSession.vamapEnabled && !usVAMapArm(&gSession)) {
-        usConsolePuts("vamap: cannot arm\n");
-        usConsolePuts("US-M6-FAIL\n");
+        usConsoleLog("vamap", UsLogError);
+        usConsolePuts("cannot arm\n");
+        usConsoleMilestone("M6 failed");
         return 0;
     }
 
-    usConsolePuts("US-M4-SETUP\n");
+    usConsoleMilestone("M4 setup");
     return 0;
 }

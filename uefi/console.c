@@ -41,6 +41,10 @@ static UsUARTKind gKind = UsUARTOff;
 static uintptr_t gBase;
 static uint32_t gShift;
 static uint32_t gWidth = 32U;
+static UsLogLevel gLevel = UsLogInfo;
+/* Set while a line above the level is being written, so that it is dropped
+ * whole rather than at each byte */
+static bool gDropping;
 
 static uintptr_t regAt(uint32_t index) {
     return gBase + ((uintptr_t)index << gShift);
@@ -99,12 +103,15 @@ static bool roomToWrite(void) {
     return (readReg(US_8250_LSR) & US_8250_LSR_THRE) != 0U;
 }
 
-void usConsolePutc(char c) {
-    /*
-     * The screen gets everything the serial port gets. It costs a few writes
-     * to memory that is already mapped, and it is the only channel there is
-     * on a machine that asked for no serial output
-     */
+/*
+ * The only way anything is written, and the place the level filter sits
+ *
+ * A line that is not worth saying is dropped from the call that would have
+ * started it to its newline, which is why the filter is here and not in each
+ * of the writers: a half written line is worse than none, and there would be
+ * as many chances to get that wrong as there are lines
+ */
+static void emit(char c) {
     usScreenPutc(c);
     if (gKind == UsUARTOff || gBase == 0) {
         return;
@@ -113,6 +120,64 @@ void usConsolePutc(char c) {
     for (uint32_t spin = 0; !roomToWrite() && spin < 1000000U; spin++) {
     }
     writeReg(gKind == UsUARTPL011 ? US_PL011_DR : US_8250_THR, (uint32_t)(uint8_t)c);
+}
+
+/*
+ * Starts a line with its tag, which says which part of the boot is talking
+ */
+static void putTag(const char *tag) {
+    usConsolePuts(tag);
+    usConsolePuts(": ");
+}
+
+void usConsoleLevel(UsLogLevel level) {
+    gLevel = level;
+}
+
+void usConsoleLog(const char *tag, UsLogLevel level) {
+    if ((int)level > (int)gLevel) {
+        gDropping = true;
+        return;
+    }
+    gDropping = false;
+    putTag(tag);
+}
+
+/*
+ * A milestone: one whole line, named for the stage a script waits for
+ */
+void usConsoleMilestone(const char *what) {
+    if ((int)UsLogInfo > (int)gLevel) {
+        gDropping = true;
+        return;
+    }
+    gDropping = false;
+    usConsolePuts("milestone: ");
+    usConsolePuts(what);
+    usConsolePuts("\n");
+}
+
+void usConsoleProgress(char mark) {
+    if ((int)UsLogDebug > (int)gLevel) {
+        return;
+    }
+    /*
+     * One byte: this is written from hooks where the stack is not ours, and
+     * it goes through the same writer as everything else, so a line that is
+     * being dropped swallows this too
+     */
+    usConsolePutc(mark);
+}
+
+void usConsolePutc(char c) {
+    if (gDropping) {
+        /* The newline is what ends the line that is not being written */
+        if (c == '\n') {
+            gDropping = false;
+        }
+        return;
+    }
+    emit(c);
 }
 
 void usConsolePuts(const char *s) {

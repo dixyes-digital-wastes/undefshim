@@ -14,6 +14,10 @@
 #ifndef US_CONSOLE_H
 #define US_CONSOLE_H
 
+#include <stdint.h>
+
+#include "common/log.h"
+
 typedef enum {
     UsUARTOff = 0,   /* nothing is written */
     UsUARTPL011,     /* ARM's own, 32 bits per register */
@@ -27,6 +31,38 @@ typedef enum {
  * time and a word apart when read as words
  */
 void usConsoleUse(UsUARTKind kind, uint64_t base, uint32_t width);
+
+/*
+ * How much is worth saying. A line above this level is dropped whole, from
+ * the call that would have started it to its newline, so a filter never cuts
+ * a line in half
+ */
+void usConsoleLevel(UsLogLevel level);
+
+/*
+ * Starts a line: the tag, a colon, and the colour that tag and level are
+ * drawn in. What follows until the newline is the line's message
+ *
+ * The tag says which part of the boot is talking, and it is also what the
+ * script greps use to follow one part of it
+ */
+void usConsoleLog(const char *tag, UsLogLevel level);
+
+/*
+ * A milestone: one whole line, named for the stage a script is waiting for.
+ * These are the markers the deploy scripts stop and start on, so they are
+ * written as one call and cannot be assembled from parts
+ */
+void usConsoleMilestone(const char *what);
+
+/*
+ * A character that marks progress through something long, written as it goes
+ * rather than at the end: a machine that stopped partway leaves the mark it
+ * reached. Debug level, so an ordinary boot does not have to carry them, and
+ * one byte each, because these are written from hooks that may have very
+ * little stack
+ */
+void usConsoleProgress(char mark);
 
 void usConsolePutc(char c);
 void usConsolePuts(const char *s);
