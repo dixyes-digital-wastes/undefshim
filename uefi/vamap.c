@@ -35,8 +35,7 @@ bool usVAMapArm(UsSession *session) {
     void *notify;
 
     if (r == NULL) {
-        usConsoleLog("vamap", UsLogError);
-        usConsolePuts("no payload to write the answer to\n");
+        usLogE("vamap", "no payload to write the answer to\n");
         return false;
     }
 
@@ -54,16 +53,11 @@ bool usVAMapArm(UsSession *session) {
     notify = (void *)(uintptr_t)(session->payloadPlace.baseVA + US_PAYLOAD_VAMAPNOTIFY_OFFSET);
     if (EFI_ERROR(BS->CreateEvent(EVT_SIGNAL_VIRTUAL_ADDRESS_CHANGE, TPL_NOTIFY,
                                   (efi_event_notify_t)notify, NULL, &change))) {
-        usConsoleLog("vamap", UsLogError);
-        usConsolePuts("no notification\n");
+        usLogE("vamap", "no notification\n");
         return false;
     }
 
-    usConsoleLog("vamap", UsLogVerbose);
-    usConsolePuts("record=");
-    usConsolePutHex((uint64_t)(uintptr_t)r);
-    usConsolePuts(" notify=");
-    usConsolePutHex((uint64_t)(uintptr_t)notify);
-    usConsolePuts("\n");
+    usLogV("vamap", "record=" US_VALUE("%#llx") " notify=" US_VALUE("%#llx") "\n",
+           (unsigned long long)(uintptr_t)r, (unsigned long long)(uintptr_t)notify);
     return true;
 }

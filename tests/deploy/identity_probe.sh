@@ -64,12 +64,12 @@ trap 'kill $qpid 2>/dev/null || true' EXIT INT TERM
 # The driver reports where it put things, and that report is the last thing
 # the serial carries: everything after it happens on the kernel's side.
 for _ in $(seq 1 300); do
-    grep -q 'pool: pa=' "$LOG" 2>/dev/null && break
+    tests/deploy/plain.sh "$LOG" | grep -q 'pool: pa=' 2>/dev/null && break
     sleep 1
 done
-if ! grep -q 'pool: pa=' "$LOG" 2>/dev/null; then
+if ! tests/deploy/plain.sh "$LOG" | grep -q 'pool: pa=' 2>/dev/null; then
     echo "FAIL: the driver never reported a pool"
-    tail -5 "$LOG"
+    tests/deploy/plain.sh "$LOG" | tail -5
     exit 1
 fi
 

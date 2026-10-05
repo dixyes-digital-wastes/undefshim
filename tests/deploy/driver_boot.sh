@@ -23,17 +23,17 @@ BOOT_TIMEOUT="${BOOT_TIMEOUT:-60}" \
 
 fail() {
     echo "FAIL: $1"
-    grep -E 'pool|config|loadimage|milestone' "$SERIAL_LOG" | tail -8
+    tests/deploy/plain.sh "$SERIAL_LOG" | grep -E 'pool|config|loadimage|milestone' | tail -8
     exit 1
 }
 
-grep -q 'M4 setup' "$SERIAL_LOG" || fail "the driver did not finish bringing up"
-grep -q 'config: loaded' "$SERIAL_LOG" || fail "the configuration was not read"
-grep -q 'pool: ready' "$SERIAL_LOG" || fail "the pool was not allocated"
+tests/deploy/plain.sh "$SERIAL_LOG" | grep -q 'M4 setup' || fail "the driver did not finish bringing up"
+tests/deploy/plain.sh "$SERIAL_LOG" | grep -q 'config: loaded' || fail "the configuration was not read"
+tests/deploy/plain.sh "$SERIAL_LOG" | grep -q 'pool: ready' || fail "the pool was not allocated"
 
 # The pool has to be identity mapped, or the payload cannot reach it both
 # before and after the address space is rebuilt.
-pool=$(grep -m1 '^pool: pa=' "$SERIAL_LOG") || fail "no pool report"
+pool=$(tests/deploy/plain.sh "$SERIAL_LOG" | grep -m1 '^pool: pa=') || fail "no pool report"
 pa=$(printf '%s' "$pool" | sed -n 's/.*pa=\(0x[0-9a-f]*\).*/\1/p')
 va=$(printf '%s' "$pool" | sed -n 's/.*va=\(0x[0-9a-f]*\).*/\1/p')
 
@@ -41,16 +41,20 @@ va=$(printf '%s' "$pool" | sed -n 's/.*va=\(0x[0-9a-f]*\).*/\1/p')
 [ "$pa" = "$va" ] || fail "the pool is not identity mapped: pa=$pa va=$va"
 
 # One page of header plus a stack for every possible CPU.
-want_bytes=$(( (1 + 8 * 4) * 4096 ))
-got_bytes=$(printf '%s' "$pool" | sed -n 's/.*bytes=\(0x[0-9a-f]*\).*/\1/p')
-[ "$((got_bytes))" -eq "$want_bytes" ] \
-    || fail "pool size is $((got_bytes)), expected $want_bytes"
-
 slots=$(printf '%s' "$pool" | sed -n 's/.*slots=\([0-9]*\).*/\1/p')
 [ "$slots" = "8" ] || fail "expected 8 stack slots, got $slots"
 
+# A header of whole pages followed by a stack for every CPU. The header's size
+# is a property of the structure, so it is taken from what was allocated
+# rather than written here: a number copied into the check drifts the moment
+# a field is added, and this is the arithmetic the payload depends on
+got_bytes=$(printf '%s' "$pool" | sed -n 's/.*bytes=\(0x[0-9a-f]*\).*/\1/p')
+header_bytes=$(( got_bytes - slots * 16384 ))
+[ "$header_bytes" -ge 4096 ] && [ $(( header_bytes % 4096 )) -eq 0 ] \
+    || fail "the pool is $((got_bytes)) bytes: not a whole page of header plus $slots stacks"
+
 # The stacks have to sit inside the pool and be aligned for the CPU.
-stacks=$(grep -m1 '^pool: stack' "$SERIAL_LOG") || fail "no stack report"
+stacks=$(tests/deploy/plain.sh "$SERIAL_LOG" | grep -m1 '^pool: stack') || fail "no stack report"
 first=$(printf '%s' "$stacks" | sed -n 's/.*stack\[0\]=\(0x[0-9a-f]*\).*/\1/p')
 last=$(printf '%s' "$stacks" | sed -n 's/.*stack\[[0-9]*\]=\(0x[0-9a-f]*\).*/\1/p')
 
@@ -59,8 +63,11 @@ last=$(printf '%s' "$stacks" | sed -n 's/.*stack\[[0-9]*\]=\(0x[0-9a-f]*\).*/\1/
 [ $(( last & 15 )) -eq 0 ] || fail "last stack top $last is not 16 byte aligned"
 [ $(( last - first )) -eq $(( 7 * 16384 )) ] \
     || fail "stacks are not evenly spaced: first=$first last=$last"
-[ $(( first )) -ge $(( pa + 4096 )) ] || fail "the first stack overlaps the pool header"
-[ $(( last )) -le $(( pa + want_bytes )) ] || fail "the last stack runs past the pool"
+# The top of a stack is its base plus the stack: what sits at the header is
+# the bottom of the first one
+[ $(( first )) -eq $(( pa + header_bytes + 16384 )) ] \
+    || fail "the first stack top $first is not a stack above the header at $pa"
+[ $(( last )) -le $(( pa + got_bytes )) ] || fail "the last stack runs past the pool"
 
-echo "pool: $pa identity mapped, $((want_bytes)) bytes, $slots stacks, first=$first last=$last"
+echo "pool: $pa identity mapped, $((got_bytes)) bytes, $slots stacks, first=$first last=$last"
 echo "PASS: the driver brings itself up"

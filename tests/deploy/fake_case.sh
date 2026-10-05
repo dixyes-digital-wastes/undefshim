@@ -73,11 +73,11 @@ ESP="$ESP" SERIAL_LOG="$SERIAL_LOG" STOP_PATTERN="FAKEK: PASS" \
     bash tests/deploy/run.sh >/dev/null 2>&1 || true
 
 echo "--- the fake kernel's report"
-grep -a "FAKEK:" "$SERIAL_LOG" || true
+tests/deploy/plain.sh "$SERIAL_LOG" | grep -a "FAKEK:" || true
 echo "--- what the driver did"
-grep -a "patch:" "$SERIAL_LOG" || true
+tests/deploy/plain.sh "$SERIAL_LOG" | grep -a "patch:" || true
 
-if grep -qa "FAKEK: PASS" "$SERIAL_LOG"; then
+if tests/deploy/plain.sh "$SERIAL_LOG" | grep -qa "FAKEK: PASS"; then
     echo "fake kernel: PASS"
     exit 0
 fi

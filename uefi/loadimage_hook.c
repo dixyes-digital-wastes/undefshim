@@ -98,8 +98,7 @@ static efi_status_t EFIAPI loadImageHook(boolean_t bootPolicy, efi_handle_t pare
 
     status = gOriginal(bootPolicy, parent, path, sourceBuffer, sourceSize, image);
     if (EFI_ERROR(status) || image == NULL || *image == NULL) {
-        usConsoleLog("loadimage", UsLogError);
-        usConsolePuts("original failed\n");
+        usLogE("loadimage", "original failed\n");
         return status;
     }
 
@@ -111,8 +110,7 @@ static efi_status_t EFIAPI loadImageHook(boolean_t bootPolicy, efi_handle_t pare
      */
     if (EFI_ERROR(BS->HandleProtocol(*image, &lipGUID, (void **)&lip)) || lip == NULL
         || lip->ImageBase == NULL || lip->ImageSize == 0) {
-        usConsoleLog("loadimage", UsLogError);
-        usConsolePuts("no loaded image\n");
+        usLogE("loadimage", "no loaded image\n");
         return status;
     }
 
@@ -122,12 +120,11 @@ static efi_status_t EFIAPI loadImageHook(boolean_t bootPolicy, efi_handle_t pare
         usStackRunOn(gSession->bootStackTop, registerOnOwnStack, &req);
         /* And its instructions replaced, before anything runs out of it */
         usStackRunOn(gSession->bootStackTop, rewriteOnOwnStack, &req);
-        usConsoleLog("loadimage", req.recorded ? UsLogInfo : UsLogVerbose);
-        usConsolePuts(req.recorded ? "registered at " : "seen at ");
-        usConsolePutHex((uint64_t)(uintptr_t)lip->ImageBase);
-        usConsolePuts("\n");
+        usLog(req.recorded ? UsLogInfo : UsLogVerbose, "loadimage",
+              "%s at " US_VALUE("%#llx") "\n",
+              req.recorded ? "registered" : "seen",
+              (unsigned long long)(uintptr_t)lip->ImageBase);
     }
-
     /* A patch aimed at this image can go in now, while the loader is still
      * holding it and before anything runs it. On our own stack: see
      * applyPatchesOnOwnStack */

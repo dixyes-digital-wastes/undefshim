@@ -165,21 +165,15 @@ void usPayloadReport(const UsSession *session) {
     UsSelfTestFn selfTest;
 
     if (!session->payloadPlaced) {
-        usConsoleLog("payload", UsLogError);
-        usConsolePuts("not placed\n");
+        usLogE("payload", "not placed\n");
         return;
     }
 
-    usConsoleLog("payload", UsLogVerbose);
-    usConsolePuts("at ");
-    usConsolePutHex(place->baseVA);
-    usConsolePuts(" bytes=");
-    usConsolePutDec(place->bytes);
-    usConsolePuts(" entry=");
-    usConsolePutHex(place->entryVA);
-    usConsolePuts(" config=");
-    usConsolePutHex(place->configVA);
-    usConsolePuts("\n");
+    usLogV("payload", "at " US_VALUE("%#llx") " bytes=" US_VALUE("%u")
+           " entry=" US_VALUE("%#llx") " config=" US_VALUE("%#llx") "\n",
+           (unsigned long long)place->baseVA, (unsigned)place->bytes,
+           (unsigned long long)place->entryVA,
+           (unsigned long long)place->configVA);
 
     /*
      * Called rather than branched to. The entry is reached through a vector

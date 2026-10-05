@@ -1,6 +1,6 @@
 /*
- * Serial output, see console.h for why it is not just printf, and for why a
- * port that was not configured stays silent
+ * Serial output, see console.h for why it is not just printf, and for what a
+ * line of the log is made of
  */
 
 #include <uefi.h>
@@ -37,15 +37,22 @@
 
 #define US_8250_LSR_THRE (1U << 5)
 
+/*
+ * One line, formatted before any of it is written: long enough for the
+ * longest the driver says, and no longer, because it lives on the stack of
+ * whatever happened to be running when the line was written
+ */
+#define US_LINE_BYTES 256
+
 static UsUARTKind gKind = UsUARTOff;
 static uintptr_t gBase;
 static uint32_t gShift;
 static uint32_t gWidth = 32U;
 static UsLogLevel gLevel = UsLogInfo;
 static bool gColour = true;
-/* Set while a line above the level is being written, so that it is dropped
- * whole rather than at each byte */
-static bool gDropping;
+/* Set while an escape sequence is going out, so that the serial port can skip
+ * one whole rather than leave its tail in the log */
+static bool gEscape;
 
 static uintptr_t regAt(uint32_t index) {
     return gBase + ((uintptr_t)index << gShift);
@@ -104,9 +111,27 @@ static bool roomToWrite(void) {
     return (readReg(US_8250_LSR) & US_8250_LSR_THRE) != 0U;
 }
 
-/* The serial port, and nothing else. Bounded spin: a wrong base address must
- * not hang the boot */
+/*
+ * The serial port, and nothing else. Bounded spin: a wrong base address must
+ * not hang the boot
+ *
+ * An escape sequence is skipped whole when the configuration turns the colour
+ * off, and it is skipped here rather than by whoever wrote it: the escapes
+ * belong to the message now, and a line may colour one address in the middle
+ * of it without the console having been told
+ */
 static void emitSerial(char c) {
+    if (gEscape) {
+        gEscape = c != 'm';
+        if (!gColour) {
+            return;
+        }
+    } else if (c == '\x1b') {
+        gEscape = true;
+        if (!gColour) {
+            return;
+        }
+    }
     if (gKind == UsUARTOff || gBase == 0) {
         return;
     }
@@ -116,141 +141,104 @@ static void emitSerial(char c) {
 }
 
 /*
- * The only way anything is written, and the place the level filter sits
+ * Both outputs, in step
  *
- * A line that is not worth saying is dropped from the call that would have
- * started it to its newline, which is why the filter is here and not in each
- * of the writers: a half written line is worse than none, and there would be
- * as many chances to get that wrong as there are lines
+ * There is no filter here: whether a line is worth saying is decided by the
+ * one call that writes it, before any of it is formatted, so nothing is ever
+ * written and then taken back
  */
 static void emit(char c) {
     usScreenPutc(c);
     emitSerial(c);
 }
 
-/*
- * A colour says the level, not the subject: the tag after it says which part
- * of the boot is talking
- */
-#define US_SGR_RESET 0U
-#define US_SGR_RED 31U
-#define US_SGR_YELLOW 33U
-#define US_SGR_GREEN 32U
-#define US_SGR_GREY 90U
-#define US_SGR_LIGHT_CYAN 96U
+static void emitString(const char *s) {
+    for (; *s != '\0'; s++) {
+        emit(*s);
+    }
+}
+
+static void emitNewline(void) {
+    emit('\r');
+    emit('\n');
+}
 
 /*
- * The colour of a level, or the reset for one that is drawn in the default
- * ink
+ * The colour of a level, or nothing for one that is drawn in the default ink
  *
  * Info is the default: most of what is said is neither a failure nor a
  * detail, and colouring all of it would make the ones that matter harder to
  * pick out rather than easier
  */
-static uint32_t levelColour(UsLogLevel level) {
+static const char *levelColour(UsLogLevel level) {
     switch (level) {
     case UsLogError:
-        return US_SGR_RED;
+        return US_RED;
     case UsLogWarn:
-        return US_SGR_YELLOW;
+        return US_YELLOW;
     case UsLogVerbose:
-        return US_SGR_GREY;
+        return US_GREY;
     case UsLogDebug:
-        return US_SGR_LIGHT_CYAN;
+        return US_LIGHT_CYAN;
     default:
-        return US_SGR_RESET;
+        return NULL;
     }
-}
-
-/*
- * A colour, as the escape sequence a terminal understands and the screen
- * parses
- *
- * The screen always gets it, because the screen is what turns it into a
- * colour and it has no other way of knowing which one. The serial port gets
- * it only when the configuration says so: that is about the log, which may
- * be read by something that would rather not see the escapes in it, and the
- * two channels are asked separately for that reason
- */
-static void putSgr(uint32_t code) {
-    char digits[4];
-    int n = 0;
-    uint32_t value = code;
-
-    while (value != 0 && n < (int)sizeof(digits)) {
-        digits[n++] = (char)('0' + (int)(value % 10));
-        value /= 10;
-    }
-
-    usScreenPutc('\x1b');
-    usScreenPutc('[');
-    for (int i = n - 1; i >= 0; i--) {
-        usScreenPutc(digits[i]);
-    }
-    usScreenPutc('m');
-
-    if (!gColour) {
-        return;
-    }
-    emitSerial('\x1b');
-    emitSerial('[');
-    for (int i = n - 1; i >= 0; i--) {
-        emitSerial(digits[i]);
-    }
-    emitSerial('m');
 }
 
 /*
  * Colours a tag and puts the colour back, or writes the tag plainly when the
- * level has no colour of its own
+ * level has none
  *
  * The reset has to be written whenever a colour was: leaving it out is not
  * the same as saying the default, it leaves everything after the tag in the
  * tag's colour - and on a terminal, every line after it as well
  */
 static void putTag(const char *tag, UsLogLevel level) {
-    uint32_t colour = levelColour(level);
+    const char *colour = levelColour(level);
 
-    if (colour != US_SGR_RESET) {
-        putSgr(colour);
+    if (colour != NULL) {
+        emitString(colour);
     }
-    usConsolePuts(tag);
-    if (colour != US_SGR_RESET) {
-        putSgr(US_SGR_RESET);
+    emitString(tag);
+    if (colour != NULL) {
+        emitString(US_RESET);
     }
-    usConsolePuts(": ");
+    emitString(": ");
 }
 
-/*
- * The colour of a tag, which is the level's business rather than the
- * caller's: a failure is red wherever it is said from
- *
- * Only the tag is coloured. Colouring the message as well would make a long
- * line one block of colour, and the tag is what a reader scans for - the
- * message is what they read once they have found it
- */
 void usConsoleLevel(UsLogLevel level) {
     gLevel = level;
 }
 
-/*
- * Whether the serial output carries the colour escapes
- *
- * Not the screen's business: the screen parses the escapes into the ink it
- * draws with, and it keeps doing that whichever way this is set. Only the
- * bytes that reach the serial port are affected
- */
 void usConsoleColour(bool enabled) {
     gColour = enabled;
 }
 
-void usConsoleLog(const char *tag, UsLogLevel level) {
+void usLog(UsLogLevel level, const char *tag, const char *fmt, ...) {
+    char line[US_LINE_BYTES];
+    va_list args;
+    int length;
+
+    /* Above the level, and nothing is even formatted: a machine that is not
+     * listening should not pay for the line */
     if ((int)level > (int)gLevel) {
-        gDropping = true;
         return;
     }
-    gDropping = false;
+    va_start(args, fmt);
+    length = vsnprintf(line, sizeof(line), fmt, args);
+    va_end(args);
+    if (length < 0) {
+        return;
+    }
+    /* The formatter answers with the length it would have written, which is
+     * past the end of the buffer when the line did not fit */
+    if (length >= (int)sizeof(line)) {
+        length = (int)sizeof(line) - 1;
+    }
     putTag(tag, level);
+    for (int i = 0; i < length; i++) {
+        emit(line[i]);
+    }
 }
 
 /*
@@ -262,16 +250,11 @@ void usConsoleLog(const char *tag, UsLogLevel level) {
  */
 void usConsoleMilestone(const char *what) {
     if ((int)UsLogInfo > (int)gLevel) {
-        gDropping = true;
         return;
     }
-    gDropping = false;
-    putSgr(US_SGR_GREEN);
-    usConsolePuts("milestone");
-    putSgr(US_SGR_RESET);
-    usConsolePuts(": ");
-    usConsolePuts(what);
-    usConsolePuts("\n");
+    emitString(US_GREEN "milestone" US_RESET ": ");
+    emitString(what);
+    emitNewline();
 }
 
 void usConsoleProgress(char mark) {
@@ -280,42 +263,35 @@ void usConsoleProgress(char mark) {
     }
     /*
      * One byte, and no colour: this is written from hooks where the stack is
-     * not ours, and an escape sequence is fourteen bytes of work for a mark
-     * that is read as its own letter anyway. It goes through the same writer
-     * as everything else, so a line that is being dropped swallows this too
+     * not ours, and an escape sequence is a dozen bytes of work for a mark
+     * that is read as its own letter anyway
      */
-    usConsolePutc(mark);
-}
-
-void usConsolePutc(char c) {
-    if (gDropping) {
-        /* The newline is what ends the line that is not being written */
-        if (c == '\n') {
-            gDropping = false;
-        }
-        return;
-    }
-    emit(c);
+    emit(mark);
 }
 
 void usConsolePuts(const char *s) {
     for (; *s != '\0'; s++) {
         if (*s == '\n') {
-            usConsolePutc('\r');
+            emit('\r');
         }
-        usConsolePutc(*s);
+        emit(*s);
     }
 }
 
+/*
+ * Numbers, without the formatter
+ *
+ * These are for the few places that are not a log line and cannot be one --
+ * the plan dump above all -- and they use a small buffer rather than the
+ * formatter, so they are safe on any stack the console is reachable from
+ */
 void usConsolePutHex(uint64_t value) {
-    /* Sixteen characters and a counter: no frame to speak of, which is the
-     * whole point of not using printf here */
     char digits[16];
     int n = 0;
 
-    usConsolePuts("0x");
+    emitString("0x");
     if (value == 0) {
-        usConsolePutc('0');
+        emit('0');
         return;
     }
     while (value != 0 && n < (int)sizeof(digits)) {
@@ -324,7 +300,7 @@ void usConsolePutHex(uint64_t value) {
         value >>= 4;
     }
     while (n > 0) {
-        usConsolePutc(digits[--n]);
+        emit(digits[--n]);
     }
 }
 
@@ -333,7 +309,7 @@ void usConsolePutDec(uint64_t value) {
     int n = 0;
 
     if (value == 0) {
-        usConsolePutc('0');
+        emit('0');
         return;
     }
     while (value != 0 && n < (int)sizeof(digits)) {
@@ -341,6 +317,6 @@ void usConsolePutDec(uint64_t value) {
         value /= 10;
     }
     while (n > 0) {
-        usConsolePutc(digits[--n]);
+        emit(digits[--n]);
     }
 }

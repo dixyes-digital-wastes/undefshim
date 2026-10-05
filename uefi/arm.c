@@ -32,14 +32,12 @@ bool usArmTransfer(UsSession *s) {
     }
     leaf = usLocateTransferLeaf(loader);
     if (!leaf.found) {
-        usConsoleLog("arm", UsLogError);
-        usConsolePuts("no handover to take over\n");
+        usLogE("arm", "no handover to take over\n");
         return false;
     }
     slot = usLocateSpareSlot(loader, US_TRANSFER_BYTES);
     if (!slot.found) {
-        usConsoleLog("arm", UsLogError);
-        usConsolePuts("no slot for the handover stub\n");
+        usLogE("arm", "no slot for the handover stub\n");
         return false;
     }
     /*
@@ -51,15 +49,13 @@ bool usArmTransfer(UsSession *s) {
      */
     slot.rva += slot.bytes - US_TRANSFER_BYTES;
     if (!usEncodeBranch(leaf.patchRVA, slot.rva, &branch)) {
-        usConsoleLog("arm", UsLogError);
-        usConsolePuts("the stub slot is out of branch range\n");
+        usLogE("arm", "the stub slot is out of branch range\n");
         return false;
     }
     branchAt = (uint8_t *)(uintptr_t)usImageRVAToPtr(loader, leaf.patchRVA);
     slotAt = (uint8_t *)(uintptr_t)usImageRVAToPtr(loader, slot.rva);
     if (branchAt == NULL || slotAt == NULL) {
-        usConsoleLog("arm", UsLogError);
-        usConsolePuts("the loader's code is not reachable\n");
+        usLogE("arm", "the loader's code is not reachable\n");
         return false;
     }
     memcpy(slotAt, kTransferStub, US_TRANSFER_BYTES);
@@ -68,14 +64,9 @@ bool usArmTransfer(UsSession *s) {
     memcpy(branchAt, &branch, sizeof(branch));
     usCacheFlushRange(slotAt, US_TRANSFER_BYTES);
     usCacheFlushRange(branchAt, sizeof(branch));
-    usConsoleLog("arm", UsLogVerbose);
-    usConsolePuts("handover +");
-    usConsolePutHex(leaf.patchRVA);
-    usConsolePuts(" -> slot +");
-    usConsolePutHex(slot.rva);
-    usConsolePuts(" -> payload ");
-    usConsolePutHex(payloadEntry);
-    usConsolePuts("\n");
+    usLogV("arm", "handover +" US_VALUE("%#x") " -> slot +" US_VALUE("%#x")
+           " -> payload " US_VALUE("%#llx") "\n",
+           leaf.patchRVA, slot.rva, (unsigned long long)payloadEntry);
     return true;
 }
 
@@ -180,8 +171,7 @@ static bool armSlot(UsSession *s, const UsArmTarget *target) {
         || !usTranslateOwnAddress((uintptr_t)stubAt, true, &stubPA)
         || !usTranslateOwnAddress((uintptr_t)stubAt + sizeof(stub) - 1, true, &lastPA)
         || lastPA != stubPA + sizeof(stub) - 1) {
-        usConsoleLog("arm", UsLogError);
-        usConsolePuts("the stub's own address cannot be translated\n");
+        usLogE("arm", "the stub's own address cannot be translated\n");
         return false;
     }
     original = (uint32_t)slotAt[0] | ((uint32_t)slotAt[1] << 8)
@@ -254,16 +244,10 @@ static bool armSlot(UsSession *s, const UsArmTarget *target) {
     memcpy(slotAt, &enter, sizeof(enter));
     usCacheFlushRange(slotAt, sizeof(enter));
 
-    usConsoleLog("arm", UsLogVerbose);
-    usConsolePuts("vbar +");
-    usConsolePutHex(target->tableRVA);
-    usConsolePuts(" slot ");
-    usConsolePutDec((uint64_t)target->slot);
-    usConsolePuts(" -> stub +");
-    usConsolePutHex(target->stubRVA);
-    usConsolePuts(" -> payload ");
-    usConsolePutHex(s->payloadPlace.baseVA + entryOffset);
-    usConsolePuts("\n");
+    usLogV("arm", "vbar +" US_VALUE("%#x") " slot " US_VALUE("%u") " -> stub +"
+           US_VALUE("%#x") " -> payload " US_VALUE("%#llx") "\n",
+           target->tableRVA, (unsigned)target->slot, target->stubRVA,
+           (unsigned long long)(s->payloadPlace.baseVA + entryOffset));
     return true;
 }
 
@@ -308,22 +292,13 @@ static bool armImage(UsSession *s, UsImageKind kind, size_t *armed) {
     hole = usLocateSpareSlot(img, US_SLOT_RUNTIME_BYTES * US_STUB_SLOTS
                                  * (uint32_t)tables.count);
     if (!hole.found) {
-        usConsoleLog("arm", UsLogError);
-        usConsolePuts("no room in ");
-        usConsolePuts(usImageKindName(kind));
-        usConsolePuts(" for a stub\n");
+        usLogE("arm", "no room in %s for a stub\n", usImageKindName(kind));
         return false;
     }
 
-    usConsoleLog("arm", UsLogVerbose);
-    usConsolePuts(usImageKindName(kind));
-    usConsolePuts(" tables=");
-    usConsolePutDec(tables.count);
-    usConsolePuts(" stubs at +");
-    usConsolePutHex(hole.rva);
-    usConsolePuts(" room=");
-    usConsolePutDec(hole.bytes);
-    usConsolePuts("\n");
+    usLogV("arm", "%s tables=" US_VALUE("%u") " stubs at +" US_VALUE("%#x")
+           " room=" US_VALUE("%u") "\n",
+           usImageKindName(kind), (unsigned)tables.count, hole.rva, hole.bytes);
 
     for (size_t i = 0; i < tables.count; i++) {
         for (size_t k = 0; k < slotCount; k++) {
@@ -361,8 +336,7 @@ bool usArmVectorTable(UsSession *s) {
     size_t armed = 0;
 
     if (!s->payloadPlaced) {
-        usConsoleLog("arm", UsLogError);
-        usConsolePuts("no payload to enter\n");
+        usLogE("arm", "no payload to enter\n");
         return false;
     }
 
@@ -382,8 +356,7 @@ bool usArmVectorTable(UsSession *s) {
     armImage(s, UsImageNtoskrnl, &armed);
 
     if (armed == 0) {
-        usConsoleLog("arm", UsLogError);
-        usConsolePuts("nothing taken over\n");
+        usLogE("arm", "nothing taken over\n");
         return false;
     }
     return true;

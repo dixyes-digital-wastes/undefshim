@@ -53,7 +53,7 @@ cat > "$WORK/run.toml" <<EOF
 ldaprRewrite = $REWRITE
 
 [log]
-level = "info"
+level = "verbose"
 
 [debug]
 enabled = true
@@ -86,7 +86,7 @@ trap stop EXIT INT TERM
 # Wait for the shim to be armed, which is the last thing our side can say.
 armed=no
 for _ in $(seq 1 $((WATCH + 240))); do
-    if grep -q 'M6.5 armed' "$log" 2>/dev/null; then
+    if tests/deploy/plain.sh "$log" | grep -q 'M6.5 armed' 2>/dev/null; then
         armed=yes
         break
     fi
@@ -94,10 +94,10 @@ for _ in $(seq 1 $((WATCH + 240))); do
 done
 if [ "$armed" != "yes" ]; then
     echo "FAIL: the shim was never armed"
-    grep -aE 'arm:|M5' "$log" | tail -6
+    tests/deploy/plain.sh "$log" | grep -aE 'arm:|M5' | tail -6
     exit 1
 fi
-echo "armed: $(grep -a 'arm: vbar' "$log" | tail -1)"
+echo "armed: $(tests/deploy/plain.sh "$log" | grep -a 'arm: vbar' | tail -1)"
 
 # Then leave it alone and watch. The pictures are the result.
 elapsed=0

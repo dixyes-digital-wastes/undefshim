@@ -73,12 +73,12 @@ trap stop EXIT INT TERM
 
 # Wait for the patch to be reported, then for the kernel to take over.
 for _ in $(seq 1 200); do
-    grep -q 'M4 patched' "$log" 2>/dev/null && break
+    tests/deploy/plain.sh "$log" | grep -q 'M4 patched' 2>/dev/null && break
     sleep 1
 done
-if ! grep -q 'M4 patched' "$log"; then
+if ! tests/deploy/plain.sh "$log" | grep -q 'M4 patched'; then
     echo "FAIL: the patch was never applied"
-    grep -aE 'patch|gmm|milestone' "$log" | tail -5
+    tests/deploy/plain.sh "$log" | grep -aE 'patch|gmm|milestone' | tail -5
     exit 1
 fi
 

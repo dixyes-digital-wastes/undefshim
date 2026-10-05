@@ -26,7 +26,7 @@ cat > "$WORK/probe.toml" <<EOF
 version = 1
 
 [log]
-level = "info"
+level = "verbose"
 
 [debug]
 enabled = true
@@ -59,7 +59,7 @@ kill -TERM -"$QPID" 2>/dev/null || true
 sleep 2
 kill -KILL -"$QPID" 2>/dev/null || true
 
-echo "serial: $(grep -c . "$WORK/serial.log" 2>/dev/null || echo 0) lines"
+echo "serial: $(tests/deploy/plain.sh "$WORK/serial.log" | grep -c . 2>/dev/null || echo 0) lines"
 echo "int log: $(wc -l < "$WORK/int.log" 2>/dev/null || echo 0) lines"
 
 python3 - "$WORK/int.log" "$WORK/serial.log" <<'PY'

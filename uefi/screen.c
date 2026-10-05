@@ -44,12 +44,6 @@ typedef struct {
  * was chosen for its size, and scaling it would blur the very pixels that make
  * it worth using
  */
-/*
- * A glyph is drawn at its own size, so a row of text is as tall as the font
- * and a character is as wide as one. Nothing here scales the font: the face
- * was chosen for its size, and scaling it would blur the very pixels that make
- * it worth using
- */
 #define US_SCREEN_LINE US_FONT_HEIGHT
 
 /*

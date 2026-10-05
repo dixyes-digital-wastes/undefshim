@@ -42,7 +42,7 @@ cat > "$WORK/patch.toml" <<EOF
 version = 1
 
 [log]
-level = "info"
+level = "verbose"
 
 [debug]
 enabled = true
@@ -67,23 +67,23 @@ if ! ESP="$WORK/patch.img" SERIAL_LOG="$log" WIN_DISK="$WIN_DISK" \
      STOP_PATTERN='M4 patched|M4 failed' BOOT_TIMEOUT="${BOOT_TIMEOUT:-420}" \
      tests/deploy/run.sh >"$WORK/patch.run" 2>&1; then
     echo "FAIL: the patch was never applied"
-    grep -E 'loadimage|gmm|patch' "$log" | tail -8
+    tests/deploy/plain.sh "$log" | grep -E 'loadimage|gmm|patch' | tail -8
     exit 1
 fi
 
-if ! grep -q "patch: $PATCH_TAG at " "$log"; then
+if ! tests/deploy/plain.sh "$log" | grep -q "patch: $PATCH_TAG at "; then
     echo "FAIL: no patch report"
-    grep -E 'patch: ' "$log" | tail -5
+    tests/deploy/plain.sh "$log" | grep -E 'patch: ' | tail -5
     exit 1
 fi
 
-base=$(sed -n 's/.*gmm: winload found at 0x\([0-9a-f]*\).*/\1/p' "$log" | head -1)
-wrote=$(sed -n "s/.*patch: $PATCH_TAG at 0x\([0-9a-f]*\).*/\1/p" "$log" | head -1)
-value=$(sed -n "s/.*patch: $PATCH_TAG at 0x[0-9a-f]* = \(0x[0-9a-f]*\)\/.*/\1/p" "$log" | head -1)
+base=$(tests/deploy/plain.sh "$log" | sed -n 's/.*gmm: winload found at 0x\([0-9a-f]*\).*/\1/p' | head -1)
+wrote=$(tests/deploy/plain.sh "$log" | sed -n "s/.*patch: $PATCH_TAG at 0x\([0-9a-f]*\).*/\1/p" | head -1)
+value=$(tests/deploy/plain.sh "$log" | sed -n "s/.*patch: $PATCH_TAG at 0x[0-9a-f]* = \(0x[0-9a-f]*\)\/.*/\1/p" | head -1)
 
 if [ -z "$base" ] || [ -z "$wrote" ]; then
     echo "FAIL: the reports are not parseable"
-    grep -E 'gmm: winload found|patch: ' "$log" | tail -5
+    tests/deploy/plain.sh "$log" | grep -E 'gmm: winload found|patch: ' | tail -5
     exit 1
 fi
 

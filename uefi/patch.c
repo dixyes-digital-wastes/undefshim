@@ -17,8 +17,10 @@ static void markApplied(UsSession *s, uint32_t i) {
     s->patchApplied |= (1u << i);
 }
 
-static void reportName(const UsPatch *p) {
-    usConsolePuts(p->tag != NULL ? p->tag : p->target);
+/* The patch's own name: what the configuration called it, or the image it
+ * names when it was not given one */
+static const char *patchName(const UsPatch *p) {
+    return p->tag != NULL ? p->tag : p->target;
 }
 
 int usPatchApplyPending(UsSession *s) {
@@ -61,11 +63,7 @@ int usPatchApplyPending(UsSession *s) {
 
         r = usPatchApply(img, &spec, &range);
         if (r != UsPatchOk) {
-            usConsoleLog("patch", UsLogError);
-            reportName(p);
-            usConsolePuts(" failed: ");
-            usConsolePuts(usPatchResultName(r));
-            usConsolePuts("\n");
+            usLogE("patch", "%s failed: %s\n", patchName(p), usPatchResultName(r));
             /* The image is here, so retrying would fail the same way */
             markApplied(s, i);
             continue;
@@ -77,15 +75,10 @@ int usPatchApplyPending(UsSession *s) {
          */
         usCacheFlushRange(range.addr, range.bytes);
 
-        usConsoleLog("patch", UsLogVerbose);
-        reportName(p);
-        usConsolePuts(" at ");
-        usConsolePutHex((uint64_t)(uintptr_t)range.addr);
-        usConsolePuts(" = ");
-        usConsolePutHex(p->value);
-        usConsolePuts("/");
-        usConsolePutDec((uint64_t)p->width);
-        usConsolePuts("\n");
+        usLogV("patch", "%s at " US_VALUE("%#llx") " = " US_VALUE("%#llx") "/"
+               US_VALUE("%u") "\n", patchName(p),
+               (unsigned long long)(uintptr_t)range.addr,
+               (unsigned long long)p->value, (unsigned)p->width);
 
         markApplied(s, i);
         applied++;
@@ -112,17 +105,13 @@ void usPatchReportPending(const UsSession *s) {
 
     for (uint32_t i = 0; i < cfg->patchCount; i++) {
         if (i >= US_PATCH_MAX) {
-            usConsoleLog("patch", UsLogWarn);
-            usConsolePuts("table longer than ");
-            usConsolePutDec(US_PATCH_MAX);
-            usConsolePuts(", the rest is ignored\n");
+            usLogW("patch", "table longer than " US_VALUE("%u") ", the rest is ignored\n",
+                   (unsigned)US_PATCH_MAX);
             return;
         }
         if (isApplied(s, i)) {
             continue;
         }
-        usConsoleLog("patch", UsLogWarn);
-        reportName(&cfg->patches[i]);
-        usConsolePuts(" never matched an image\n");
+        usLogW("patch", "%s never matched an image\n", patchName(&cfg->patches[i]));
     }
 }

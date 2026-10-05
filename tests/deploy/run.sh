@@ -111,9 +111,9 @@ wait "$QEMU_PID" 2>/dev/null || true
 
 # An exception is a failure whatever else the log contains, so it is checked
 # before the expected marker.
-if grep -q "$FAULT_PATTERN" "$SERIAL_LOG"; then
+if tests/deploy/plain.sh "$SERIAL_LOG" | grep -q "$FAULT_PATTERN"; then
     echo "FAIL: the guest took an exception"
-    grep -n "$FAULT_PATTERN" "$SERIAL_LOG" | head -3
+    tests/deploy/plain.sh "$SERIAL_LOG" | grep -n "$FAULT_PATTERN" | head -3
     exit 1
 fi
 

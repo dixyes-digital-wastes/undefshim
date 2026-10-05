@@ -84,11 +84,9 @@ size_t usRewriteOne(UsImage *img) {
     size_t changed = rewriteImage(img);
 
     if (changed != 0) {
-        usConsoleLog("rewrite", UsLogInfo);
-        usConsolePutDec(changed);
-        usConsolePuts(" in an image at ");
-        usConsolePutHex((uint64_t)(uintptr_t)img->base);
-        usConsolePuts("\n");
+        usLogI("rewrite", US_VALUE("%u") " in an image at " US_VALUE("%#llx") "\n",
+               (unsigned)changed,
+               (unsigned long long)(uintptr_t)img->base);
     }
     return changed;
 }
@@ -110,18 +108,12 @@ size_t usRewriteLDAPR(UsSession *session) {
         /* How many instructions the image carried, whether or not any were
          * replaced: a scan that found nothing and a scan that did not run
          * look the same otherwise, and they mean opposite things */
-        usConsoleLog("rewrite", UsLogInfo);
-        usConsolePuts(usImageKindName(kinds[i]));
-        usConsolePuts(" holds ");
-        usConsolePutDec((uint64_t)usCountLDAPR(img).total);
-        usConsolePuts("\n");
+        usLogI("rewrite", "%s holds " US_VALUE("%u") "\n", usImageKindName(kinds[i]),
+               (unsigned)usCountLDAPR(img).total);
         changed = rewriteImage(img);
         if (changed != 0) {
-            usConsoleLog("rewrite", UsLogInfo);
-            usConsolePutDec(changed);
-            usConsolePuts(" in ");
-            usConsolePuts(usImageKindName(kinds[i]));
-            usConsolePuts("\n");
+            usLogI("rewrite", US_VALUE("%u") " in %s\n", (unsigned)changed,
+                   usImageKindName(kinds[i]));
         }
         total += changed;
     }

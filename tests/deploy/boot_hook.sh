@@ -44,15 +44,15 @@ BOOT_TIMEOUT="${BOOT_TIMEOUT:-420}" \
 status=$?
 if [ "$status" -ne 0 ]; then
     echo "FAIL: the hook never reported an image"
-    tail -5 "$SERIAL_LOG"
+    tests/deploy/plain.sh "$SERIAL_LOG" | tail -5
     exit 1
 fi
 
-if ! grep -q 'loadimage: registered' "$SERIAL_LOG"; then
+if ! tests/deploy/plain.sh "$SERIAL_LOG" | grep -q 'loadimage: registered'; then
     echo "FAIL: the hook fired but did not register the image"
-    grep -E 'loadimage' "$SERIAL_LOG" | tail -5
+    tests/deploy/plain.sh "$SERIAL_LOG" | grep -E 'loadimage' | tail -5
     exit 1
 fi
 
 echo "PASS: the hook fired and registered the boot manager"
-grep -E 'loadimage' "$SERIAL_LOG" | tail -5
+tests/deploy/plain.sh "$SERIAL_LOG" | grep -E 'loadimage' | tail -5
