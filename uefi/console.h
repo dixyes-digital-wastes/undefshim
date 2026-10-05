@@ -42,6 +42,14 @@ void usConsoleUse(UsUARTKind kind, uint64_t base, uint32_t width);
 void usConsoleLevel(UsLogLevel level);
 
 /*
+ * Whether a line at this level would be written. The level decides before
+ * anything is formatted, which is enough for a line that costs nothing to
+ * assemble; this is for the ones that cost something before they can be
+ * assembled at all
+ */
+bool usConsoleWants(UsLogLevel level);
+
+/*
  * Whether the serial output carries the colour escapes. On unless asked
  * otherwise: they are what a terminal reading the log back shows. Off is for
  * a log that is going to be compared byte for byte, or read by something that

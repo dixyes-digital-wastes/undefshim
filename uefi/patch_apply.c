@@ -280,27 +280,54 @@ static void digestText(UsImage *image, uint8_t *code, uint32_t bytes, uint8_t ou
 }
 
 /*
- * Printing the digest of the image's text is how a list gets written for this
- * build rather than for a file that looks like it: the two are not always the
- * same binary, and a list that says "another build" is the check working
+ * Says which build an image is, in the two ways anything downstream is keyed
+ * on it: the digest of its text, which a list is written against, and the
+ * identity of the program database it was linked against, which a symbol
+ * server is. Both are read out of the image itself, so a build can be named
+ * from the machine without ever having had the file
+ *
+ * The digest is over megabytes of text, so nothing is hashed until something
+ * is going to be said
  */
-static void reportTextHash(UsImage *image) {
+void usImageReportBuild(UsImage *image) {
     static const char digits[] = "0123456789abcdef";
     uint32_t bytes = 0;
-    uint8_t *code = imageText(image, &bytes);
+    uint8_t *code;
     uint8_t digest[32];
     char hex[sizeof(digest) * 2U + 1U];
+    UsPatchIdentity identity;
 
-    if (code == NULL) {
+    if (image == NULL || !usConsoleWants(UsLogVerbose)) {
         return;
     }
-    digestText(image, code, bytes, digest);
-    for (uint32_t i = 0; i < sizeof(digest); i++) {
-        hex[i * 2U] = digits[digest[i] >> 4];
-        hex[i * 2U + 1U] = digits[digest[i] & 0xfU];
+    code = imageText(image, &bytes);
+    if (code != NULL) {
+        digestText(image, code, bytes, digest);
+        for (uint32_t i = 0; i < sizeof(digest); i++) {
+            hex[i * 2U] = digits[digest[i] >> 4];
+            hex[i * 2U + 1U] = digits[digest[i] & 0xfU];
+        }
+        hex[sizeof(hex) - 1U] = '\0';
+        usLogV("image", "text sha256 %s\n", hex);
     }
-    hex[sizeof(hex) - 1U] = '\0';
-    usLogD("patch", "text sha256 %s\n", hex);
+    if (imageIdentity(image, &identity)) {
+        /* Written the way a debugger writes it: the sixteen bytes are in the
+         * order the record holds them, which is not the order a GUID is
+         * usually spelled in, and the age follows the same way it does there.
+         * This is the string a list carries, so it has to match it */
+        char guid[16U * 2U + 4U + 1U];
+        uint32_t at = 0;
+
+        for (uint32_t i = 0; i < 16U; i++) {
+            if (i == 4U || i == 6U || i == 8U || i == 10U) {
+                guid[at++] = '-';
+            }
+            guid[at++] = digits[identity.guid[i] >> 4];
+            guid[at++] = digits[identity.guid[i] & 0xfU];
+        }
+        guid[at] = '\0';
+        usLogV("image", "pdb %s-" US_VALUE("%u") "\n", guid, (unsigned)identity.age);
+    }
 }
 
 void usPatchApplyLists(UsSession *session, UsImage *image) {
@@ -326,7 +353,6 @@ void usPatchApplyLists(UsSession *session, UsImage *image) {
     if (volume == NULL) {
         return;
     }
-    reportTextHash(image);
     if (EFI_ERROR(BS->HandleProtocol(volume, &sfsGUID, (void **)&sfs)) || sfs == NULL) {
         return;
     }

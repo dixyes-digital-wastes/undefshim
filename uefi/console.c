@@ -31,6 +31,18 @@
 
 #define US_PL011_FR_TXFF (1U << 5)
 
+/*
+ * TODO: debug only remove this
+ * The Hi1620's UART0 runs at 200 MHz, which is what its firmware programs:
+ * reading IBRD and FBRD back on the board gives 108 and 32, and those are the
+ * divisors for 115200 off that clock. QEMU's virt is not this number, so a
+ * run there wants its own; the clock is what the board states, not what the
+ * driver can find out, and it is the one thing in this file that has to be
+ * told rather than asked
+ */
+#define US_PL011_CLK 200000000U
+#define US_PL011_BAUD 115200U
+
 /* The 8250's registers, a byte apart, or a word apart on a 32 bit bus */
 #define US_8250_THR 0x00U
 #define US_8250_IER 0x01U
@@ -79,10 +91,15 @@ static void writeReg(uint32_t index, uint32_t value) {
 
 static void bringUp(void) {
     if (gKind == UsUARTPL011) {
+        /* Divisor = clk / (16 * baud), as the PL011's own bit clock is 16
+         * times the line rate: the integer part in IBRD, the remaining
+         * sixty-fourths in FBRD */
+        uint32_t divisor = (uint32_t)(((uint64_t)US_PL011_CLK * 4U) / US_PL011_BAUD);
+
         writeReg(US_PL011_CR, 0U);
         writeReg(US_PL011_ICR, 0x7FFU);
-        writeReg(US_PL011_IBRD, 13U);
-        writeReg(US_PL011_FBRD, 43U);
+        writeReg(US_PL011_IBRD, divisor >> 6);
+        writeReg(US_PL011_FBRD, divisor & 0x3FU);
         writeReg(US_PL011_LCRH, 0x70U); /* eight bits, no parity, FIFOs on */
         writeReg(US_PL011_CR, 0x301U);  /* enabled, transmitting, receiving */
         return;
@@ -212,6 +229,10 @@ static void putTag(const char *tag, UsLogLevel level) {
 
 void usConsoleLevel(UsLogLevel level) {
     gLevel = level;
+}
+
+bool usConsoleWants(UsLogLevel level) {
+    return (int)level <= (int)gLevel;
 }
 
 void usConsoleColour(bool enabled) {

@@ -14,6 +14,7 @@
 #include "uefi/console.h"
 #include "uefi/gmm_hook.h"
 #include "uefi/patch.h"
+#include "uefi/patch_apply.h"
 #include "uefi/service_hook.h"
 #include "uefi/stack.h"
 #include "uefi/work.h"
@@ -167,6 +168,7 @@ static efi_status_t EFIAPI gmmHook(uintn_t *memoryMapSize, efi_memory_descriptor
             gReportedKernel = true;
             usLogV("gmm", "ntoskrnl found at " US_VALUE("%#llx") "\n",
                    (unsigned long long)(uintptr_t)kernel->base);
+            usImageReportBuild(kernel);
         }
     }
 
