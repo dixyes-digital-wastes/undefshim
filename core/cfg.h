@@ -20,15 +20,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "common/log.h"
 #include "toml.h"
-
-typedef enum UsLogLevel_e {
-    UsLogOff,
-    UsLogError,
-    UsLogInfo,
-    UsLogVerbose,
-    UsLogDebug,
-} UsLogLevel;
 
 /*
  * One entry of the debug patch table. The bootPhase applies these directly,

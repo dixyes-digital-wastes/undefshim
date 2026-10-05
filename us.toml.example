@@ -21,7 +21,7 @@ width = 32              # 8 or 32; an 8250 on a 32 bit bus wants 32
 
 [log]
 # How much the driver says. Options, least to most:
-#   "off" | "error" | "info" | "verbose" | "debug"
+#   "off" | "error" | "warn" | "info" | "verbose" | "debug"
 level = "info"
 
 [scan]
