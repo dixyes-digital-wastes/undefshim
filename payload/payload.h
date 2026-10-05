@@ -199,15 +199,7 @@ typedef struct UsPayloadStub_t {
      * offset from the image's base, passed with the stub
      */
     uint32_t descriptorBaseRVA;
-    /*
-     * Set for the stubs that live in the kernel image, which are the ones
-     * that must already point at the payload's post-switch address before
-     * the kernel runs: the kernel builds its own tables and, on some boots,
-     * stops mapping the payload at the address the boot used. A stub reached
-     * before it has been published would branch to an unmapped address and
-     * fault, and the fault arrives back at the same stub
-     */
-    uint32_t kernelImage;
+    uint32_t reserved;
 } UsPayloadStub;
 
 /*
