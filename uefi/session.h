@@ -40,24 +40,34 @@ typedef struct UsSession_t {
     UsPayloadPlace payloadPlace;
     bool           payloadPlaced;
 
-    /* Whether to take over the loader's handover to the kernel. Off by
-     * default: see work.c for what still has to be true for it to work */
-    bool           armEnabled;
-
-    /* Whether to catch the address change notification. Off by default */
-    bool           vamapEnabled;
+    /*
+     * Whether to take over the branch winload jumps into the kernel with.
+     * This is what tells every other stub where the payload ended up, so it
+     * is the one piece that has to happen first
+     */
+    bool           stubHandover;
 
     /*
-     * Whether to take over the SP0 synchronous slot as well as the SPx one
+     * Whether to take the synchronous slots of the two vector tables. The
+     * loader's is in force until the kernel installs its own, and the
+     * kernel's after that; a load the rewrite did not reach arrives here
+     */
+    bool           stubVectors;
+
+    /* Whether to catch the address change notification */
+    bool           vamap;
+
+    /*
+     * Whether to take over the EL1t synchronous slot as well as the EL1h one
      *
      * The two are not interchangeable and are not equally safe to write. The
-     * SPx slot holds a branch, so its own behaviour is two instructions that
-     * the stub can replay. The SP0 slot holds a handler written out in place,
+     * EL1h slot holds a branch, so its own behaviour is two instructions that
+     * the stub can replay. The EL1t slot holds a handler written out in place,
      * and that handler's first instructions clobber registers the stub also
      * needs -- so taking it over is a different proposition and is kept
      * separate rather than assumed
      */
-    bool           armSlot0;
+    bool           stubVectorsEl1t;
 
     /*
      * Whether to treat the SPx vector's stack as one the stub may push on
@@ -74,7 +84,7 @@ typedef struct UsSession_t {
      * handling the exceptions they cause. On by default: it is the mechanism
      * that covers the kernel, and the exception path covers what it cannot
      */
-    bool           ldaprRewrite;
+    bool           imageInplaceRewrite;
 
     /*
      * The parsed configuration, owned here. Its patch table names stages that

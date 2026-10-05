@@ -65,7 +65,6 @@ color = false
 level = "verbose"
 
 [debug]
-enabled = true
 
 [[debug.patch]]
 target = "ntoskrnl"

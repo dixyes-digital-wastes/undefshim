@@ -44,20 +44,28 @@ typedef struct UsConfig_t {
     char         *text;   /* owned copy, the document's storage */
     toml_table_t *root;   /* owned, NULL when the config is empty */
     UsLogLevel    logLevel;
-    bool          ldaprRewrite;
-    /* Whether user-mode instructions may be replaced while the kernel runs */
-    bool          el0InPlace;
+
+    /*
+     * What to do about RCpc loads, from [ldapr]. Both are on unless turned
+     * off, and turning either off costs exceptions rather than correctness:
+     * the exception path carries out what the replacement did not
+     */
+    bool          imageInplaceRewrite;
+    bool          el0InplaceRewrite;
+
     /*
      * Whether the handler keeps a count of where traps are taken. It costs a
      * lookup on every entry, so it is off unless asked for
      */
     bool          statsEnabled;
+
     /*
      * Directory of patch list files, relative to the volume the configuration
      * was read from. Points into the document storage. An empty string turns
      * the feature off; the volume root is refused where it is used
      */
     const char   *patchDir;
+
     /*
      * Where the kernel's own page table base lives, as an RVA, for the builds
      * that state it. It is a property of the build rather than of any list,
@@ -67,6 +75,7 @@ typedef struct UsConfig_t {
      */
     bool          hasDescriptorBase;
     uint32_t      descriptorBaseRVA;
+
     /*
      * Where to report from, from the [uart] table: the driver, the payload
      * and anything reporting later all need it. Leaving it out is how a
@@ -83,7 +92,27 @@ typedef struct UsConfig_t {
      * understand the escapes ignores them
      */
     bool          uartColour;
-    bool          debugEnabled;
+
+    /*
+     * The switches that take parts of the mechanism out of the way, from
+     * [debug]. Each is named for what it stops rather than for what it does,
+     * and every one is false unless set: the mechanism is whole in a file
+     * that does not mention them, and a key here can only ever be a remark
+     * about a machine being brought up
+     */
+    bool          notArmVectors;
+    bool          notArmVectorsEl1t;
+    bool          notArmHandover;
+    bool          notVamap;
+
+    /*
+     * Whether to treat the SPx vector's stack as one the stub may push on.
+     * This one is not a "not": the stub pushing there is the extra thing, so
+     * false - the ordinary answer - is the default and the name reads the
+     * same way round as the rest of this table
+     */
+    bool          spxStack;
+
     UsPatch      *patches;    /* owned array */
     uint32_t      patchCount;
 } UsConfig;
@@ -99,10 +128,9 @@ UsConfig *usConfigParse(const char *text, size_t len, char *err, size_t errLen);
 void usConfigFree(UsConfig *c);
 
 /*
- * The [debug] table is a free form bag of bools, ints and strings. These look
- * a key up and fall back to def when it is absent. US_CFG_DEBUG_* is the
- * convention used in the shipped file
+ * The name a level is spelled with, so a dump of the configuration can print
+ * what it read the way the file would have said it
  */
-bool usConfigDebugBool(const UsConfig *c, const char *key, bool def);
+const char *usConfigLogLevelName(UsLogLevel level);
 
 #endif

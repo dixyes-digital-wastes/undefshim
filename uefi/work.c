@@ -78,7 +78,7 @@ void usWorkCollect(UsSession *session) {
      * into the kernel with, and the stub left in its place is what points
      * every other stub at the payload's runtime address before the kernel runs
      */
-    if (req.complete && session->armEnabled && usArmTransfer(session)) {
+    if (req.complete && session->stubHandover && usArmTransfer(session)) {
         usConsoleMilestone("M6.5 transfer");
     }
     /*
@@ -88,7 +88,7 @@ void usWorkCollect(UsSession *session) {
      * the payload's address -- is known there, and the memory it writes is
      * writable there
      */
-    if (req.complete && session->armEnabled && usArmVectorTable(session)) {
+    if (req.complete && session->stubVectors && usArmVectorTable(session)) {
         usConsoleMilestone("M6.5 armed");
     }
     /*
@@ -99,7 +99,7 @@ void usWorkCollect(UsSession *session) {
      * while arming ntoskrnl, with all of its LDAPRs already an LDAR.
      * Both still happen before the kernel runs any of it
      */
-    if (req.complete && session->ldaprRewrite) {
+    if (req.complete && session->imageInplaceRewrite) {
         size_t replaced = usRewriteLDAPR(session);
 
         usConsoleMilestone(replaced != 0 ? "M7 rewritten" : "M7 nothing to rewrite");

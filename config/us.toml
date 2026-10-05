@@ -14,12 +14,12 @@ color = true
 [log]
 level = "info"       # off | error | warn | info | verbose | debug
 
-[scan]
-# Replace the RCpc loads in the images before they run.
-ldaprRewrite = true
-# Replace them in user mode while the kernel runs. Turn it off to keep the
+[ldapr]
+# Replace the RCpc loads in ntoskrnl and winload before either runs.
+imageInplaceRewrite = true
+# Replace them in user mode at the moment one traps. Turn it off to keep the
 # kernel from ever writing to a page it does not own.
-el0InPlace = true
+el0InplaceRewrite = true
 
 [stats]
 # Count where traps are taken, in the pool. It costs a lookup per trap.
@@ -36,9 +36,11 @@ descriptorBaseRVA = 0xE06368
 dir = "usPatch"
 
 [debug]
-# The switches below change what the boot does, for investigating it.
-enabled = false
-arm = true        # arm the exception vectors at all
-armSlot0 = true   # arm the EL1t slot as well; false is known to bugcheck early
-spxStack = false  # let the stub push on the SPx vector too
-vamap = true      # register the runtime VA notification
+# Pieces of the mechanism taken out of the way, for investigating. Every one
+# is off by default; a name beginning "not" means the driver does that thing
+# unless the switch is set.
+notArmVectors = false        # do not take the exception vectors over
+notArmVectorsEl1t = false    # do not take the EL1t slot; false is known to bugcheck early
+notArmHandover = false       # do not take the winload-to-kernel branch over
+notVamap = false             # do not register the runtime VA notification
+spxStack = false             # let the stub push on the SPx vector too

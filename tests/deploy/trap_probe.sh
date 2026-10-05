@@ -41,10 +41,6 @@ color = false
 
 [log]
 level = "verbose"
-
-[debug]
-enabled = true
-arm = true
 EOF
 
 CONFIG="$WORK/probe.toml" ESP="$ESP" tests/deploy/build_esp.sh >/dev/null || exit 1

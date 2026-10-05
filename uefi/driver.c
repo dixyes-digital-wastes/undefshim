@@ -32,20 +32,60 @@
 /* The driver's state. One instance, because there is one driver */
 static UsSession gSession;
 
+/* The two words a boolean is written with, so the dump reads like the file */
+static const char *boolWord(bool value) {
+    return value ? "true" : "false";
+}
+
+/*
+ * The configuration as it was understood rather than as it was written
+ *
+ * Every key the driver read is printed, the ones the file did not mention
+ * included, so what a machine is doing can be read off this alone - without
+ * also having to know what the defaults are. The shape is the file's own, one
+ * table to a line, because the next question after reading this is almost
+ * always what the file said, and two documents that look alike are easier to
+ * compare than two that do not
+ */
 static void printConfig(const UsConfig *cfg) {
-    usLogV("config", "level=" US_VALUE("%u") " rewrite=" US_VALUE("%u")
-           " debug=" US_VALUE("%u") " patches=" US_VALUE("%u") "\n",
-           (unsigned)cfg->logLevel, (unsigned)cfg->ldaprRewrite,
-           (unsigned)cfg->debugEnabled, (unsigned)cfg->patchCount);
+    usLogV("config", "[log] level=\"" US_VALUE("%s") "\"\n",
+           usConfigLogLevelName(cfg->logLevel));
 
-    for (uint32_t i = 0; i < cfg->patchCount; i++) {
-        const UsPatch *p = &cfg->patches[i];
-
-        usLogV("patch", "%s +" US_VALUE("%#llx") " = " US_VALUE("%#llx") "/" US_VALUE("%u") " %s\n",
-               p->target != NULL ? p->target : "-",
-               (unsigned long long)p->rva, (unsigned long long)p->value,
-               (unsigned)p->width, p->tag != NULL ? p->tag : "-");
+    if (cfg->hasUART) {
+        usLogV("config", "[uart] baseAddr=" US_VALUE("%#llx") " type=\""
+               US_VALUE("%s") "\" width=" US_VALUE("%u") " color=" US_VALUE("%s")
+               "\n",
+               (unsigned long long)cfg->uartBase, cfg->uartType,
+               (unsigned)cfg->uartWidth, boolWord(cfg->uartColour));
+    } else {
+        usLogV("config", "[uart] absent\n");
     }
+
+    usLogV("config", "[ldapr] imageInplaceRewrite=" US_VALUE("%s")
+           " el0InplaceRewrite=" US_VALUE("%s") "\n",
+           boolWord(cfg->imageInplaceRewrite), boolWord(cfg->el0InplaceRewrite));
+
+    usLogV("config", "[stats] enabled=" US_VALUE("%s") "\n",
+           boolWord(cfg->statsEnabled));
+
+    if (cfg->hasDescriptorBase) {
+        usLogV("config", "[kernel] descriptorBaseRVA=" US_VALUE("%#x") "\n",
+               (unsigned)cfg->descriptorBaseRVA);
+    } else {
+        usLogV("config", "[kernel] absent\n");
+    }
+
+    usLogV("config", "[patch] dir=\"" US_VALUE("%s") "\"\n", cfg->patchDir);
+
+    /* Every switch, so a machine that has taken something out of the way says
+     * so here rather than leaving it to be worked out from what it did not do */
+    usLogV("config", "[debug] notArmVectors=" US_VALUE("%s")
+           " notArmVectorsEl1t=" US_VALUE("%s") " notArmHandover=" US_VALUE("%s")
+           " notVamap=" US_VALUE("%s") " spxStack=" US_VALUE("%s")
+           " patches=" US_VALUE("%u") "\n",
+           boolWord(cfg->notArmVectors), boolWord(cfg->notArmVectorsEl1t),
+           boolWord(cfg->notArmHandover), boolWord(cfg->notVamap),
+           boolWord(cfg->spxStack), (unsigned)cfg->patchCount);
 }
 
 int main(int argc, char **argv) {
@@ -103,21 +143,19 @@ int main(int argc, char **argv) {
         return 0;
     }
 
-    /* After the session is initialised, which establishes its own defaults.
-     * The switches that change what the boot does are debugging decisions
-     * like any other, so they come from the configuration file */
-    gSession.armEnabled = usConfigDebugBool(cfg, "arm", false);
-    gSession.armSlot0 = usConfigDebugBool(cfg, "armSlot0", true);
-    gSession.spxStack = usConfigDebugBool(cfg, "spxStack", false);
-    gSession.vamapEnabled = usConfigDebugBool(cfg, "vamap", gSession.armEnabled);
     /*
-     * Not from the debug section: this one is a scanning decision and is
-     * parsed into the configuration proper, under [scan]. Reading it here as
-     * a debug key would silently override whatever the file said with the
-     * default, which is how a check that turns the replacement off ended up
-     * running with it on
+     * The switches come from the configuration, each named for what it stops,
+     * so a document that does not mention them gets the whole mechanism. They
+     * are read here rather than inside usSessionInit because the file has to
+     * be read first, and because reading one twice is how a check that turned
+     * a thing off ended up running with it on
      */
-    gSession.ldaprRewrite = cfg->ldaprRewrite;
+    gSession.stubVectors = !cfg->notArmVectors;
+    gSession.stubVectorsEl1t = !cfg->notArmVectorsEl1t;
+    gSession.stubHandover = !cfg->notArmHandover;
+    gSession.vamap = !cfg->notVamap;
+    gSession.spxStack = cfg->spxStack;
+    gSession.imageInplaceRewrite = cfg->imageInplaceRewrite;
 
     /* Handed over rather than freed: the patch table names stages that are
      * loaded long after this function has returned */
@@ -164,7 +202,7 @@ int main(int argc, char **argv) {
     usLogI("gmm", "armed\n");
 
     /* The notification publishes high-VA exception targets before low VAs retire */
-    if (gSession.vamapEnabled && !usVAMapArm(&gSession)) {
+    if (gSession.vamap && !usVAMapArm(&gSession)) {
         usLogE("vamap", "cannot arm\n");
         usConsoleMilestone("M6 failed");
         return 0;

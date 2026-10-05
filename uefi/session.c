@@ -15,11 +15,17 @@ bool usSessionInit(UsSession *s) {
     s->config = NULL;
     s->patchApplied = 0;
     s->payloadPlaced = false;
-    s->armEnabled = false;
-    s->vamapEnabled = false;
-    /* On unless the configuration says otherwise: this is the mechanism the
-     * kernel depends on, and the driver sets it from the file afterwards */
-    s->ldaprRewrite = true;
+    /*
+     * What a document that says nothing gets: the whole mechanism. The driver
+     * sets every one of these from the configuration file afterwards, and the
+     * [debug] switches are what take a piece of it out
+     */
+    s->stubHandover = true;
+    s->stubVectors = true;
+    s->stubVectorsEl1t = true;
+    s->vamap = true;
+    s->spxStack = false;
+    s->imageInplaceRewrite = true;
 
     /* Read once: the tables are the boot's and are gone with it */
     s->cpus = usACPIProbeCPUs();

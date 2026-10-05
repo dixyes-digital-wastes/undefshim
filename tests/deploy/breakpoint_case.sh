@@ -52,9 +52,6 @@ width = 32
 # is one more thing that can come between them and the pattern
 color = false
 
-[debug]
-enabled = true
-
 [[debug.patch]]
 target = "ntoskrnl"
 rva    = $NTO_RVA
