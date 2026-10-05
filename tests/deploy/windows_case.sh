@@ -61,15 +61,11 @@ width = 32
 # is one more thing that can come between them and the pattern
 color = false
 
-[scan]
-ldaprRewrite = $REWRITE
+[ldapr]
+imageInplaceRewrite = $REWRITE
 
 [log]
 level = "verbose"
-
-[debug]
-enabled = true
-arm = true
 EOF
 
 log="$WORK/serial.log"

@@ -112,11 +112,8 @@ color = false
 [log]
 level = "verbose"
 
-[scan]
-ldaprRewrite = false
-
-[debug]
-enabled = true
+[ldapr]
+imageInplaceRewrite = false
 
 [[debug.patch]]
 target = "ntoskrnl"
@@ -159,9 +156,11 @@ run_screen_case range  "$WORK/range.toml" "broken"
 run_screen_case absent ""                 "using defaults"
 
 # The loaded case has to show the file's values, not the defaults.
-if ! tests/deploy/plain.sh "$WORK/loaded.log" | grep -q "config: level=4 rewrite=0 debug=1 patches=1"; then
+if ! tests/deploy/plain.sh "$WORK/loaded.log" | grep -q 'config: \[log\] level="verbose"' \
+    || ! tests/deploy/plain.sh "$WORK/loaded.log" | grep -q 'config: \[ldapr\] imageInplaceRewrite=false' \
+    || ! tests/deploy/plain.sh "$WORK/loaded.log" | grep -q 'patches=1'; then
     checkSoft "loaded: the values are not the ones the file states"
-    tests/deploy/plain.sh "$WORK/loaded.log" | grep -E 'level=' || true
+    tests/deploy/plain.sh "$WORK/loaded.log" | grep -E '^config: ' || true
     failures=$((failures + 1))
 else
     checkGood "loaded: the values came from the file"

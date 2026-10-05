@@ -460,8 +460,8 @@ static bool emulateLDAPR(UsFrame *frame, int cpu) {
      *
      * Whether even the user-mode replacement is wanted is the configuration's
      * business: a machine that should not have foreign code patched
-     * underneath it sets [scan] el0InPlace to false, and then every RCpc load
-     * keeps taking the exception, which is slower and always correct
+     * underneath it sets [ldapr] el0InplaceRewrite to false, and then every
+     * RCpc load keeps taking the exception, which is slower and always correct
      */
     if (usPayloadConfig()->el0InPlace != 0
         && usSlotOfSPSR(frame->spsr) == UsStubSlotEL0) {

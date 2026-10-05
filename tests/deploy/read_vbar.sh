@@ -30,10 +30,6 @@ color = false
 
 [log]
 level = "verbose"
-
-[debug]
-enabled = true
-arm = true
 EOF
     CONFIG="$WORK/run.toml" ESP="$ESP" tests/deploy/build_esp.sh >/dev/null 2>&1 || {
         checkNote "the volume could not be built"; exit 1; }

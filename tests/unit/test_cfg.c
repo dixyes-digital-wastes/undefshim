@@ -82,12 +82,18 @@ static void testDefaults(void) {
         return;
     }
     eqInt("default log level", c->logLevel, UsLogInfo);
-    eqInt("default ldaprRewrite", c->ldaprRewrite, 1);
-    eqInt("default el0InPlace", c->el0InPlace, 1);
+    eqInt("default imageInplaceRewrite", c->imageInplaceRewrite, 1);
+    eqInt("default el0InplaceRewrite", c->el0InplaceRewrite, 1);
     ok("default no uart", c->hasUART == false);
-    eqInt("default debug.enabled", c->debugEnabled, 0);
+    eqInt("default stats.enabled", c->statsEnabled, 0);
+    /* Every switch that takes a piece of the mechanism out is off: the whole
+     * of it is what a document that says nothing gets */
+    eqInt("default notArmVectors", c->notArmVectors, 0);
+    eqInt("default notArmVectorsEl1t", c->notArmVectorsEl1t, 0);
+    eqInt("default notArmHandover", c->notArmHandover, 0);
+    eqInt("default notVamap", c->notVamap, 0);
+    eqInt("default spxStack", c->spxStack, 0);
     eqInt("default patch count", c->patchCount, 0);
-    eqInt("debug bag fallback", usConfigDebugBool(c, "nope", true), 1);
     usConfigFree(c);
 }
 
@@ -96,14 +102,11 @@ static void testShippedShape(void) {
         "[log]\n"
         "level = \"verbose\"\n"
         "\n"
-        "[scan]\n"
-        "ldaprRewrite = false\n"
+        "[ldapr]\n"
+        "imageInplaceRewrite = false\n"
         "\n"
         "[debug]\n"
-        "enabled = true\n"
-        "flag1 = true\n"
-        "answer = 42\n"
-        "label = \"hello\"\n"
+        "notArmVectors = true\n"
         "\n"
         "[[debug.patch]]\n"
         "target = \"ntoskrnl\"\n"
@@ -124,10 +127,10 @@ static void testShippedShape(void) {
     }
 
     eqInt("log level", c->logLevel, UsLogVerbose);
-    eqInt("ldaprRewrite", c->ldaprRewrite, 0);
-    eqInt("debug.enabled", c->debugEnabled, 1);
-
-    eqInt("debug.flag1", usConfigDebugBool(c, "flag1", false), 1);
+    eqInt("imageInplaceRewrite", c->imageInplaceRewrite, 0);
+    eqInt("el0InplaceRewrite untouched", c->el0InplaceRewrite, 1);
+    eqInt("notArmVectors", c->notArmVectors, 1);
+    eqInt("notArmHandover untouched", c->notArmHandover, 0);
 
     eqInt("patch count", c->patchCount, 2);
     if (c->patchCount == 2) {
@@ -155,7 +158,7 @@ static void testRejections(void) {
     reject("int level", "[log]\nlevel = 3\n");
     reject("unknown level", "[log]\nlevel = \"chatty\"\n");
 
-    reject("bool as string", "[scan]\nldaprRewrite = \"yes\"\n");
+    reject("bool as string", "[ldapr]\nimageInplaceRewrite = \"yes\"\n");
     reject("unknown uart type", "[uart]\nbaseAddr = 0x9000000\ntype = \"pl012\"\n");
     reject("bad uart width", "[uart]\nbaseAddr = 0x9000000\nwidth = 16\n");
     reject("bad uart base", "[uart]\nbaseAddr = 0\n");

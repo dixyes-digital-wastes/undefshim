@@ -113,26 +113,39 @@ static bool refEq(const char *ref, int len, const char *literal) {
     return i == len && literal[i] == '\0';
 }
 
-static bool parseLogLevel(const char *s, int len, UsLogLevel *out) {
-    static const struct {
-        const char *name;
-        UsLogLevel  level;
-    } table[] = {
-        { "off", UsLogOff },
-        { "error", UsLogError },
-        { "warn", UsLogWarn },
-        { "info", UsLogInfo },
-        { "verbose", UsLogVerbose },
-        { "debug", UsLogDebug },
-    };
+/*
+ * The levels by name, which is how the file spells them and how a dump of
+ * the file prints them back. One table, so the two cannot drift apart
+ */
+static const struct {
+    const char *name;
+    UsLogLevel  level;
+} gLevelNames[] = {
+    { "off", UsLogOff },
+    { "error", UsLogError },
+    { "warn", UsLogWarn },
+    { "info", UsLogInfo },
+    { "verbose", UsLogVerbose },
+    { "debug", UsLogDebug },
+};
 
-    for (size_t i = 0; i < sizeof(table) / sizeof(table[0]); i++) {
-        if (refEq(s, len, table[i].name)) {
-            *out = table[i].level;
+static bool parseLogLevel(const char *s, int len, UsLogLevel *out) {
+    for (size_t i = 0; i < sizeof(gLevelNames) / sizeof(gLevelNames[0]); i++) {
+        if (refEq(s, len, gLevelNames[i].name)) {
+            *out = gLevelNames[i].level;
             return true;
         }
     }
     return false;
+}
+
+const char *usConfigLogLevelName(UsLogLevel level) {
+    for (size_t i = 0; i < sizeof(gLevelNames) / sizeof(gLevelNames[0]); i++) {
+        if (gLevelNames[i].level == level) {
+            return gLevelNames[i].name;
+        }
+    }
+    return "?";
 }
 
 static bool parseOnePatch(const toml_table_t *t, uint32_t index, UsPatch *out, char *err, size_t errLen) {
@@ -273,8 +286,14 @@ UsConfig *usConfigParse(const char *text, size_t len, char *err, size_t errLen) 
     }
 
     cfg->logLevel = UsLogInfo;
-    cfg->ldaprRewrite = true;
-    cfg->debugEnabled = false;
+    /*
+     * The two that are on. A document that says nothing gets the whole
+     * mechanism, and the [debug] table is only ever a way of taking a piece
+     * of it out; every other key defaults to zero, which is what calloc has
+     * already done
+     */
+    cfg->imageInplaceRewrite = true;
+    cfg->el0InplaceRewrite = true;
 
     /* toml_parse edits the buffer and keeps pointers into it, so it has to
      * outlive the table */
@@ -314,16 +333,14 @@ UsConfig *usConfigParse(const char *text, size_t len, char *err, size_t errLen) 
         }
     }
 
-    toml_table_t *scan = toml_table_table(cfg->root, "scan");
-    if (!cfgBool(scan, "ldaprRewrite", &cfg->ldaprRewrite, err, errLen)) {
-        usConfigFree(cfg);
-        return NULL;
-    }
-    /* Replacing user-mode instructions where they stand is the default: it is
-     * what makes a user-mode RCpc load stop taking an exception, and it is
-     * not something the kernel's integrity check has an opinion about */
-    cfg->el0InPlace = true;
-    if (!cfgBool(scan, "el0InPlace", &cfg->el0InPlace, err, errLen)) {
+    /*
+     * What to do about the loads this hardware cannot carry out. Both are on
+     * unless turned off, and neither can make the machine wrong by being off:
+     * what it costs is exceptions, which the handler is there to answer
+     */
+    toml_table_t *ldapr = toml_table_table(cfg->root, "ldapr");
+    if (!cfgBool(ldapr, "imageInplaceRewrite", &cfg->imageInplaceRewrite, err, errLen)
+        || !cfgBool(ldapr, "el0InplaceRewrite", &cfg->el0InplaceRewrite, err, errLen)) {
         usConfigFree(cfg);
         return NULL;
     }
@@ -419,8 +436,17 @@ UsConfig *usConfigParse(const char *text, size_t len, char *err, size_t errLen) 
         return NULL;
     }
 
+    /*
+     * The switches that take a piece of the mechanism out of the way. Each is
+     * named for what it stops, and each is off unless set, so the whole of
+     * the mechanism is what a file that does not mention this table gets
+     */
     toml_table_t *dbg = toml_table_table(cfg->root, "debug");
-    if (!cfgBool(dbg, "enabled", &cfg->debugEnabled, err, errLen)) {
+    if (!cfgBool(dbg, "notArmVectors", &cfg->notArmVectors, err, errLen)
+        || !cfgBool(dbg, "notArmVectorsEl1t", &cfg->notArmVectorsEl1t, err, errLen)
+        || !cfgBool(dbg, "notArmHandover", &cfg->notArmHandover, err, errLen)
+        || !cfgBool(dbg, "notVamap", &cfg->notVamap, err, errLen)
+        || !cfgBool(dbg, "spxStack", &cfg->spxStack, err, errLen)) {
         usConfigFree(cfg);
         return NULL;
     }
@@ -442,20 +468,4 @@ void usConfigFree(UsConfig *c) {
     free(c->patches);
     free(c->text);
     free(c);
-}
-
-static const toml_table_t *debugTable(const UsConfig *c) {
-    if (c == NULL || c->root == NULL) {
-        return NULL;
-    }
-    return toml_table_table(c->root, "debug");
-}
-
-bool usConfigDebugBool(const UsConfig *c, const char *key, bool def) {
-    const toml_table_t *t = debugTable(c);
-    if (!cfgHas(t, key)) {
-        return def;
-    }
-    toml_value_t v = toml_table_bool(t, key);
-    return v.ok ? v.u.b : def;
 }

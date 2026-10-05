@@ -56,9 +56,6 @@ color = false
 [log]
 level = "verbose"
 
-[debug]
-enabled = true
-
 [[debug.patch]]
 target = "winload"
 rva    = $PATCH_RVA

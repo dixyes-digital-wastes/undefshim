@@ -40,16 +40,18 @@ How much is printed.
 
 Each line is `tag: message`, and the tag is coloured by the level it was written at. The level decides whether a line is written at all, so a machine set to `error` does not format the lines it is not going to print.
 
-## `[scan]`
+## `[ldapr]`
 
 What is done to RCpc loads (`ldapr`, `ldaprb`, `ldaprh`) that the hardware cannot execute.
 
 | Key | Default | Meaning |
 |---|---|---|
-| `ldaprRewrite` | `true` | Replace each one with an ordinary acquire load before the image runs. This is what makes the kernel usable: without it every RCpc load takes an exception. |
-| `el0InPlace` | `true` | Also replace them in user-mode pages, at the moment one traps. Off means every user-mode RCpc load keeps taking the exception, which is slower and always correct. |
+| `imageInplaceRewrite` | `true` | Replace each one in ntoskrnl and winload with an ordinary acquire load before either runs. This is what makes the kernel usable: without it every RCpc load takes an exception. |
+| `el0InplaceRewrite` | `true` | Also replace them in user-mode pages, at the moment one traps. Off means every user-mode RCpc load keeps taking the exception, which is slower and always correct. |
 
-`ldaprRewrite` covers the images the boot loads. It does not cover anything loaded later, which is what `el0InPlace` and the trap path are for.
+`imageInplaceRewrite` covers the images the boot loads. It does not cover anything loaded later, which is what `el0InplaceRewrite` and the trap path are for. Neither key can make the machine wrong by being off: what an unreplaced load costs is an exception, and the exception path is there to answer it.
+
+The kernel's own text is never written at run time whatever these say: a modified function or `.pdata` is what its integrity check reports.
 
 ## `[stats]`
 
@@ -77,14 +79,18 @@ The volume root is refused as a directory.
 
 ## `[debug]`
 
-Switches that change what the boot does. They are for investigating it.
+Switches that take a piece of the mechanism out of the way, for bringing a machine up. Every one is `false` unless it is written, and one named `notX` means the driver does X unless the switch is set: the whole of the mechanism is what a file that does not mention this table gets.
+
+A key that has to be turned on for the machine to work does not belong here. That is what this table used to be, and it meant a shim that was loaded but not armed could look exactly like a machine that did not need one.
 
 | Key | Default | Meaning |
 |---|---|---|
-| `arm` | `false` | Take over the exception vectors. Off means the shim is loaded and the patch lists are applied, but no exception reaches it. The shipped `us.toml` sets it on. |
-| `armSlot0` | `true` | Also take over the EL1t slot. Needed because Windows takes synchronous exceptions with SP_EL0 selected, which arrives at a different offset of the table. |
-| `spxStack` | `false` | Let the stub push on the SPx vector as well. |
-| `vamap` | `arm` | Register the notification that runs during `SetVirtualAddressMap`, which is when the payload learns the addresses it will have once the kernel's page tables are in force. |
-| `enabled` | `false` | Reported in the startup line. It does not gate the keys above: each is read whenever it is present. |
+| `notArmVectors` | `false` | Take the exception vectors over. Off leaves the loads the rewrite did not reach to the kernel, which cannot carry them out. |
+| `notArmVectorsEl1t` | `false` | Also take the EL1t synchronous slot. Needed because Windows takes synchronous exceptions with SP_EL0 selected, which arrives at a different offset of the table; off is known to bugcheck very early. |
+| `notArmHandover` | `false` | Take over the branch winload jumps into the kernel with. That branch is what tells the other stubs where the payload ended up. |
+| `notVamap` | `false` | Register the notification that runs during `SetVirtualAddressMap`, which is when the payload learns the addresses it will have once the kernel's page tables are in force. The handover stub publishes them earlier; this is for a machine where that turns out not to be enough. |
+| `spxStack` | `false` | Let the stub push on the SPx vector as well. This is how it was found out which vector Windows arrives on. |
 
 Each key is read from its own section. A key under the wrong one is not read at all, which is indistinguishable from not being there, so a switch that appears to do nothing is usually in the wrong table.
+
+The driver prints every key it read at `verbose`, including the ones the file did not mention, so the configuration a machine is running with can be read back rather than worked out.

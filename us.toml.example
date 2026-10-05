@@ -28,15 +28,21 @@ color = true
 #   "off" | "error" | "warn" | "info" | "verbose" | "debug"
 level = "info"
 
-[scan]
-# Replace the RCpc loads in the images with the equivalent LDAR before they
-# run. This is the boot-time list application and is on by default.
-ldaprRewrite = true
+[ldapr]
+# What to do about the RCpc loads, which is the whole reason this project
+# exists: the hardware cannot carry them out. Both keys are on unless turned
+# off, and turning either off costs exceptions rather than correctness - the
+# exception path is there to answer what the replacement did not.
 
-# Replace RCpc loads in user mode pages while the kernel runs, by taking the
-# exception, writing the instruction in place and handing control back. Turn
-# it off to keep the kernel from ever writing to a page it does not own.
-el0InPlace = true
+# Replace the ones in ntoskrnl and winload before either of them runs, so the
+# kernel does not have to take an exception for its own code.
+imageInplaceRewrite = true
+
+# Replace the ones in user-mode pages at the moment one traps, so only that
+# page is touched and only once. The kernel's own text is never written at run
+# time whatever this says: a modified function or .pdata is what its integrity
+# check reports.
+el0InplaceRewrite = true
 
 [stats]
 # Keep a count, in the pool, of the addresses traps are taken at. It costs a
@@ -50,7 +56,7 @@ enabled = false
 # descriptor is rewritten at all, and every RCpc load keeps taking the
 # exception. It is never trusted - the handler checks it against the hardware's
 # own translation and carries on without it if the two disagree.
-# 0xE06368 is the value for the 26100 PE kernel used in development.
+# 0xE06368 is the value for the 26100 kernel used in development.
 descriptorBaseRVA = 0xE06368
 
 [patch]
@@ -60,25 +66,34 @@ descriptorBaseRVA = 0xE06368
 dir = "usPatch"
 
 [debug]
-# Everything below changes what the boot does rather than what it is for, so
-# it is off by default and the individual switches follow.
-enabled = false
+# For finding out what the boot is doing, and for taking pieces of it out of
+# the way while looking. Every switch here is off by default, and one named
+# "notX" means the mechanism does X unless it is set: a key that has to be
+# turned on for the machine to work does not belong in this table.
 
-# Arm the exception vectors at all. With this off the driver loads, reports
-# and does nothing else.
-arm = true
+# Take the exception vectors over at all. Off leaves the loads the rewrite did
+# not reach to the kernel, which cannot carry them out.
+notArmVectors = false
 
-# Arm the EL1t slot as well as EL1h. Turning it off is known to bugcheck very
-# early (0x1AA), which is why it is on by default.
-armSlot0 = true
+# Take the EL1t synchronous slot as well as the EL1h one. Windows takes its
+# synchronous exceptions with SP_EL0 selected, which arrives at a different
+# offset of the table, so off means most of them are never seen - and the boot
+# is known to bugcheck very early without it.
+notArmVectorsEl1t = false
+
+# Take over the branch winload jumps into the kernel with. That branch is what
+# tells the other stubs where the payload ended up, so off leaves them nothing
+# to aim at.
+notArmHandover = false
+
+# Register for the runtime notification that publishes a virtual address for
+# the pool. The handover stub publishes them earlier, so this is the switch for
+# a machine where that turns out not to be enough.
+notVamap = false
 
 # Let the stub push on the SPx vector too. This is how it was determined which
 # vector Windows actually arrives on; leave it off.
 spxStack = false
-
-# Register for the runtime notification that publishes a virtual address for
-# the pool.
-vamap = true
 
 # [[debug.patch]] entries replace instructions in an image before it runs,
 # by name and RVA, without a list file. One table per site:

@@ -274,7 +274,7 @@ static bool armImage(UsSession *s, UsImageKind kind, size_t *armed) {
      * the kernel has installed this table and started a process. Taking that
      * slot in the loader buys nothing and costs a stub there
      */
-    const size_t slotCount = s->armSlot0
+    const size_t slotCount = s->stubVectorsEl1t
                                  ? (kind == UsImageNtoskrnl ? US_STUB_SLOTS
                                                             : US_STUB_SLOTS - 1U)
                                  : 1U;
@@ -315,7 +315,7 @@ static bool armImage(UsSession *s, UsImageKind kind, size_t *armed) {
                 .tableRVA = tables.rvas[i],
                 .stubRVA = hole.rva
                            + (uint32_t)(i * US_STUB_SLOTS + k) * US_SLOT_RUNTIME_BYTES,
-                .slot = s->armSlot0 ? slots[k] : UsVectorSlotEL1hSync,
+                .slot = s->stubVectorsEl1t ? slots[k] : UsVectorSlotEL1hSync,
                 /*
                  * Only if the configuration states one for this build, and
                  * only as a candidate: the handler checks it against the

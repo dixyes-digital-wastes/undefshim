@@ -62,15 +62,11 @@ color = false
 [log]
 level = "verbose"
 
-[debug]
-enabled = true
-arm = true
-
-[scan]
+[ldapr]
 # The exception path is what this checks, so the replacement that would keep
 # the instructions from faulting in the first place is turned off. With it on
 # there is nothing to take over and nothing to enter.
-ldaprRewrite = false
+imageInplaceRewrite = false
 EOF
 
 log="$WORK/armed.log"
@@ -132,9 +128,9 @@ tests/deploy/plain.sh "$log" | grep -a 'arm: vbar' | tail -2
 # nothing to do. A key read from the wrong configuration section looks exactly
 # like a check that found nothing, so it is asserted rather than assumed: that
 # mistake has already been made once.
-if ! tests/deploy/plain.sh "$log" | grep -q '^config: level=[0-9]* rewrite=0 '; then
+if ! tests/deploy/plain.sh "$log" | grep -q '^config: \[ldapr\] imageInplaceRewrite=false'; then
     checkNote "the replacement is on, so this checks nothing"
-    tests/deploy/plain.sh "$log" | grep -a '^config: ' | head -2
+    tests/deploy/plain.sh "$log" | grep -a '^config: ' | head -3
     exit 1
 fi
 
