@@ -42,6 +42,7 @@ static uintptr_t gBase;
 static uint32_t gShift;
 static uint32_t gWidth = 32U;
 static UsLogLevel gLevel = UsLogInfo;
+static bool gColour = true;
 /* Set while a line above the level is being written, so that it is dropped
  * whole rather than at each byte */
 static bool gDropping;
@@ -103,6 +104,17 @@ static bool roomToWrite(void) {
     return (readReg(US_8250_LSR) & US_8250_LSR_THRE) != 0U;
 }
 
+/* The serial port, and nothing else. Bounded spin: a wrong base address must
+ * not hang the boot */
+static void emitSerial(char c) {
+    if (gKind == UsUARTOff || gBase == 0) {
+        return;
+    }
+    for (uint32_t spin = 0; !roomToWrite() && spin < 1000000U; spin++) {
+    }
+    writeReg(gKind == UsUARTPL011 ? US_PL011_DR : US_8250_THR, (uint32_t)(uint8_t)c);
+}
+
 /*
  * The only way anything is written, and the place the level filter sits
  *
@@ -113,25 +125,123 @@ static bool roomToWrite(void) {
  */
 static void emit(char c) {
     usScreenPutc(c);
-    if (gKind == UsUARTOff || gBase == 0) {
-        return;
-    }
-    /* Bounded spin: a wrong base address must not hang the boot */
-    for (uint32_t spin = 0; !roomToWrite() && spin < 1000000U; spin++) {
-    }
-    writeReg(gKind == UsUARTPL011 ? US_PL011_DR : US_8250_THR, (uint32_t)(uint8_t)c);
+    emitSerial(c);
 }
 
 /*
- * Starts a line with its tag, which says which part of the boot is talking
+ * A colour says the level, not the subject: the tag after it says which part
+ * of the boot is talking
  */
-static void putTag(const char *tag) {
+#define US_SGR_RESET 0U
+#define US_SGR_RED 31U
+#define US_SGR_YELLOW 33U
+#define US_SGR_GREEN 32U
+#define US_SGR_GREY 90U
+#define US_SGR_LIGHT_CYAN 96U
+
+/*
+ * The colour of a level, or the reset for one that is drawn in the default
+ * ink
+ *
+ * Info is the default: most of what is said is neither a failure nor a
+ * detail, and colouring all of it would make the ones that matter harder to
+ * pick out rather than easier
+ */
+static uint32_t levelColour(UsLogLevel level) {
+    switch (level) {
+    case UsLogError:
+        return US_SGR_RED;
+    case UsLogWarn:
+        return US_SGR_YELLOW;
+    case UsLogVerbose:
+        return US_SGR_GREY;
+    case UsLogDebug:
+        return US_SGR_LIGHT_CYAN;
+    default:
+        return US_SGR_RESET;
+    }
+}
+
+/*
+ * A colour, as the escape sequence a terminal understands and the screen
+ * parses
+ *
+ * The screen always gets it, because the screen is what turns it into a
+ * colour and it has no other way of knowing which one. The serial port gets
+ * it only when the configuration says so: that is about the log, which may
+ * be read by something that would rather not see the escapes in it, and the
+ * two channels are asked separately for that reason
+ */
+static void putSgr(uint32_t code) {
+    char digits[4];
+    int n = 0;
+    uint32_t value = code;
+
+    while (value != 0 && n < (int)sizeof(digits)) {
+        digits[n++] = (char)('0' + (int)(value % 10));
+        value /= 10;
+    }
+
+    usScreenPutc('\x1b');
+    usScreenPutc('[');
+    for (int i = n - 1; i >= 0; i--) {
+        usScreenPutc(digits[i]);
+    }
+    usScreenPutc('m');
+
+    if (!gColour) {
+        return;
+    }
+    emitSerial('\x1b');
+    emitSerial('[');
+    for (int i = n - 1; i >= 0; i--) {
+        emitSerial(digits[i]);
+    }
+    emitSerial('m');
+}
+
+/*
+ * Colours a tag and puts the colour back, or writes the tag plainly when the
+ * level has no colour of its own
+ *
+ * The reset has to be written whenever a colour was: leaving it out is not
+ * the same as saying the default, it leaves everything after the tag in the
+ * tag's colour - and on a terminal, every line after it as well
+ */
+static void putTag(const char *tag, UsLogLevel level) {
+    uint32_t colour = levelColour(level);
+
+    if (colour != US_SGR_RESET) {
+        putSgr(colour);
+    }
     usConsolePuts(tag);
+    if (colour != US_SGR_RESET) {
+        putSgr(US_SGR_RESET);
+    }
     usConsolePuts(": ");
 }
 
+/*
+ * The colour of a tag, which is the level's business rather than the
+ * caller's: a failure is red wherever it is said from
+ *
+ * Only the tag is coloured. Colouring the message as well would make a long
+ * line one block of colour, and the tag is what a reader scans for - the
+ * message is what they read once they have found it
+ */
 void usConsoleLevel(UsLogLevel level) {
     gLevel = level;
+}
+
+/*
+ * Whether the serial output carries the colour escapes
+ *
+ * Not the screen's business: the screen parses the escapes into the ink it
+ * draws with, and it keeps doing that whichever way this is set. Only the
+ * bytes that reach the serial port are affected
+ */
+void usConsoleColour(bool enabled) {
+    gColour = enabled;
 }
 
 void usConsoleLog(const char *tag, UsLogLevel level) {
@@ -140,11 +250,15 @@ void usConsoleLog(const char *tag, UsLogLevel level) {
         return;
     }
     gDropping = false;
-    putTag(tag);
+    putTag(tag, level);
 }
 
 /*
  * A milestone: one whole line, named for the stage a script waits for
+ *
+ * Its colour is its own rather than a level's, because a milestone is not a
+ * kind of message: it is the machine saying it reached a stage, and the
+ * scripts stop and start on it
  */
 void usConsoleMilestone(const char *what) {
     if ((int)UsLogInfo > (int)gLevel) {
@@ -152,7 +266,10 @@ void usConsoleMilestone(const char *what) {
         return;
     }
     gDropping = false;
-    usConsolePuts("milestone: ");
+    putSgr(US_SGR_GREEN);
+    usConsolePuts("milestone");
+    putSgr(US_SGR_RESET);
+    usConsolePuts(": ");
     usConsolePuts(what);
     usConsolePuts("\n");
 }
@@ -162,9 +279,10 @@ void usConsoleProgress(char mark) {
         return;
     }
     /*
-     * One byte: this is written from hooks where the stack is not ours, and
-     * it goes through the same writer as everything else, so a line that is
-     * being dropped swallows this too
+     * One byte, and no colour: this is written from hooks where the stack is
+     * not ours, and an escape sequence is fourteen bytes of work for a mark
+     * that is read as its own letter anyway. It goes through the same writer
+     * as everything else, so a line that is being dropped swallows this too
      */
     usConsolePutc(mark);
 }

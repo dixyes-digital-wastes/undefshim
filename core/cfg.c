@@ -369,6 +369,7 @@ UsConfig *usConfigParse(const char *text, size_t len, char *err, size_t errLen) 
     cfg->uartType = "pl011";
     cfg->uartBase = 0;
     cfg->uartWidth = 32;
+    cfg->uartColour = true;
     toml_table_t *uart = toml_table_table(cfg->root, "uart");
     if (uart != NULL && cfgHas(uart, "baseAddr")) {
         int64_t base = 0;
@@ -408,6 +409,10 @@ UsConfig *usConfigParse(const char *text, size_t len, char *err, size_t errLen) 
             }
             cfg->uartWidth = (uint32_t)width;
         }
+    }
+    if (uart != NULL && !cfgBool(uart, "color", &cfg->uartColour, err, errLen)) {
+        usConfigFree(cfg);
+        return NULL;
     }
 
     toml_table_t *dbg = toml_table_table(cfg->root, "debug");

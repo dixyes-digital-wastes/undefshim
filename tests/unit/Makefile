@@ -28,11 +28,14 @@ test_early: test_early.c $(ROOT)/payload/early.c $(ROOT)/payload/vamap.c \
 
 # The screen drawer is built for the host with the firmware headers, and the
 # frame buffer it draws into is an array in the test.
+# The console is linked in as well: the preview drives the real one into the
+# real drawer, so what is looked at is what a machine would draw
 test_screen: test_screen.c $(ROOT)/uefi/screen.c $(ROOT)/uefi/screen.h \
-             $(ROOT)/uefi/font.h
+             $(ROOT)/uefi/console.c $(ROOT)/uefi/console.h $(ROOT)/uefi/font.h \
+             $(ROOT)/common/log.h
 	$(CC) -std=gnu23 -O2 -Wall -Wextra -I. -I$(ROOT) \
 	    -I$(ROOT)/third_party/posix-uefi/uefi \
-	    test_screen.c $(ROOT)/uefi/screen.c -o $@
+	    test_screen.c $(ROOT)/uefi/screen.c $(ROOT)/uefi/console.c -o $@
 
 test_patchlist: test_patchlist.c $(ROOT)/core/patchlist.c $(ROOT)/core/patchapply.c \
                 $(ROOT)/core/sha256.c

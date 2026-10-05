@@ -6,6 +6,10 @@
 baseAddr = 0x09000000
 type = "pl011"       # pl011 | uart8250
 width = 32           # 8 | 32
+# Whether the serial output carries the colour escapes a terminal understands.
+# The screen parses the same sequences and keeps its colours either way, so
+# this only decides whether they appear in the log
+color = true
 
 [log]
 level = "info"       # off | error | warn | info | verbose | debug
