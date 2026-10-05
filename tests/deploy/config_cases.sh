@@ -17,6 +17,9 @@ cd "$ROOT"
 
 BUILD_DIR="${BUILD_DIR:-build}"
 WORK="$BUILD_DIR/config-cases"
+# The screen cases leave their machine running while the picture is read, so
+# they need a monitor each. The serial case does not care which one it uses.
+QMP_PORT="${QMP_PORT:-4455}"
 DRIVER="${DRIVER:-$BUILD_DIR/undefshim_driver.efi}"
 
 [ -f "$DRIVER" ] || { echo "missing driver: $DRIVER (run make first)" >&2; exit 1; }
@@ -53,9 +56,49 @@ run_case() {
     echo "PASS $name"
 }
 
+# run_screen_case <name> <config-path-or-empty> <expected-text>
+#
+# For the cases whose configuration cannot name a UART -- because it is
+# missing, or because it does not parse -- the driver has no serial port and
+# says so on the screen instead. Skipped where the screen cannot be read.
+run_screen_case() {
+    local name="$1" config="$2" expect="$3"
+    local img="$WORK/$name.img"
+
+    if ! CONFIG="$config" ESP="$img" tests/deploy/build_esp.sh >"$WORK/$name.esp" 2>&1; then
+        echo "FAIL $name: could not build the volume"
+        cat "$WORK/$name.esp"
+        failures=$((failures + 1))
+        return
+    fi
+
+    WORK="$WORK/$name-screen" tests/deploy/screen_case.sh "$img" "$QMP_PORT" "$expect" 90
+    case $? in
+    0)
+        echo "PASS $name"
+        ;;
+    2)
+        echo "SKIP $name: the screen cannot be read"
+        ;;
+    *)
+        failures=$((failures + 1))
+        ;;
+    esac
+}
+
 # A file that parses, and that differs from the defaults on purpose so the
 # output proves the file was really used.
+#
+# It names the UART on purpose as well. The driver only knows where the port
+# is once it has read a file that says so, so a configuration that parses and
+# names one is the only case here that can report over it; the others are read
+# off the screen.
 cat > "$WORK/good.toml" <<'EOF'
+
+[uart]
+baseAddr = 0x09000000
+type = "pl011"
+width = 32
 
 [log]
 level = "verbose"
@@ -80,31 +123,51 @@ cat > "$WORK/bad.toml" <<'EOF'
 level = "info
 EOF
 
-# An integer that does not fit. Only the strtol range check catches this, so
-# it is what proves errno=ERANGE survives on the target as well as on the host.
+# A number too large for the parser's integer conversion to hold. Only the
+# check on its error indicator catches this -- the digits parse, they just do
+# not fit -- so it is what proves that the check survives on the target and
+# not only on the host.
+#
+# It is put under a key that is actually read: a key nothing looks at would
+# be ignored, the document would parse, and this would quietly stop testing
+# anything at all
 cat > "$WORK/range.toml" <<'EOF'
-version = 99999999999999999999
+[uart]
+baseAddr = 99999999999999999999
 EOF
 
-run_case loaded "$WORK/good.toml"  "M2 done" "config: loaded"
-run_case broken "$WORK/bad.toml"   "M2 failed" "broken:"
-run_case range  "$WORK/range.toml" "M2 failed" "broken:"
-run_case absent ""                 "M2 done" "config: absent"
+run_case loaded "$WORK/good.toml" "M2 done" "config: loaded"
+
+# The other three have no port to report over: the two that will not parse
+# leave the driver with no address to write to, and the one that is absent
+# leaves it with nothing at all
+# What is matched on is the words, not the punctuation or the heads of the
+# milestone names: a recogniser reads the lower case text of this face
+# reliably and the capitals and digits less so, so the checks are written
+# against what it reads rather than against what was drawn
+run_screen_case broken "$WORK/bad.toml"   "broken"
+run_screen_case range  "$WORK/range.toml" "broken"
+run_screen_case absent ""                 "using defaults"
 
 # The loaded case has to show the file's values, not the defaults.
-if ! grep -q "config: level=4 rewrite=0 debug=1 patches=1" "$WORK/loaded.log"; then
+if ! tests/deploy/plain.sh "$WORK/loaded.log" | grep -q "config: level=4 rewrite=0 debug=1 patches=1"; then
     echo "FAIL loaded: values do not match the file"
-    grep -E 'level=' "$WORK/loaded.log" || true
+    tests/deploy/plain.sh "$WORK/loaded.log" | grep -E 'level=' || true
     failures=$((failures + 1))
 else
     echo "PASS loaded: values came from the file"
 fi
 
-if ! grep -q "broken:\|not a simple quoted string\|parse failed" "$WORK/broken.log"; then
-    echo "FAIL broken: no reason was reported"
-    failures=$((failures + 1))
-else
-    echo "PASS broken: reason reported"
+# The reason a file was refused is the point of the screen path: it is what a
+# machine with no port to say it on has to show
+if [ -f "$WORK/broken-screen/screen.txt" ]; then
+    if grep -q "broken" "$WORK/broken-screen/screen.txt"; then
+        echo "PASS broken: reason reported on the screen"
+    else
+        echo "FAIL broken: no reason was reported"
+        cat "$WORK/broken-screen/screen.txt"
+        failures=$((failures + 1))
+    fi
 fi
 
 if [ "$failures" -ne 0 ]; then
