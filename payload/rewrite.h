@@ -25,6 +25,7 @@ typedef enum UsRewriteResult_e {
     UsRewriteReadOnly = 6, /* the descriptor's own page would not take a store */
     UsRewriteStuck = 7,    /* the permission could not be put back */
     UsRewriteNotRcpc = 8,  /* what is there is neither an RCpc load nor its substitute */
+    UsRewriteMisaligned = 9, /* an acquire load cannot be reached at that address */
 
     /*
      * How far an attempt got, written as it goes rather than only at the end
@@ -50,7 +51,13 @@ typedef enum UsRewriteResult_e {
  * trapped. Nothing is changed unless the whole sequence can be carried out,
  * and a store the mapping refuses is answered rather than raised, so this can
  * be called from the handler without a failure here becoming a fault in one
+ *
+ * The address the load read is part of the question, because the substitute is
+ * an acquire load and the instruction it replaces is not: a site reached at an
+ * alignment the substitute would fault on is left as it is, and the handler
+ * keeps carrying that one out. Rewriting it anyway would make a load that only
+ * ever worked into one that faults from then on
  */
-UsRewriteResult usRewriteSite(uint64_t site);
+UsRewriteResult usRewriteSite(uint64_t site, UsLDAPRKind kind, uint64_t address);
 
 #endif

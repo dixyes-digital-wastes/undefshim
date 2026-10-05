@@ -40,6 +40,28 @@ typedef struct UsLDAPRInsn_t {
 } UsLDAPRInsn;
 
 /*
+ * Whether an address is aligned for the width of this access
+ *
+ * The acquire loads are single-copy atomic, and single-copy atomicity is what
+ * requires an address to be naturally aligned; the RCpc loads are not
+ * single-copy atomic and so may be read at any alignment. Anything that stands
+ * in for one of these with the other has to allow for that, because a fault
+ * the instruction would not have taken is not one its handler can be given
+ */
+static inline bool usLDAPRKindAligned(UsLDAPRKind kind, uint64_t address) {
+    switch (kind) {
+    case UsLDAPRByte:
+        return true;
+    case UsLDAPRHalf:
+        return (address & 1U) == 0;
+    case UsLDAPRWord:
+        return (address & 3U) == 0;
+    default:
+        return (address & 7U) == 0;
+    }
+}
+
+/*
  * Identifies the instruction and pulls out its fields
  *
  * The encoding is fixed except for the two register fields and the size,

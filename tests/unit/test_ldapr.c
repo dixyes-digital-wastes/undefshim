@@ -251,12 +251,38 @@ static void testRewriteConversion(void) {
     ok("and neither is zero", !usLDARDecode(0U, NULL));
 }
 
+/*
+ * The substitute an RCpc load is replaced with is an acquire load, which is
+ * single-copy atomic and so has to be aligned; the load it stands in for is
+ * not, and may be read at any alignment. A site reached at an alignment only
+ * one of them can take is the difference between a load that works and a fault
+ * the machine stops on, so the rule is worth a check of its own
+ */
+static void testAlignment(void) {
+    ok("a byte has no alignment to get wrong",
+       usLDAPRKindAligned(UsLDAPRByte, 0x1001));
+    ok("a halfword at an odd address is not aligned",
+       !usLDAPRKindAligned(UsLDAPRHalf, 0x1001));
+    ok("a halfword at an even one is",
+       usLDAPRKindAligned(UsLDAPRHalf, 0x1002));
+    ok("a word at 2 mod 4 is not aligned",
+       !usLDAPRKindAligned(UsLDAPRWord, 0x1002));
+    ok("a word at 4 is aligned", usLDAPRKindAligned(UsLDAPRWord, 0x1004));
+    ok("an xword at 4 mod 8 is not aligned",
+       !usLDAPRKindAligned(UsLDAPRXword, 0x1004));
+    ok("an xword at 8 is aligned", usLDAPRKindAligned(UsLDAPRXword, 0x1008));
+    ok("a byte and a word disagree about the same address",
+       usLDAPRKindAligned(UsLDAPRByte, 0x1002)
+           && !usLDAPRKindAligned(UsLDAPRWord, 0x1002));
+}
+
 int main(void) {
     testRewriteConversion();
     testWidths();
     testScannerAgrees();
     testRefusals();
     testSubstitution();
+    testAlignment();
 
     printf("%d checks, %d failures\n", checks, failures);
     return failures != 0;

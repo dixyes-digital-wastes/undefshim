@@ -273,6 +273,36 @@ static uint64_t loadAcquire(UsLDAPRKind kind, uint64_t address) {
 }
 
 /*
+ * The same loads for an address the acquire form would refuse
+ *
+ * What the aligned form adds is single-copy atomicity, and that is what an
+ * acquire load is for; LDAPR is weaker and says nothing about it, so the same
+ * strength can be had at any alignment from a load that takes one, with the
+ * barrier that makes it an acquire behind it. It costs one instruction more,
+ * and only the addresses the aligned form cannot reach pay it
+ */
+static uint64_t loadAcquireUnaligned(UsLDAPRKind kind, uint64_t address) {
+    uint64_t value = 0;
+
+    switch (kind) {
+    case UsLDAPRHalf:
+        __asm__ volatile("ldurh %w0, [%1]" : "=r"(value) : "r"(address) : "memory");
+        break;
+    case UsLDAPRWord:
+        __asm__ volatile("ldur %w0, [%1]" : "=r"(value) : "r"(address) : "memory");
+        break;
+    case UsLDAPRXword:
+        __asm__ volatile("ldur %x0, [%1]" : "=r"(value) : "r"(address) : "memory");
+        break;
+    default:
+        __asm__ volatile("ldurb %w0, [%1]" : "=r"(value) : "r"(address) : "memory");
+        break;
+    }
+    __asm__ volatile("dmb ishld" ::: "memory");
+    return value;
+}
+
+/*
  * The same loads, done as the interrupted code would have been allowed to
  *
  * An EL0 instruction has to be carried out with EL0's own permissions: from
@@ -361,8 +391,10 @@ static bool emulateLDAPR(UsFrame *frame, int cpu) {
     }
     if (user) {
         value = loadUserAcquire(decoded.kind, address);
-    } else {
+    } else if (usLDAPRKindAligned(decoded.kind, address)) {
         value = loadAcquire(decoded.kind, address);
+    } else {
+        value = loadAcquireUnaligned(decoded.kind, address);
     }
     if (!pan) {
         usPANOn();
@@ -429,7 +461,7 @@ static bool emulateLDAPR(UsFrame *frame, int cpu) {
      */
     if (usPayloadConfig()->el0InPlace != 0
         && usSlotOfSPSR(frame->spsr) == UsStubSlotEL0) {
-        (void)usRewriteSite(frame->elr);
+        (void)usRewriteSite(frame->elr, decoded.kind, address);
     }
 
     /* The value is in the frame, and the frame is what the entry restores, so
