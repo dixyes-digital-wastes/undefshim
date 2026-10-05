@@ -28,6 +28,27 @@
 #include "toml.h"
 
 /*
+ * What the [uart] table said the port is
+ *
+ * UsCfgUARTACPIFind is the default: the firmware described its own console
+ * somewhere, and looking for it is better than being told, because the
+ * description travels with the machine and a copy of it in a file does not
+ */
+typedef enum UsCfgUARTKind_e {
+    UsCfgUARTACPIFind = 0,
+    UsCfgUARTPl011,
+    UsCfgUARTUart8250,
+    UsCfgUARTOff,
+} UsCfgUARTKind;
+
+/* And which table it described it in */
+typedef enum UsCfgUARTTable_e {
+    UsCfgUARTTableSPCR = 0,
+    UsCfgUARTTableDBG2,
+    UsCfgUARTTableDSDT,
+} UsCfgUARTTable;
+
+/*
  * One entry of the debug patch table. The bootPhase applies these directly,
  * without going through the scanner, which makes them useful for planting a
  * breakpoint in a known place while bringing the driver up
@@ -82,9 +103,30 @@ typedef struct UsConfig_t {
      * machine says it wants no serial output at all
      */
     bool          hasUART;
-    const char   *uartType;    /* "pl011" or "uart8250"; points into the document */
-    uint64_t      uartBase;
+    /*
+     * A type, and not a pointer: the driver can be asked to find the port
+     * rather than be told where it is. A machine whose tables describe a
+     * console needs no address in its configuration at all
+     */
+    int           uartKind;    /* UsCfgUART* */
+    const char   *uartType;    /* the word the file used, for the report */
+    uint64_t      uartBase;    /* only when the configuration names one */
     uint32_t      uartWidth;   /* bits per access: 8 or 32 */
+    /*
+     * Which table to find it in, and for the DSDT the device to look for.
+     * Both point into the document storage
+     */
+    int           uartTable;   /* UsCfgUARTTable* */
+    const char   *uartPath;    /* NULL when the file named none */
+    /*
+     * The line rate and the clock that drives it. Both have to be given
+     * before the port is programmed: a boot that says nothing about either
+     * leaves the dividers as the firmware set them, which is the answer for
+     * every machine whose own tables describe a console, and for every port
+     * whose clock nothing in ACPI states
+     */
+    uint64_t      uartClock;
+    uint32_t      uartBaud;
     /*
      * Whether the output carries the colour escapes the screen and a terminal
      * understand. On unless turned off: a log read back on a terminal is

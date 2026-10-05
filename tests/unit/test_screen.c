@@ -277,7 +277,7 @@ static void preview(const char *path) {
 
     usScreenUseFrameBuffer(previewFrame, PREVIEW_WIDTH, PREVIEW_HEIGHT,
                            PREVIEW_WIDTH, false);
-    usConsoleUse(UsUARTOff, 0, 8);
+    usConsoleUse(UsUARTOff, 0, 8, 0, 0);
     usConsoleLevel(UsLogDebug);
 
     usLogI("undefshim", "0.1.0\n");
@@ -349,7 +349,7 @@ static void testLevel(void) {
     uint32_t loudOnly;
 
     usScreenUseFrameBuffer(frame, WIDTH, HEIGHT, WIDTH, false);
-    usConsoleUse(UsUARTOff, 0, 8);
+    usConsoleUse(UsUARTOff, 0, 8, 0, 0);
     usConsoleLevel(UsLogInfo);
 
     /* On its own, a line below the level puts nothing on the screen at all:
@@ -408,7 +408,7 @@ static void testLevel(void) {
  */
 static void testColourIsScreenIndependent(void) {
     usScreenUseFrameBuffer(frame, WIDTH, HEIGHT, WIDTH, false);
-    usConsoleUse(UsUARTOff, 0, 8);
+    usConsoleUse(UsUARTOff, 0, 8, 0, 0);
 
     usConsoleColour(false);
     usScreenClear();

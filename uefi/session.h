@@ -19,6 +19,7 @@
 
 #include "core/acpi.h"
 #include "core/cfg.h"
+#include "uefi/console.h"
 #include "uefi/payload_place.h"
 #include "uefi/pool.h"
 #include "uefi/registry.h"
@@ -102,6 +103,19 @@ typedef struct UsSession_t {
      * instead. See stack.h
      */
     uint64_t bootStackTop;
+
+    /*
+     * Where the console ended up, once it has been found
+     *
+     * This is a fact rather than a setting: the configuration may say only
+     * that the firmware knows, and what the firmware said is worked out here.
+     * The payload reports through the same port, so it needs the answer and
+     * not the question, and a base of zero is how it is told to stay quiet
+     */
+    bool       uartOpen;
+    UsUARTKind uartKind;
+    uint64_t   uartBase;
+    uint32_t   uartWidth;
 } UsSession;
 
 /*

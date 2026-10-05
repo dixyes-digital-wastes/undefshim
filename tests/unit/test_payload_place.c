@@ -81,7 +81,17 @@ static void rejected(const UsACPICPUs *cpus) {
 
 static void placed(const UsACPICPUs *cpus) {
     UsPool pool = {0};
-    UsSession session = { .pool = &pool, .cpus = *cpus };
+    /*
+     * The console the boot found. It is on the session rather than in the
+     * configuration because the two are not the same question: a file may
+     * say only that the firmware knows where its port is, and where that
+     * turned out to be is worked out while the console is opened. The
+     * payload reports through that port, so reading the file instead left
+     * it printing to address zero
+     */
+    UsSession session = { .pool = &pool, .cpus = *cpus,
+                          .uartOpen = true, .uartKind = UsUARTPL011,
+                          .uartBase = 0x94080000ULL, .uartWidth = 32U };
     UsPayloadPlace out;
     uint32_t expected[US_STACK_LOOKUP_WORDS];
     uint8_t snapshot[sizeof(pages)];
@@ -112,7 +122,10 @@ static void placed(const UsACPICPUs *cpus) {
     assert(memcmp(cfg->stackTop, pool.stackTop, sizeof(cfg->stackTop)) == 0);
     assert(cfg->selfVA == out.baseVA);
     assert(cfg->poolBase == (uint64_t)(uintptr_t)&pool);
-    assert(cfg->uartBase == 0 && cfg->uartKind == 0 && cfg->quiet == 1);
+    assert(cfg->uartBase == 0x94080000ULL);
+    assert(cfg->uartKind == 1U);
+    assert(cfg->uartWidth == 32U);
+    assert(cfg->quiet == 1);
 
     /* Generator semantics have their own interpreter test. Here the complete
      * published lookup must be generated from exactly the cfg/session table,

@@ -6,6 +6,7 @@ include config.mk
 BUILD_ID ?= $(shell head -c 6 /dev/urandom | base64 | tr -d '+/=' | tr 'A-Z' 'a-z')
 
 TOML := third_party/toml-c
+UACPI := third_party/uACPI
 SHIMS := $(POSIX_UEFI)/freestanding
 POSIX_UEFI_TESTS := third_party/posix-uefi/tests
 TOML_TESTS := third_party/toml-c/tests
@@ -79,8 +80,18 @@ US_DRIVER_CFLAGS := --target=$(TARGET_TRIPLE) -std=gnu23 -ffreestanding \
                     -fshort-wchar -mno-red-zone -fno-stack-protector \
                     -fomit-frame-pointer -O2 -Wall -Wextra \
                     -I. -I$(POSIX_UEFI) -I$(SHIMS) -I$(TOML) -I$(PAYLOAD_BUILD) \
+                    -Iuefi -I$(UACPI)/include \
                     -DTOML_NO_FLOAT -DTOML_NO_TIMESTAMP -DTOML_NO_FILE \
+                    -DUACPI_REDUCED_HARDWARE -DUACPI_KERNEL_INITIALIZATION \
                     -DUS_BUILD_ID=\"$(BUILD_ID)\" $(EXTRA_CFLAGS)
+
+# uACPI is a third party tree and keeps its own warnings rather than ours.
+# The port's own headers come first: uACPI looks for uacpi_types.h beside its
+# platform headers, and this is where the one for this target is
+UACPI_CFLAGS := --target=$(TARGET_TRIPLE) -std=gnu23 -O2 -Wall \
+                -ffreestanding -fshort-wchar -mno-red-zone \
+                -Iuefi -I$(POSIX_UEFI) -I$(SHIMS) -I$(UACPI)/include \
+                -DUACPI_REDUCED_HARDWARE -DUACPI_KERNEL_INITIALIZATION
 
 US_DRIVER_LDFLAGS := --target=$(TARGET_TRIPLE) -nostdlib -fuse-ld=lld-link \
                      -Wl,-entry:uefi_init \
@@ -106,15 +117,23 @@ DRIVER_SRCS := uefi/config.c uefi/patch_apply.c uefi/registry.c \
                uefi/loadimage_hook.c uefi/console.c uefi/screen.c uefi/pool.c \
                uefi/service_hook.c uefi/gmm_hook.c uefi/patch.c uefi/work.c \
                uefi/payload_place.c uefi/arm.c uefi/rewrite.c uefi/acpi.c \
-               uefi/vamap.c uefi/session.c \
+               uefi/vamap.c uefi/session.c uefi/uart.c uefi/uacpi_kernel.c \
                core/cache.c core/cfg.c core/pe.c core/scan.c core/plan.c \
                core/rva_patch.c core/pool.c core/patchlist.c core/patchapply.c \
                core/sha256.c core/thunk.c core/ldapr.c core/acpi.c \
                core/stackgen.c core/translate.c core/par.c \
                $(TOML)/toml.c
+
+# uACPI's own sources, and the allocator its port is built on. They are not
+# ours, so they are listed rather than discovered: a tree that grows a file
+# should not silently grow into the driver
+UACPI_SRCS := $(wildcard $(UACPI)/source/*.c)
+TLSF_SRCS := third_party/tlsf/tlsf.c
 DRIVER_ASM := uefi/stack.S
 DRIVER_OBJS := $(DRIVER_MAIN_OBJ) \
                $(patsubst %.c,$(BUILD_DIR)/%.o,$(DRIVER_SRCS)) \
+               $(patsubst $(UACPI)/source/%.c,$(BUILD_DIR)/$(UACPI)/source/%.o,$(UACPI_SRCS)) \
+               $(patsubst %.c,$(BUILD_DIR)/%.o,$(TLSF_SRCS)) \
                $(patsubst %.S,$(BUILD_DIR)/%.o,$(DRIVER_ASM))
 DRIVER := $(BUILD_DIR)/undefshim_driver.efi
 
@@ -269,6 +288,18 @@ $(BUILD_DIR)/%.o: %.c $(PAYLOAD_HDR) $(TRANSFER_HDR) $(US_HEADERS) \
 # Assembly needs no C dialect flags, but does need the target.
 $(BUILD_DIR)/%.o: %.S | $(BUILD_DIR)/uefi
 	$(CC) --target=$(TARGET_TRIPLE) -ffreestanding -c $< -o $@
+
+# The third party trees. They are compiled with their own flags and their own
+# warnings, and they do not see ours: a fork that is upgraded should not start
+# failing this build because it added a variable this one would warn about
+$(BUILD_DIR)/$(UACPI)/source/%.o: $(UACPI)/source/%.c | $(BUILD_DIR)/$(UACPI)/source
+	$(CC) $(UACPI_CFLAGS) -c $< -o $@
+
+$(BUILD_DIR)/third_party/tlsf/%.o: third_party/tlsf/%.c | $(BUILD_DIR)/third_party/tlsf
+	$(CC) $(UACPI_CFLAGS) -c $< -o $@
+
+$(BUILD_DIR)/$(UACPI)/source $(BUILD_DIR)/third_party/tlsf:
+	@mkdir -p $@
 
 # Rebuild the library whenever the fork changes.
 # llvm-ar is required: lld-link cannot resolve symbols through an index that

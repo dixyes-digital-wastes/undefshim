@@ -32,8 +32,17 @@ typedef enum {
  * is written. The width is the access size the port needs - 32 for a PL011,
  * 8 or 32 for an 8250, whose registers are a byte apart when read a byte at a
  * time and a word apart when read as words
+ *
+ * The clock is what drives the port and the line rate is what the far end
+ * expects. Both are the firmware's business and both are left alone unless
+ * they are given: a port the firmware brought up is one that already works,
+ * and there is nothing in ACPI that states a PL011's clock, so a boot that
+ * has to be told where its console is has no way to work out how to program
+ * it either. A zero in either means "as the firmware left it", which is what
+ * every machine whose own tables describe a console wants
  */
-void usConsoleUse(UsUARTKind kind, uint64_t base, uint32_t width);
+void usConsoleUse(UsUARTKind kind, uint64_t base, uint32_t width,
+                  uint64_t clock, uint32_t baud);
 
 /*
  * How much is worth saying. A line above this level is not written at all,

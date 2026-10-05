@@ -2,27 +2,41 @@
 
 The driver reads `us.toml` from the first volume that provides one, preferring the volume it was loaded from. It is read once, before anything is armed.
 
-Without a file the driver uses the defaults below and says so on the screen. Note that the serial port is one of the things the file names: there is no default port, so a machine with no `us.toml` prints nothing at all, and everything it has to say has to be read off the screen.
+Without a file the driver uses the defaults below and says so on the screen. The serial port is found rather than named, so a machine whose firmware describes its console prints without being told anything.
 
 ## `[uart]`
 
 Where the log goes.
 
+The default is to ask the firmware. That is right on a machine whose tables describe its console, and silently wrong on one whose tables do not: the driver has nothing to print on, so it prints nothing, and finding out why means reading the screen. A board that carries neither an SPCR nor a DBG2 needs its port named here, and the address is then the only thing that has to be stated.
+
 | Key | Values | Default | Meaning |
 |---|---|---|---|
-| `baseAddr` | address | none | The port's base address. **Leaving this out means no serial output.** |
-| `type` | `"pl011"`, `"uart8250"` | `"pl011"` | PL011 is ARM's own, 32 bits per register. The 8250 is what PC-derived boards have. |
-| `width` | `8`, `32` | `32` | Access size. An 8250 on a 32-bit bus spaces its byte-wide registers a word apart, so it wants `32`. |
+| `type` | `"acpi"`, `"pl011"`, `"uart8250"`, `"off"` | `"acpi"` | What the port is. `acpi` looks for the firmware's own description of it; `pl011` and `uart8250` say what it is and need a `baseAddr`; `off` means no serial output at all. |
+| `table` | `"SPCR"`, `"DBG2"`, `"DSDT"` | `"SPCR"` | Which table to look in, for `acpi`. SPCR is what a firmware writes to describe the console it uses; DBG2 is its list of debug devices; the DSDT is the whole machine, and the only one of the three that states which of its devices is the port. |
+| `path` | a device path | none | For `acpi` with `table = "DSDT"`: the device to read the port from, such as `_SB.COM0`. Written without the leading backslash, because a value in this file cannot contain one; the driver puts it back. |
+| `baseAddr` | address | none | For `type = "pl011"` and `type = "uart8250"`: where the port is. Refused with `acpi`, which is what finds one. |
+| `width` | `8`, `32` | `32` | Access size. An 8250 on a 32-bit bus spaces its byte-wide registers a word apart, so it wants `32`. Taken from the table when the port is found and nothing is written here. |
+| `clock` | Hz | `0` | What drives the port. Zero leaves the line settings alone. |
+| `baud` | a line rate | `0` | What the far end expects. Zero leaves the line settings alone. |
 | `color` | `true`, `false` | `true` | Whether the serial log carries ANSI colour escapes. The screen parses the same sequences and keeps its colours either way, so this only affects the log. |
 
-The driver does not change an 8250's baud rate: the divisor depends on a clock the configuration does not state, and writing one would break a port the firmware already set up.
+The line settings are programmed only when both `clock` and `baud` are given. A divisor is a function of the clock, and nothing in ACPI states one: SPCR and DBG2 carry an address, a width and a line rate, and the DSDT carries an address. A port the firmware brought up is a port that already works, so the default is to leave it as it is, and a machine that has to be told where its port is has to be told these too. This is also why an 8250's baud rate is never changed.
 
 ```toml
 [uart]
-baseAddr = 0x09000000
-type = "pl011"
-width = 32
+type = "acpi"
+table = "SPCR"
 color = true
+```
+
+```toml
+# A machine whose firmware describes no console, or describes it wrongly
+[uart]
+type = "pl011"
+baseAddr = 0x94080000
+clock = 200000000
+baud = 115200
 ```
 
 ## `[log]`

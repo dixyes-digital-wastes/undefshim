@@ -27,6 +27,13 @@ bool usSessionInit(UsSession *s) {
     s->spxStack = false;
     s->imageInplaceRewrite = true;
 
+    /* Until the console is opened there is nowhere to say anything, which is
+     * also what a machine that never finds a port stays at */
+    s->uartOpen = false;
+    s->uartKind = UsUARTOff;
+    s->uartBase = 0;
+    s->uartWidth = 32;
+
     /* Read once: the tables are the boot's and are gone with it */
     s->cpus = usACPIProbeCPUs();
     if (s->cpus.count == 0) {

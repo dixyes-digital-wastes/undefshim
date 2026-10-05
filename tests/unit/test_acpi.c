@@ -265,12 +265,177 @@ static void testRobustness(void) {
     }
 }
 
+/* --- the serial tables --------------------------------------------------- */
+
+/*
+ * A SPCR, built field by field so the test says which fields the parsing
+ * depends on. The port is the address, the interface type is what decides
+ * which driver reads it, and the access size is how wide its registers are
+ */
+static size_t buildSPCR(uint8_t *out, uint8_t interfaceType, uint64_t base,
+                        uint8_t accessSize) {
+    size_t length = 60;
+
+    memset(out, 0, length);
+    memcpy(out, "SPCR", 4);
+    put32(out + 4, (uint32_t)length);
+    out[36] = interfaceType;
+    /* A Generic Address Structure at 40: system memory, one register wide */
+    out[40] = 0;            /* AddressSpaceId: memory */
+    out[41] = 32;           /* RegisterBitWidth */
+    out[42] = 0;            /* RegisterBitOffset */
+    out[43] = accessSize;
+    memcpy(out + 44, &base, 8);
+    seal(out, length);
+    return length;
+}
+
+static void testSPCR(void) {
+    static uint8_t spcr[64];
+    UsACPIUART got;
+
+    buildSPCR(spcr, 0x03 /* ARM PL011 */, 0x94080000ULL, 3 /* DWORD */);
+    got = usACPIParseSPCR(spcr);
+    ok("a PL011 console is a PL011", got.kind == UsACPIUARTPl011);
+    eqInt("and its address is the one written", (int)(got.base >> 32), 0);
+    ok("all of it", got.base == 0x94080000ULL);
+    eqInt("a DWORD wide register is 32 bits", (int)got.width, 32);
+
+    /* The same table, one register a byte wide */
+    buildSPCR(spcr, 0x03, 0x94080000ULL, 1 /* BYTE */);
+    got = usACPIParseSPCR(spcr);
+    eqInt("a BYTE wide register is 8 bits", (int)got.width, 8);
+
+    /* The PC-derived console, which is the other kind that can be driven */
+    buildSPCR(spcr, 0x00 /* 16550 */, 0x3F8ULL, 1);
+    got = usACPIParseSPCR(spcr);
+    ok("a 16550 console is an 8250", got.kind == UsACPIUART16550);
+    ok("at its own address", got.base == 0x3F8ULL);
+
+    /* Nothing to drive: a console this boot has no way to reach */
+    buildSPCR(spcr, 0x0F /* DCC */, 0x94080000ULL, 3);
+    got = usACPIParseSPCR(spcr);
+    ok("a console that is not a serial port is none", got.kind == UsACPIUARTNone);
+
+    /* A port in IO space rather than memory, which is not an address here */
+    buildSPCR(spcr, 0x03, 0x3F8ULL, 1);
+    spcr[40] = 1 /* IO space */;
+    seal(spcr, 60);
+    got = usACPIParseSPCR(spcr);
+    ok("a port that is not in memory is none", got.kind == UsACPIUARTNone);
+
+    /* A table too short to hold the fields: the address would be read past it */
+    buildSPCR(spcr, 0x03, 0x94080000ULL, 3);
+    put32(spcr + 4, 44);
+    seal(spcr, 44);
+    got = usACPIParseSPCR(spcr);
+    ok("a truncated table is refused", got.kind == UsACPIUARTNone);
+
+    ok("and a missing one is refused", usACPIParseSPCR(NULL).kind == UsACPIUARTNone);
+}
+
+/*
+ * A DBG2, which is a list of debug devices rather than one. Each names
+ * itself with a namespace string, and that string is the only thing that
+ * tells two serial ports apart
+ */
+static size_t buildDBG2(uint8_t *out, const char *first, const char *second) {
+    size_t at = 44;
+
+    memset(out, 0, 256);
+    memcpy(out, "DBG2", 4);
+    put32(out + 36, 44);    /* where the devices start */
+    put32(out + 40, second != NULL ? 2 : 1);
+
+    {
+        const char *names[2] = { first, second };
+        uint32_t count = second != NULL ? 2 : 1;
+
+        for (uint32_t i = 0; i < count; i++) {
+            size_t nameLength = strlen(names[i]) + 1;
+            size_t length = 22 + 12 + 4 + nameLength;
+            uint8_t *ddi = out + at;
+
+            ddi[0] = 0;                       /* revision */
+            ddi[1] = (uint8_t)length;
+            ddi[2] = (uint8_t)(length >> 8);
+            ddi[3] = 1;                       /* one address register */
+            ddi[4] = (uint8_t)nameLength;
+            ddi[5] = (uint8_t)(nameLength >> 8);
+            ddi[6] = 38;                      /* name offset */
+            ddi[7] = 0;
+            ddi[12] = 0x00;                   /* port type 0x8000, serial */
+            ddi[13] = 0x80;
+            ddi[14] = 0x03;                   /* subtype: ARM PL011 */
+            ddi[15] = 0x00;
+            ddi[18] = 22;                     /* where the address is */
+            ddi[19] = 0;
+            /* The device that is not the first one gets another address, so
+             * that picking the wrong one is visible rather than lucky */
+            {
+                uint64_t base = i == 0 ? 0x94080000ULL : 0x94090000ULL;
+
+                ddi[22] = 0;                  /* memory */
+                ddi[23] = 32;
+                ddi[24] = 0;
+                ddi[25] = 3;                  /* DWORD */
+                memcpy(ddi + 26, &base, 8);
+            }
+            memcpy(ddi + 38, names[i], nameLength);
+            at += length;
+        }
+    }
+    put32(out + 4, (uint32_t)at);
+    seal(out, at);
+    return at;
+}
+
+static void testDBG2(void) {
+    static uint8_t dbg2[256];
+    UsACPIUART got;
+
+    buildDBG2(dbg2, "COM0", NULL);
+    got = usACPIParseDBG2(dbg2, NULL);
+    ok("a lone debug port is taken", got.kind == UsACPIUARTPl011);
+    ok("at its address", got.base == 0x94080000ULL);
+
+    /* A path is only the device: the scope it is in is not part of the name
+     * the device gives itself, and a file writes neither */
+    {
+        static const char *const paths[] = {
+            "COM0", "_SB.COM0", "\\_SB.COM0", "\\_SB.COM1",
+        };
+
+        ok("the device's own name matches", usACPIParseDBG2(dbg2, paths[0]).kind
+           == UsACPIUARTPl011);
+        ok("a path ending in it matches", usACPIParseDBG2(dbg2, paths[1]).kind
+           == UsACPIUARTPl011);
+        ok("with the leading marker too", usACPIParseDBG2(dbg2, paths[2]).kind
+           == UsACPIUARTPl011);
+        ok("a different device does not", usACPIParseDBG2(dbg2, paths[3]).kind
+           == UsACPIUARTNone);
+    }
+
+    buildDBG2(dbg2, "COM0", "COM1");
+    got = usACPIParseDBG2(dbg2, "COM1");
+    ok("the second device is found by name", got.kind == UsACPIUARTPl011);
+    ok("and it is its own address", got.base == 0x94090000ULL);
+
+    got = usACPIParseDBG2(dbg2, NULL);
+    ok("without a name the first is taken", got.base == 0x94080000ULL);
+
+    ok("a missing table is refused", usACPIParseDBG2(NULL, "COM0").kind
+       == UsACPIUARTNone);
+}
+
 int main(void) {
     setUpTables();
     testRealShape();
     testOlderRoot();
     testChecksums();
     testRobustness();
+    testSPCR();
+    testDBG2();
 
     return usCheckSummary(checks, failures);
 }
