@@ -46,6 +46,7 @@ REWRITE_WORDS = 5         # site, insn, descriptorVa, descriptor, result
 REWRITE_RESULTS = {
     1: "written",
     8: "not an RCpc load",
+    9: "misaligned for the substitute",
     10: "in progress: reading the base",
     11: "in progress: walking the tables",
     12: "in progress: probing the descriptor",

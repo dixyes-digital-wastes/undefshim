@@ -257,7 +257,7 @@ static void record(uint64_t site, uint64_t insn, const UsLeaf *leaf, uint64_t re
     }
 }
 
-UsRewriteResult usRewriteSite(uint64_t site) {
+UsRewriteResult usRewriteSite(uint64_t site, UsLDAPRKind kind, uint64_t address) {
     UsRead state = { false };
     UsPayloadConfig *cfg = usPayloadConfig();
     UsLeaf leaf;
@@ -275,6 +275,17 @@ UsRewriteResult usRewriteSite(uint64_t site) {
 
     if (site == 0 || (site & 3) != 0 || cfg->poolBase == 0) {
         return UsRewriteRefused;
+    }
+    /*
+     * The substitute is an acquire load, which is single-copy atomic and so
+     * has to be aligned; the load it stands in for is not, and may be read at
+     * any alignment. Replacing one with the other at an address only the first
+     * of them can reach turns a load that works into a fault, so this one is
+     * left where it is and keeps taking the exception
+     */
+    if (!usLDAPRKindAligned(kind, address)) {
+        record(site, 0, NULL, UsRewriteMisaligned);
+        return UsRewriteMisaligned;
     }
     step(site, 0, UsRewriteReadingBase);
 
