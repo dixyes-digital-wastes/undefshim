@@ -266,7 +266,7 @@ def payloadRecord(qmp_file, serialLog):
     names = ["entries", "handled", "lastEsr", "lastElr", "lastFar", "lastCpu",
              "lastSp", "lastInsn", "emuInsn", "emuAddr", "emuValue"]
     out = ["  payload record at 0x%x: magic %s" %
-           (pool, "ok" if w[0] == 0x5952544E55504355 else "absent (0x%x)" % w[0])]
+           (pool, "ok" if w[0] == 0x005952544E455355 else "absent (0x%x)" % w[0])]
     for name, v in zip(names, w[1:]):
         out.append("    %-9s = 0x%x" % (name, v))
     return "\n".join(out)

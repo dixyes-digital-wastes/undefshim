@@ -27,7 +27,7 @@ FIELDS = [
     "hookDescs", "hookStatus", "svmOriginal", "rt", "convertPointer",
 ]
 
-MAGIC = 0x43455250414D4155
+MAGIC = 0x0050414D41565355  # "USVAMAP", the address change record
 
 
 

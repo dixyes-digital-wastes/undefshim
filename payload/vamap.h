@@ -50,8 +50,8 @@ typedef struct UsVAMapRecord_t {
     uint64_t convertPointer; /* the driver's handle on the translation */
 } UsVAMapRecord;
 
-/* "UAMAPREC", recognisable in a dump */
-#define US_VAMAP_MAGIC 0x43455250414D4155ULL
+/* "USVAMAP" - the address change record */
+#define US_VAMAP_MAGIC 0x0050414D41565355ULL
 
 extern UsVAMapRecord usVAMapRecord;
 

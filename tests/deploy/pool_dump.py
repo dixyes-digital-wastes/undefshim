@@ -22,7 +22,7 @@ import re
 import socket
 import sys
 
-MAGIC = 0x5952544E55504355  # "UCPUNTRY"
+MAGIC = 0x005952544E455355  # "USENTRY", the pool entry record
 
 # The C structures, counted out as they are laid out. They are written here
 # rather than derived, because the point of printing them is to check what the
