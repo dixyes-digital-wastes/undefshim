@@ -285,7 +285,7 @@ $(DRIVER): $(DRIVER_OBJS) posix-uefi
 	@echo "built $@"
 
 # Deployment. See tests/deploy for the details.
-.PHONY: esp run check check-qemu check-one clean
+.PHONY: esp run demo check check-qemu check-one clean
 # The fake kernel: an ordinary UEFI application, so it can use the firmware's
 # console, built for a processor that has the instructions at issue.
 FAKE_BUILD := $(BUILD_DIR)/fake
@@ -308,6 +308,12 @@ $(FAKE_BUILD):
 	mkdir -p $@
 
 .PHONY: fake
+
+# The two demo programs, for a machine under test. They are Windows ARM64
+# binaries and never run here, so there is nothing to check: the check is what
+# they print when someone runs them over there.
+demo:
+	@$(MAKE) --no-print-directory -C tests/demo
 
 esp: $(DRIVER)
 	@tests/deploy/build_esp.sh
@@ -367,6 +373,7 @@ check-one:
 clean:
 	rm -rf $(BUILD_DIR)
 	@$(MAKE) --no-print-directory -C tests/unit clean >/dev/null 2>&1 || true
+	@$(MAKE) --no-print-directory -C tests/demo clean >/dev/null 2>&1 || true
 	@$(MAKE) --no-print-directory -C $(TOOLS_TESTS) clean >/dev/null 2>&1 || true
 	@$(MAKE) --no-print-directory -C $(POSIX_UEFI_TESTS) clean >/dev/null 2>&1 || true
 	@$(MAKE) --no-print-directory -C $(TOML_TESTS) clean >/dev/null 2>&1 || true

@@ -29,3 +29,7 @@ __pycache__/
 
 # Harness state, not part of the project.
 .dsh/
+
+# The demo programs are built here, but what is kept is their source.
+tests/demo/*.exe
+tests/demo/*.lib
