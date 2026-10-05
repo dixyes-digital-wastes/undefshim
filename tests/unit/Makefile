@@ -29,7 +29,7 @@ test_early: test_early.c $(ROOT)/payload/early.c $(ROOT)/payload/vamap.c \
 # The screen drawer is built for the host with the firmware headers, and the
 # frame buffer it draws into is an array in the test.
 test_screen: test_screen.c $(ROOT)/uefi/screen.c $(ROOT)/uefi/screen.h \
-             $(ROOT)/uefi/font8x16.h
+             $(ROOT)/uefi/font.h
 	$(CC) -std=gnu23 -O2 -Wall -Wextra -I. -I$(ROOT) \
 	    -I$(ROOT)/third_party/posix-uefi/uefi \
 	    test_screen.c $(ROOT)/uefi/screen.c -o $@

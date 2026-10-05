@@ -4,7 +4,7 @@
 
 #include <uefi.h>
 
-#include "uefi/font8x16.h"
+#include "uefi/font.h"
 #include "uefi/screen.h"
 
 /*
@@ -38,10 +38,13 @@ typedef struct {
     UsGOPMode *Mode;
 } UsGOP;
 
-/* Two, so that a line of eighty characters fills a 1280 wide screen and the
- * text is readable without leaning in */
-#define US_SCREEN_SCALE 2U
-#define US_SCREEN_LINE (US_FONT_HEIGHT * US_SCREEN_SCALE)
+/*
+ * A glyph is drawn at its own size, so a row of text is as tall as the font
+ * and a character is as wide as one. Nothing here scales the font: the face
+ * was chosen for its size, and scaling it would blur the very pixels that make
+ * it worth using
+ */
+#define US_SCREEN_LINE US_FONT_HEIGHT
 
 /*
  * Black text on white, rather than the other way round: the firmware draws
@@ -59,9 +62,14 @@ static uint32_t gWidth;
 static uint32_t gHeight;
 static uint32_t gStride;  /* pixels a row, which may exceed the width */
 static uint32_t gTop;     /* the first row of the area this driver owns */
-static uint32_t gColumn;
+static uint32_t gColumn;  /* characters, not pixels */
 static uint32_t gRow;
 static bool gReady;
+
+/* How many characters fit across the frame buffer */
+static uint32_t columns(void) {
+    return gWidth / US_FONT_WIDTH;
+}
 
 static void putPixel(uint32_t x, uint32_t y, uint32_t value) {
     /* Bounded on purpose: a frame buffer smaller than the mode claims would
@@ -72,27 +80,19 @@ static void putPixel(uint32_t x, uint32_t y, uint32_t value) {
     *(volatile uint32_t *)(gFrame + (y * gStride + x) * 4U) = value;
 }
 
-static void fillBlock(uint32_t x, uint32_t y, uint32_t value) {
-    for (uint32_t dy = 0; dy < US_SCREEN_SCALE; dy++) {
-        for (uint32_t dx = 0; dx < US_SCREEN_SCALE; dx++) {
-            putPixel(x + dx, y + dy, value);
-        }
-    }
-}
-
 static void drawGlyph(char c, uint32_t x, uint32_t y) {
     const uint8_t *glyph;
 
     if (c < US_FONT_FIRST || c > US_FONT_LAST) {
         c = ' ';
     }
-    glyph = kFont8x16[(int)c - US_FONT_FIRST];
+    glyph = kFont[(int)c - US_FONT_FIRST];
     for (uint32_t row = 0; row < US_FONT_HEIGHT; row++) {
         uint8_t bits = glyph[row];
 
         for (uint32_t bit = 0; bit < US_FONT_WIDTH; bit++) {
-            fillBlock(x + bit * US_SCREEN_SCALE, y + row * US_SCREEN_SCALE,
-                      (bits & (0x80U >> bit)) != 0 ? US_SCREEN_INK : US_SCREEN_PAPER);
+            putPixel(x + bit, y + row,
+                     (bits & (0x80U >> bit)) != 0 ? US_SCREEN_INK : US_SCREEN_PAPER);
         }
     }
 }
@@ -125,6 +125,16 @@ static void scrollUp(void) {
 
 static void newline(void) {
     gColumn = 0;
+    /*
+     * A frame buffer shorter than two lines has nothing to scroll: the one
+     * line it has is written over itself, which at least keeps the newest
+     * text. The arithmetic below would otherwise be told to move a negative
+     * number of rows, which as an unsigned count is an enormous copy
+     */
+    if (gHeight < 2U * US_SCREEN_LINE) {
+        gRow = gTop;
+        return;
+    }
     gRow += US_SCREEN_LINE;
     if (gRow + US_SCREEN_LINE > gHeight) {
         scrollUp();
@@ -136,8 +146,6 @@ void usScreenClear(void) {
     if (!gReady) {
         return;
     }
-    /* Only the area this driver owns: the firmware's own text is above it and
-     * is none of our business */
     for (uint32_t y = gTop; y < gHeight; y++) {
         for (uint32_t x = 0; x < gWidth; x++) {
             putPixel(x, y, US_SCREEN_PAPER);
@@ -154,15 +162,17 @@ void usScreenUseFrameBuffer(void *pixels, uint32_t width, uint32_t height,
     gHeight = height;
     gStride = stride;
     /*
-     * The bottom half is this driver's. The firmware's console draws from the
-     * top down, and sharing the top means the two keep overwriting each
-     * other: a machine whose error is on a line that was drawn over is a
-     * machine with nothing to say
+     * From the very top. The firmware's console draws from the top down as
+     * well, and the two would overwrite each other; leaving ours above it and
+     * keeping the same lines on screen is worse than writing over it, because
+     * a message that scrolled away is worse than one that was never there and
+     * the console's own output is not what is being read
      */
-    gTop = gHeight / 2U;
+    gTop = 0;
     gColumn = 0;
     gRow = gTop;
-    gReady = pixels != NULL && width != 0 && height != 0 && stride != 0;
+    gReady = pixels != NULL && width != 0 && height != 0 && stride != 0
+             && columns() != 0;
     if (gReady) {
         usScreenClear();
     }
@@ -212,9 +222,9 @@ void usScreenPutc(char c) {
         gColumn = 0;
         return;
     }
-    drawGlyph(c, gColumn * US_FONT_WIDTH * US_SCREEN_SCALE, gRow);
-    gColumn += US_FONT_WIDTH * US_SCREEN_SCALE;
-    if (gColumn + US_FONT_WIDTH * US_SCREEN_SCALE > gWidth) {
+    drawGlyph(c, gColumn * US_FONT_WIDTH, gRow);
+    gColumn++;
+    if (gColumn >= columns()) {
         newline();
     }
 }
