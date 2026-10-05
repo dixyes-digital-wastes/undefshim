@@ -31,14 +31,14 @@ BOOT_TIMEOUT="${BOOT_TIMEOUT:-60}" \
 
 fail() {
     echo "FAIL: $1"
-    grep -a 'payload' "$SERIAL_LOG" | tail -5
+    tests/deploy/plain.sh "$SERIAL_LOG" | grep -a 'payload' | tail -5
     exit 1
 }
 
-grep -q 'M6 payload placed' "$SERIAL_LOG" || fail "the payload was never reported"
-! grep -q 'M6 failed' "$SERIAL_LOG" || fail "the payload could not be placed"
+tests/deploy/plain.sh "$SERIAL_LOG" | grep -q 'M6 payload placed' || fail "the payload was never reported"
+! tests/deploy/plain.sh "$SERIAL_LOG" | grep -q 'M6 failed' || fail "the payload could not be placed"
 
-line=$(tr -d '\r' <"$SERIAL_LOG" | grep -a -m1 '^payload: at ')
+line=$(tests/deploy/plain.sh "$SERIAL_LOG" | grep -a -m1 '^payload: at ')
 [ -n "$line" ] || fail "no placement report"
 
 base=$(printf '%s' "$line" | sed -n 's/.*at \(0x[0-9a-f]*\).*/\1/p')
@@ -68,13 +68,13 @@ configv=$(( config ))
 # regime there are no tables, so the answer is the identity one; what this
 # proves is that the call reached the payload, that it read its configuration,
 # and that it came back.
-alive=$(tr -d '\r' <"$SERIAL_LOG" | grep -a -m1 '^payload: alive ')
+alive=$(tests/deploy/plain.sh "$SERIAL_LOG" | grep -a -m1 '^payload: alive ')
 [ -n "$alive" ] || fail "the payload was placed but never ran"
 
 frame=$(printf '%s' "$alive" | sed -n 's/.*frame=\([0-9]*\).*/\1/p')
-[ "$frame" = "288" ] || fail "the payload reports frame=$frame, expected 288"
+[ "$frame" = "304" ] || fail "the payload reports frame=$frame, expected 304"
 
-mapping=$(tr -d '\r' <"$SERIAL_LOG" | grep -a -m1 '^payload: selfmap ')
+mapping=$(tests/deploy/plain.sh "$SERIAL_LOG" | grep -a -m1 '^payload: selfmap ')
 [ -n "$mapping" ] || fail "the payload did not report its own mapping"
 case "$mapping" in
 *"va=$base pa=$base"*)

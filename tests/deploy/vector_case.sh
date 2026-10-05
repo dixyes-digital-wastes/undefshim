@@ -48,7 +48,7 @@ mkdir -p "$WORK"
 cat > "$WORK/armed.toml" <<EOF
 
 [log]
-level = "info"
+level = "verbose"
 
 [debug]
 enabled = true
@@ -100,29 +100,29 @@ trap stop EXIT INT TERM
 # than a step the driver takes.
 armed=no
 for _ in $(seq 1 $((SETTLE + 240))); do
-    if grep -q 'M6.5 armed' "$log" 2>/dev/null; then
+    if tests/deploy/plain.sh "$log" | grep -q 'M6.5 armed' 2>/dev/null; then
         armed=yes
         break
     fi
-    if grep -qaE 'M5 incomplete|nothing taken over' "$log" 2>/dev/null; then
+    if tests/deploy/plain.sh "$log" | grep -qaE 'M5 incomplete|nothing taken over' 2>/dev/null; then
         break
     fi
     sleep 1
 done
 if [ "$armed" != "yes" ]; then
     echo "FAIL: the vector table was never taken over"
-    grep -aE 'arm:|plan: vbar|M5' "$log" | tail -10
+    tests/deploy/plain.sh "$log" | grep -aE 'arm:|plan: vbar|M5' | tail -10
     exit 1
 fi
-grep -a 'arm: vbar' "$log" | tail -2
+tests/deploy/plain.sh "$log" | grep -a 'arm: vbar' | tail -2
 
 # The replacement has to be off, or nothing faults and the exception path has
 # nothing to do. A key read from the wrong configuration section looks exactly
 # like a check that found nothing, so it is asserted rather than assumed: that
 # mistake has already been made once.
-if ! grep -q 'ldaprRewrite=0' "$log"; then
+if ! tests/deploy/plain.sh "$log" | grep -q '^config: level=[0-9]* rewrite=0 '; then
     echo "FAIL: the replacement is on, so this checks nothing"
-    grep -a 'ldaprRewrite' "$log" | head -2
+    tests/deploy/plain.sh "$log" | grep -a '^config: ' | head -2
     exit 1
 fi
 

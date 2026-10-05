@@ -132,10 +132,7 @@ static void applyOne(UsImage *image, const char *name, const char *text,
     memset(&file, 0, sizeof(file));
     memset(&stats, 0, sizeof(stats));
     if (code == NULL) {
-        usConsoleLog("patch", UsLogError);
-        usConsolePuts("no text in ");
-        usConsolePuts(name);
-        usConsolePuts("\n");
+        usLogE("patch", "no text in %s\n", name);
         return;
     }
     sites = NULL;
@@ -146,12 +143,9 @@ static void applyOne(UsImage *image, const char *name, const char *text,
     }
     UsPatchStatus status = usPatchParse(text, (uint32_t)length, sites, capacity, &file);
 
-    usConsoleLog("patch", status != UsPatchOk ? UsLogError : UsLogInfo);
-    usConsolePuts(name);
     if (status != UsPatchOk) {
-        usConsolePuts(" not usable, status ");
-        usConsolePutDec((uint64_t)status);
-        usConsolePuts("\n");
+        usLogE("patch", "%s not usable, status " US_VALUE("%u") "\n", name,
+               (unsigned)status);
         BS->FreePool(sites);
         return;
     }
@@ -176,20 +170,15 @@ static void applyOne(UsImage *image, const char *name, const char *text,
                                                     (uint8_t *)(uintptr_t)image->base,
                                                     image->sizeOfImage, &stats);
     if (result != UsPatchApplied) {
-        usConsoleLog("patch", UsLogWarn);
-        usConsolePuts(name);
-        usConsolePuts(result == UsPatchWrongBuild ? " is for another build\n"
-                                                  : " is for another image\n");
+        usLogW("patch", "%s is for another %s\n", name,
+               result == UsPatchWrongBuild ? "build" : "image");
         BS->FreePool(sites);
         return;
     }
-    usConsolePuts(" applied ");
-    usConsolePutDec(stats.applied);
-    usConsolePuts(" refused ");
-    usConsolePutDec(stats.refused);
-    usConsolePuts(" out of range ");
-    usConsolePutDec(stats.outOfRange);
-    usConsolePuts("\n");
+    usLogI("patch", "%s applied " US_VALUE("%u") " refused " US_VALUE("%u")
+           " out of range " US_VALUE("%u") "\n",
+           name, (unsigned)stats.applied, (unsigned)stats.refused,
+           (unsigned)stats.outOfRange);
     BS->FreePool(sites);
 }
 
@@ -290,23 +279,22 @@ static void digestText(UsImage *image, uint8_t *code, uint32_t bytes, uint8_t ou
  * same binary, and a list that says "another build" is the check working
  */
 static void reportTextHash(UsImage *image) {
+    static const char digits[] = "0123456789abcdef";
     uint32_t bytes = 0;
     uint8_t *code = imageText(image, &bytes);
     uint8_t digest[32];
+    char hex[sizeof(digest) * 2U + 1U];
 
     if (code == NULL) {
         return;
     }
     digestText(image, code, bytes, digest);
-    usConsoleLog("patch", UsLogDebug);
-    usConsolePuts("text sha256 ");
-    for (uint32_t i = 0; i < 32U; i++) {
-        static const char digits[] = "0123456789abcdef";
-
-        char pair[3] = { digits[digest[i] >> 4], digits[digest[i] & 0xfU], 0 };
-        usConsolePuts(pair);
+    for (uint32_t i = 0; i < sizeof(digest); i++) {
+        hex[i * 2U] = digits[digest[i] >> 4];
+        hex[i * 2U + 1U] = digits[digest[i] & 0xfU];
     }
-    usConsolePuts("\n");
+    hex[sizeof(hex) - 1U] = '\0';
+    usLogD("patch", "text sha256 %s\n", hex);
 }
 
 void usPatchApplyLists(UsSession *session, UsImage *image) {
@@ -325,8 +313,7 @@ void usPatchApplyLists(UsSession *session, UsImage *image) {
         return;
     }
     if (namesVolumeRoot(path)) {
-        usConsoleLog("patch", UsLogError);
-        usConsolePuts("refusing the volume root as a list directory\n");
+        usLogE("patch", "refusing the volume root as a list directory\n");
         return;
     }
     volume = usConfigVolume();
@@ -349,10 +336,7 @@ void usPatchApplyLists(UsSession *session, UsImage *image) {
     wide[i] = 0;
 
     if (EFI_ERROR(root->Open(root, &dir, wide, EFI_FILE_MODE_READ, 0)) || dir == NULL) {
-        usConsoleLog("patch", UsLogError);
-        usConsolePuts("no list directory ");
-        usConsolePuts(path);
-        usConsolePuts("\n");
+        usLogE("patch", "no list directory %s\n", path);
         root->Close(root);
         return;
     }
@@ -393,9 +377,5 @@ void usPatchApplyLists(UsSession *session, UsImage *image) {
     }
     dir->Close(dir);
     root->Close(root);
-    usConsoleLog("patch", UsLogVerbose);
-    usConsolePutDec(files);
-    usConsolePuts(" list file(s) from ");
-    usConsolePuts(path);
-    usConsolePuts("\n");
+    usLogV("patch", US_VALUE("%u") " list file(s) from %s\n", (unsigned)files, path);
 }

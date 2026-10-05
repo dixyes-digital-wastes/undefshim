@@ -146,28 +146,23 @@ static efi_status_t EFIAPI gmmHook(uintn_t *memoryMapSize, efi_memory_descriptor
 
         if (winload != NULL && !gReportedWinload) {
             gReportedWinload = true;
-            usConsoleLog("gmm", UsLogVerbose);
-            usConsolePuts("winload found at ");
-            usConsolePutHex((uint64_t)(uintptr_t)winload->base);
-            usConsolePuts("\n");
+            usLogV("gmm", "winload found at " US_VALUE("%#llx") "\n",
+                   (unsigned long long)(uintptr_t)winload->base);
 
             UsLeafSite leaf = usLocateTransferLeaf(winload);
-            usConsoleLog("gmm", leaf.found ? UsLogInfo : UsLogWarn);
             if (leaf.found) {
-                usConsolePuts("winload leaf found\n");
+                usLogI("gmm", "winload leaf found\n");
             } else if (leaf.matches == 0) {
-                usConsolePuts("no winload leaf\n");
+                usLogW("gmm", "no winload leaf\n");
             } else {
-                usConsolePuts("winload leaf ambiguous\n");
+                usLogW("gmm", "winload leaf ambiguous\n");
             }
         }
 
         if (kernel != NULL && !gReportedKernel) {
             gReportedKernel = true;
-            usConsoleLog("gmm", UsLogVerbose);
-            usConsolePuts("ntoskrnl found at ");
-            usConsolePutHex((uint64_t)(uintptr_t)kernel->base);
-            usConsolePuts("\n");
+            usLogV("gmm", "ntoskrnl found at " US_VALUE("%#llx") "\n",
+                   (unsigned long long)(uintptr_t)kernel->base);
         }
     }
 
@@ -193,8 +188,7 @@ static efi_status_t EFIAPI gmmHook(uintn_t *memoryMapSize, efi_memory_descriptor
         || ++gScans >= US_GMM_MAX_SCANS) {
         usServiceHookRemove(&gHook);
         gDone = true;
-        usConsoleLog("gmm", UsLogInfo);
-        usConsolePuts("done\n");
+        usLogI("gmm", "done\n");
         usPatchReportPending(gSession);
 
         /* Everything the plan is built from is in memory now */

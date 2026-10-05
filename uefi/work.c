@@ -64,8 +64,7 @@ static void collectOnOwnStack(void *arg) {
 void usWorkCollect(UsSession *session) {
     CollectRequest req = { .session = session, .complete = false };
 
-    usConsoleLog("work", UsLogInfo);
-    usConsolePuts("collecting\n");
+    usLogI("work", "collecting\n");
     usStackRunOn(session->bootStackTop, collectOnOwnStack, &req);
 
     usConsoleMilestone(req.complete ? "M5 planned" : "M5 incomplete");

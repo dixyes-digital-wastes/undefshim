@@ -51,13 +51,13 @@ if ! ESP="$BUILD_DIR/esp.img" SERIAL_LOG="$SERIAL_LOG" \
      STOP_PATTERN='M5 planned|M5 incomplete' BOOT_TIMEOUT="${BOOT_TIMEOUT:-300}" \
      WIN_DISK="$WIN_DISK" tests/deploy/run.sh >"$WORK/plan.run" 2>&1; then
     echo "FAIL: the driver never produced a plan"
-    tr -d '\r' <"$SERIAL_LOG" | grep -aE 'gmm|work|plan' | tail -8
+    tests/deploy/plain.sh "$SERIAL_LOG" | grep -aE 'gmm|work|plan' | tail -8
     exit 1
 fi
 
-if grep -q 'M5 incomplete' "$SERIAL_LOG"; then
+if tests/deploy/plain.sh "$SERIAL_LOG" | grep -q 'M5 incomplete'; then
     echo "FAIL: the driver's plan is not complete"
-    tr -d '\r' <"$SERIAL_LOG" | grep -a 'plan:' | tail -20
+    tests/deploy/plain.sh "$SERIAL_LOG" | grep -a 'plan:' | tail -20
     exit 1
 fi
 
@@ -65,7 +65,7 @@ target_plan="$WORK/target.plan"
 host_plan="$WORK/host.plan"
 
 # The target's lines, with the serial line endings taken off.
-tr -d '\r' <"$SERIAL_LOG" | grep -a '^plan: ' >"$target_plan"
+tests/deploy/plain.sh "$SERIAL_LOG" | grep -a '^plan: ' >"$target_plan"
 
 if [ ! -x tests/tools/planprobe ]; then
     make --no-print-directory -C tests/tools planprobe >/dev/null || {

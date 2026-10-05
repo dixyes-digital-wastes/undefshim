@@ -273,82 +273,37 @@ static void preview(const char *path) {
     usConsoleUse(UsUARTOff, 0, 8);
     usConsoleLevel(UsLogDebug);
 
-    usConsoleLog("undefshim", UsLogInfo);
-    usConsolePuts("0.1.0\n");
-    usConsoleLog("config", UsLogInfo);
-    usConsolePuts("loaded\n");
-    usConsoleLog("config", UsLogInfo);
-    usConsolePuts("level=");
-    usConsolePutDec(UsLogInfo);
-    usConsolePuts(" rewrite=");
-    usConsolePutDec(1);
-    usConsolePuts(" debug=");
-    usConsolePutDec(0);
-    usConsolePuts(" patches=");
-    usConsolePutDec(0);
-    usConsolePuts("\n");
-    usConsoleLog("config", UsLogWarn);
-    usConsolePuts("no descriptor base, the kernel's own pages will not be rewritten\n");
-    usConsoleLog("config", UsLogVerbose);
-    usConsolePuts("a detail that is only worth saying when asked for\n");
-    usConsoleLog("config", UsLogDebug);
-    usConsolePuts("and one that is only for debugging what went wrong\n");
+    usLogI("undefshim", "0.1.0\n");
+    usLogI("config", "loaded\n");
+    usLogV("config", "level=" US_VALUE("%u") " rewrite=" US_VALUE("%u")
+           " debug=" US_VALUE("%u") " patches=" US_VALUE("%u") "\n",
+           (unsigned)UsLogInfo, 1U, 0U, 0U);
+    usLogW("config", "no descriptor base, the kernel's own pages will not be rewritten\n");
+    usLogV("config", "a detail that is only worth saying when asked for\n");
+    usLogD("config", "and one that is only for debugging what went wrong\n");
     usConsoleMilestone("M2 done");
-    usConsoleLog("pool", UsLogInfo);
-    usConsolePuts("pa=");
-    usConsolePutHex(0x1380e0000ULL);
-    usConsolePuts(" bytes=");
-    usConsolePutHex(0x22000ULL);
-    usConsolePuts(" slots=");
-    usConsolePutDec(8);
-    usConsolePuts("\n");
-    usConsoleLog("pool", UsLogInfo);
-    usConsolePuts("stack[0]=");
-    usConsolePutHex(0x1380e6000ULL);
-    usConsolePuts("\n");
+    usLogI("pool", "pa=" US_VALUE("%#llx") " bytes=" US_VALUE("%#llx")
+           " slots=" US_VALUE("%u") "\n", 0x1380e0000ULL, 0x22000ULL, 8U);
+    usLogI("pool", "stack[0]=" US_VALUE("%#llx") "\n", 0x1380e6000ULL);
     usConsoleMilestone("M6 payload placed");
-    usConsoleLog("gmm", UsLogInfo);
-    usConsolePuts("winload found at ");
-    usConsolePutHex(0x40a55000ULL);
-    usConsolePuts("\n");
-    usConsoleLog("gmm", UsLogInfo);
-    usConsolePuts("ntoskrnl found at ");
-    usConsolePutHex(0x100000000ULL);
-    usConsolePuts("\n");
-    usConsoleLog("arm", UsLogInfo);
-    usConsolePuts("handover +");
-    usConsolePutHex(0x109cULL);
-    usConsolePuts(" -> slot +");
-    usConsolePutHex(0x2790ULL);
-    usConsolePuts(" -> payload ");
-    usConsolePutHex(0x13bc01948ULL);
-    usConsolePuts("\n");
-    usConsoleLog("arm", UsLogInfo);
-    usConsolePuts("ntoskrnl stubs at +");
-    usConsolePutHex(0x60c05cULL);
-    usConsolePuts(" room=");
-    usConsolePutDec(4004);
-    usConsolePuts("\n");
-    usConsoleLog("patch", UsLogError);
-    usConsolePuts("refusing the volume root as a list directory\n");
-    usConsoleLog("patch", UsLogInfo);
-    usConsolePuts("all-ldapr.txt applied ");
-    usConsolePutDec(1576);
-    usConsolePuts(" refused ");
-    usConsolePutDec(2);
-    usConsolePuts("\n");
+    usLogV("gmm", "winload found at " US_VALUE("%#llx") "\n", 0x40a55000ULL);
+    usLogV("gmm", "ntoskrnl found at " US_VALUE("%#llx") "\n", 0x100000000ULL);
+    usLogV("arm", "handover +" US_VALUE("%#x") " -> slot +" US_VALUE("%#x")
+           " -> payload " US_VALUE("%#llx") "\n",
+           0x109cU, 0x2790U, 0x13bc01948ULL);
+    usLogV("arm", "ntoskrnl tables=" US_VALUE("%u") " stubs at +" US_VALUE("%#x")
+           " room=" US_VALUE("%u") "\n", 1U, 0x60c05cU, 4004U);
+    usLogE("patch", "refusing the volume root as a list directory\n");
+    usLogI("patch", "all-ldapr.txt applied " US_VALUE("%u") " refused "
+           US_VALUE("%u") "\n", 1576U, 2U);
     usConsoleMilestone("M6.5 armed");
-    usConsoleLog("progress", UsLogDebug);
-    usConsolePuts("marking the way\n");
+    usLogD("progress", "marking the way\n");
     usConsoleProgress('g');
     usConsoleProgress('1');
     usConsoleProgress('2');
     usConsolePuts("\n");
     usConsoleMilestone("M7 rewritten");
-    usConsoleLog("rewrite", UsLogInfo);
-    usConsolePuts("ntoskrnl holds ");
-    usConsolePutDec(1931);
-    usConsolePuts("\n");
+    usLogI("rewrite", "ntoskrnl holds " US_VALUE("%u") "\n", 1931U);
 
     out = fopen(path, "wb");
     if (out == NULL) {
@@ -393,16 +348,14 @@ static void testLevel(void) {
     /* On its own, a line below the level puts nothing on the screen at all:
      * not the text, not the escape that would have coloured it */
     usScreenClear();
-    usConsoleLog("quiet", UsLogDebug);
-    usConsolePuts("not worth saying\n");
+    usLogD("quiet", "not worth saying\n");
     if (inkInLines(0, 2) != 0) {
         printf("FAIL level: a line below the level was written\n");
         failures++;
     }
 
     usScreenClear();
-    usConsoleLog("loud", UsLogInfo);
-    usConsolePuts("worth saying\n");
+    usLogI("loud", "worth saying\n");
     loudOnly = inkInLines(0, 1);
     if (loudOnly == 0) {
         printf("FAIL level: a line at the level was dropped\n");
@@ -412,10 +365,8 @@ static void testLevel(void) {
     /* With the quiet line in front of it, the loud one is drawn in exactly
      * the same place: a dropped line does not take a row */
     usScreenClear();
-    usConsoleLog("quiet", UsLogDebug);
-    usConsolePuts("not worth saying\n");
-    usConsoleLog("loud", UsLogInfo);
-    usConsolePuts("worth saying\n");
+    usLogD("quiet", "not worth saying\n");
+    usLogI("loud", "worth saying\n");
     if (inkInLines(0, 1) != loudOnly || inkInLines(1, 2) != 0) {
         printf("FAIL level: the dropped line left something behind\n");
         failures++;
@@ -423,8 +374,7 @@ static void testLevel(void) {
 
     usConsoleLevel(UsLogDebug);
     usScreenClear();
-    usConsoleLog("quiet", UsLogDebug);
-    usConsolePuts("worth saying now\n");
+    usLogD("quiet", "worth saying now\n");
     if (inkInLines(0, 1) == 0) {
         printf("FAIL level: a line was dropped below its level\n");
         failures++;
@@ -433,10 +383,7 @@ static void testLevel(void) {
     /* Nothing at all is written when the level is off, numbers included */
     usConsoleLevel(UsLogOff);
     usScreenClear();
-    usConsoleLog("x", UsLogError);
-    usConsolePuts("gone");
-    usConsolePutDec(42);
-    usConsolePuts("\n");
+    usLogE("x", "gone " US_VALUE("%u") "\n", 42U);
     if (inkInLines(0, 2) != 0) {
         printf("FAIL level: something was written with the level off\n");
         failures++;
@@ -458,7 +405,7 @@ static void testColourIsScreenIndependent(void) {
 
     usConsoleColour(false);
     usScreenClear();
-    usConsoleLog("patch", UsLogError);
+    usLogE("patch", "a failure\n");
     if (firstInk() != RED_INK) {
         printf("FAIL colour switch: the screen lost its colour with it off\n");
         failures++;
@@ -466,7 +413,7 @@ static void testColourIsScreenIndependent(void) {
 
     usConsoleColour(true);
     usScreenClear();
-    usConsoleLog("patch", UsLogError);
+    usLogE("patch", "a failure\n");
     if (firstInk() != RED_INK) {
         printf("FAIL colour switch: the screen lost its colour with it on\n");
         failures++;

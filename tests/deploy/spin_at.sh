@@ -48,7 +48,7 @@ cat > "$WORK/$name.toml" <<EOF
 version = 1
 
 [log]
-level = "info"
+level = "verbose"
 
 [debug]
 enabled = true
@@ -87,12 +87,12 @@ trap 'kill $qpid 2>/dev/null || true' EXIT INT TERM
 # will say: everything after it happens on the kernel's side, where there is
 # no console.
 for _ in $(seq 1 300); do
-    grep -q 'M4 patched' "$log" 2>/dev/null && break
+    tests/deploy/plain.sh "$log" | grep -q 'M4 patched' 2>/dev/null && break
     sleep 1
 done
-if ! grep -q 'M4 patched' "$log" 2>/dev/null; then
+if ! tests/deploy/plain.sh "$log" | grep -q 'M4 patched' 2>/dev/null; then
     echo "FAIL: the spin was never written"
-    grep -aE 'patch|gmm|milestone' "$log" | tail -5
+    tests/deploy/plain.sh "$log" | grep -aE 'patch|gmm|milestone' | tail -5
     exit 1
 fi
 

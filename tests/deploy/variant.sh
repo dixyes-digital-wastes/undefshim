@@ -72,9 +72,9 @@ WIN_DISK="$WIN_DISK" \
     GRACE="$GRACE" BOOT_TIMEOUT="$BOOT_TIMEOUT" \
     timeout $((BOOT_TIMEOUT + 60)) tests/deploy/run.sh >"$out" 2>&1
 
-faults=$(grep -c 'Synchronous' "$log" 2>/dev/null)
-started=$(grep -c 'M4 setup' "$log" 2>/dev/null)
-chainload=$(grep -c 'chainloading' "$log" 2>/dev/null)
+faults=$(tests/deploy/plain.sh "$log" | grep -c 'Synchronous' 2>/dev/null)
+started=$(tests/deploy/plain.sh "$log" | grep -c 'M4 setup' 2>/dev/null)
+chainload=$(tests/deploy/plain.sh "$log" | grep -c 'chainloading' 2>/dev/null)
 reset=$(grep -c 'QEMU exited' "$out" 2>/dev/null)
 
 : "${faults:=0}"

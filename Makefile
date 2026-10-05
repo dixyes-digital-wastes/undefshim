@@ -327,9 +327,20 @@ check:
 # anything actually works. The Windows disk is external, so this one is
 # skipped unless WIN_DISK points at it.
 #
-# esp is a prerequisite on purpose: a variant run leaves its own image behind,
-# and without this the checks happily boot whatever was built last.
-check-qemu: esp
+# The image is built here rather than taken from esp, for two reasons. A
+# variant run leaves its own image behind, and without rebuilding the checks
+# happily boot whatever was built last. And the checks are the reader that
+# wants the details: most of what they match on -- the pool's addresses, where
+# the payload landed, the plan -- is written at verbose, and an ordinary boot
+# does not carry it. The configuration is the one that ships with the level
+# raised, so the checks see the same document a machine would, and the
+# substitution is asserted: a sed that stops matching would otherwise leave
+# the checks passing over lines that are not there
+check-qemu: $(DRIVER)
+	@sed 's/^\(level *= *\)"[a-z]*"/\1"verbose"/' config/us.toml > $(BUILD_DIR)/check.toml
+	@grep -q '^level = "verbose"' $(BUILD_DIR)/check.toml \
+	    || { echo "check.toml: the log level was not raised" >&2; exit 1; }
+	@CONFIG=$(BUILD_DIR)/check.toml ESP=$(BUILD_DIR)/esp.img tests/deploy/build_esp.sh
 	@tests/deploy/driver_boot.sh
 	@tests/deploy/config_cases.sh
 	@tests/deploy/payload_case.sh
