@@ -44,6 +44,12 @@ typedef struct {
  * was chosen for its size, and scaling it would blur the very pixels that make
  * it worth using
  */
+/*
+ * A glyph is drawn at its own size, so a row of text is as tall as the font
+ * and a character is as wide as one. Nothing here scales the font: the face
+ * was chosen for its size, and scaling it would blur the very pixels that make
+ * it worth using
+ */
 #define US_SCREEN_LINE US_FONT_HEIGHT
 
 /*
@@ -65,6 +71,8 @@ static uint32_t gTop;     /* the first row of the area this driver owns */
 static uint32_t gColumn;  /* characters, not pixels */
 static uint32_t gRow;
 static bool gReady;
+static bool gBlueFirst;   /* the frame buffer's channels, blue at the bottom */
+static uint32_t gInk = US_SCREEN_INK;
 
 /* How many characters fit across the frame buffer */
 static uint32_t columns(void) {
@@ -76,6 +84,15 @@ static void putPixel(uint32_t x, uint32_t y, uint32_t value) {
      * otherwise be written past its end, which is a fault and not a picture */
     if (x >= gWidth || y >= gHeight) {
         return;
+    }
+    /*
+     * Black and white are the same number whatever order the channels are in,
+     * which is why this went unnoticed while they were the only two colours.
+     * A colour is not: the format says which end of the word the red is at
+     */
+    if (gBlueFirst) {
+        value = (value & 0xFF00FF00U) | ((value & 0xFFU) << 16)
+                | ((value >> 16) & 0xFFU);
     }
     *(volatile uint32_t *)(gFrame + (y * gStride + x) * 4U) = value;
 }
@@ -92,8 +109,50 @@ static void drawGlyph(char c, uint32_t x, uint32_t y) {
 
         for (uint32_t bit = 0; bit < US_FONT_WIDTH; bit++) {
             putPixel(x + bit, y + row,
-                     (bits & (0x80U >> bit)) != 0 ? US_SCREEN_INK : US_SCREEN_PAPER);
+                     (bits & (0x80U >> bit)) != 0 ? gInk : US_SCREEN_PAPER);
         }
+    }
+}
+
+/*
+ * The colours the console names with SGR, as pixels
+ *
+ * The eight base colours and grey, and no bright ones: the escapes are read
+ * by a terminal as well as by this, and a terminal is usually light text on a
+ * dark background while this is the other way round. Only the base eight read
+ * acceptably on both. A colour that is not named here is drawn in black,
+ * which is what a terminal would do with a colour it had no opinion about
+ */
+/*
+ * The colours the console names with SGR, as pixels
+ *
+ * Black ink on white paper is what the rest of this draws, so a colour has to
+ * be dark enough to read against white - which rules out the bright half of
+ * the palette, whose whole point is being legible on black. The two that the
+ * console uses from that half are given darker versions here rather than
+ * being left to fall through, which would draw them in the default ink and
+ * lose the difference between them and everything else
+ */
+static uint32_t screenColour(uint32_t sgr) {
+    switch (sgr) {
+    case 31:
+        return 0x00C00000U; /* red */
+    case 32:
+        return 0x0000A000U; /* green */
+    case 33:
+        return 0x00A0A000U; /* yellow */
+    case 34:
+        return 0x000000C0U; /* blue */
+    case 35:
+        return 0x00A000A0U; /* magenta */
+    case 36:
+        return 0x0000A0A0U; /* cyan */
+    case 90:
+        return 0x00606060U; /* grey */
+    case 96:
+        return 0x0000C0C0U; /* bright cyan, darkened to be read on white */
+    default:
+        return US_SCREEN_INK;
     }
 }
 
@@ -142,7 +201,10 @@ static void newline(void) {
     }
 }
 
+/* Also clears what has been written so far. The colour goes back to the one
+ * a line with no escape in it is drawn in */
 void usScreenClear(void) {
+    gInk = US_SCREEN_INK;
     if (!gReady) {
         return;
     }
@@ -156,11 +218,12 @@ void usScreenClear(void) {
 }
 
 void usScreenUseFrameBuffer(void *pixels, uint32_t width, uint32_t height,
-                            uint32_t stride) {
+                            uint32_t stride, bool blueFirst) {
     gFrame = pixels;
     gWidth = width;
     gHeight = height;
     gStride = stride;
+    gBlueFirst = blueFirst;
     /*
      * From the very top. The firmware's console draws from the top down as
      * well, and the two would overwrite each other; leaving ours above it and
@@ -204,12 +267,159 @@ bool usScreenInit(void) {
     usScreenUseFrameBuffer((void *)(uintptr_t)gGOP->Mode->FrameBufferBase,
                            gGOP->Mode->Info->HorizontalResolution,
                            gGOP->Mode->Info->VerticalResolution,
-                           gGOP->Mode->Info->PixelsPerScanLine);
+                           gGOP->Mode->Info->PixelsPerScanLine,
+                           gGOP->Mode->Info->PixelFormat
+                               == PixelBlueGreenRedReserved8BitPerColor);
     return gReady;
+}
+
+/*
+ * The colour escapes the console writes, read back on this side
+ *
+ * The console writes to two places that do not know about each other and the
+ * same bytes have to make sense at both. A terminal reads them for itself; a
+ * frame buffer does not, so the ones that say what colour to use are parsed
+ * here and everything else is drawn as the characters it is
+ *
+ * The parser is a byte at a time because that is how the text arrives, and it
+ * holds what it has not yet decided about. A sequence it does not recognise
+ * is drawn as the characters that followed the escape, which is what a
+ * terminal that does not understand it does too: the escape byte itself has
+ * no glyph and is dropped
+ */
+typedef enum UsCSIState_e {
+    UsCsiGround = 0,
+    UsCsiEscape,   /* the byte after ESC */
+    UsCsiParam,    /* inside the brackets, collecting the parameters */
+} UsCSIState;
+
+#define US_CSI_MAX 16U
+
+static struct {
+    uint8_t state;
+    /* Everything that followed the escape, the bracket included: what the
+     * sequence said, which is what is drawn when it turns out not to be one
+     * of ours */
+    char body[US_CSI_MAX];
+    uint32_t length;
+} gCSI;
+
+/* Draws what the sequence held, as the characters it is. The state goes back
+ * to ground first, because drawing re-enters the same path */
+static void csiReject(void) {
+    uint32_t length = gCSI.length;
+
+    gCSI.length = 0;
+    gCSI.state = UsCsiGround;
+    for (uint32_t i = 0; i < length; i++) {
+        usScreenPutc(gCSI.body[i]);
+    }
+}
+
+/*
+ * Whether the body is a colour's parameter: a bracket and then a number
+ *
+ * The bracket is kept in the body so that a sequence which turns out not to
+ * be a colour can be drawn the way it was written, and so the number starts
+ * after it
+ */
+static bool csiIsNumber(void) {
+    if (gCSI.length < 1U || gCSI.body[0] != '[') {
+        return false;
+    }
+    for (uint32_t i = 1; i < gCSI.length; i++) {
+        if (gCSI.body[i] < '0' || gCSI.body[i] > '9') {
+            return false;
+        }
+    }
+    return true;
+}
+
+/*
+ * The end of a sequence: the colour if it is one, and the characters it was
+ * made of if it is not
+ *
+ * A sequence this does not recognise is drawn rather than swallowed, which is
+ * what a terminal that does not understand it does as well. The escape byte
+ * itself is dropped, because it has no glyph, so what is left is everything
+ * from the bracket on
+ */
+static void csiFinish(char final) {
+    bool colour = final == 'm' && csiIsNumber();
+    uint32_t value = 0;
+    uint32_t length = gCSI.length;
+
+    gCSI.length = 0;
+    gCSI.state = UsCsiGround;
+    if (colour) {
+        for (uint32_t i = 1; i < length; i++) {
+            value = value * 10U + (uint32_t)(gCSI.body[i] - '0');
+        }
+        /* No parameter means the default, which is the reset */
+        gInk = value == 0 ? US_SCREEN_INK : screenColour(value);
+        return;
+    }
+    for (uint32_t i = 0; i < length; i++) {
+        usScreenPutc(gCSI.body[i]);
+    }
+    usScreenPutc(final);
+}
+
+/*
+ * One byte of an escape sequence, or false when there is none in progress and
+ * the caller should draw the byte the ordinary way
+ */
+static bool csiFeed(char c) {
+    if (gCSI.state == UsCsiGround) {
+        if (c == '\x1b') {
+            gCSI.state = UsCsiEscape;
+            return true;
+        }
+        return false;
+    }
+    if (gCSI.state == UsCsiEscape) {
+        if (c != '[') {
+            /* An escape of some other kind. It has no glyph and is dropped,
+             * and this byte is drawn, which is what a terminal does too */
+            gCSI.state = UsCsiGround;
+            return false;
+        }
+        gCSI.state = UsCsiParam;
+        gCSI.length = 0;
+        gCSI.body[gCSI.length++] = '[';
+        return true;
+    }
+    if (c == '\x1b') {
+        /* Another sequence starts, so this one is over */
+        csiReject();
+        gCSI.state = UsCsiEscape;
+        return true;
+    }
+    if ((uint8_t)c < 0x20U || (uint8_t)c == 0x7FU) {
+        /* A control character ends a sequence, and is then handled as
+         * itself - a newline in the middle of one still ends the line */
+        csiReject();
+        return false;
+    }
+    if ((uint8_t)c >= 0x40U && (uint8_t)c <= 0x7EU && c != '[') {
+        csiFinish(c);
+        return true;
+    }
+    if (gCSI.length >= US_CSI_MAX) {
+        /* Longer than anything this writes. Draw what there is and stop */
+        csiReject();
+        return true;
+    }
+    gCSI.body[gCSI.length++] = c;
+    return true;
 }
 
 void usScreenPutc(char c) {
     if (!gReady) {
+        return;
+    }
+    /* A colour escape is not a character and does not take a column */
+    if (csiFeed(c)) {
         return;
     }
     if (c == '\n') {

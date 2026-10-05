@@ -72,6 +72,13 @@ typedef struct UsConfig_t {
     const char   *uartType;    /* "pl011" or "uart8250"; points into the document */
     uint64_t      uartBase;
     uint32_t      uartWidth;   /* bits per access: 8 or 32 */
+    /*
+     * Whether the output carries the colour escapes the screen and a terminal
+     * understand. On unless turned off: a log read back on a terminal is
+     * where the colours are worth anything, and a reader that does not
+     * understand the escapes ignores them
+     */
+    bool          uartColour;
     bool          debugEnabled;
     UsPatch      *patches;    /* owned array */
     uint32_t      patchCount;

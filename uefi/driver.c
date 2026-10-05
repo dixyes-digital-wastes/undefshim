@@ -81,6 +81,9 @@ int main(int argc, char **argv) {
         usConsoleUse(cfg->uartType[0] == 'p' ? UsUARTPL011 : UsUART8250,
                      cfg->uartBase, cfg->uartWidth);
     }
+    if (cfg != NULL) {
+        usConsoleColour(cfg->uartColour);
+    }
 
     usConsoleLog("undefshim", UsLogInfo);
     usConsolePuts(US_VERSION_STRING "\n");

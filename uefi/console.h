@@ -40,6 +40,17 @@ void usConsoleUse(UsUARTKind kind, uint64_t base, uint32_t width);
 void usConsoleLevel(UsLogLevel level);
 
 /*
+ * Whether the serial output carries the colour escapes. On unless asked
+ * otherwise: they are what a terminal reading the log back shows. Off is for
+ * a log that is going to be compared byte for byte, or read by something that
+ * would rather not see them
+ *
+ * Only the serial port: the screen parses the escapes into the ink it draws
+ * with and is coloured either way
+ */
+void usConsoleColour(bool enabled);
+
+/*
  * Starts a line: the tag, a colon, and the colour that tag and level are
  * drawn in. What follows until the newline is the line's message
  *

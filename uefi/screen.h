@@ -7,9 +7,12 @@
  * the case where something needs to be said. The screen is the other channel,
  * and it does not depend on the configuration having been read
  *
- * Text is drawn by writing pixels, with the glyphs in font.h. Nothing is
- * drawn until usScreenInit has found a frame buffer, and everything here is
- * safe to call when it has not
+ * Text is drawn by writing pixels, with the glyphs in font.h. The colour
+ * escapes the console writes are parsed here and turn into the ink a glyph is
+ * drawn in; a sequence that is not one of those is drawn as the characters it
+ * is, so a reader of the screen never sees less than what was said. Nothing
+ * is drawn until usScreenInit has found a frame buffer, and everything here
+ * is safe to call when it has not
  */
 
 #ifndef US_SCREEN_H
@@ -28,10 +31,11 @@ bool usScreenInit(void);
 /*
  * The same, for a caller that already has the frame buffer - a test, or
  * anything that was handed the address rather than finding it. The pixels are
- * four bytes each
+ * four bytes each, and blueFirst says which end of the word the red is at:
+ * the firmware states this and it cannot be worked out from the address
  */
 void usScreenUseFrameBuffer(void *pixels, uint32_t width, uint32_t height,
-                            uint32_t stride);
+                            uint32_t stride, bool blueFirst);
 
 /* Also clears what has been written so far */
 void usScreenClear(void);
