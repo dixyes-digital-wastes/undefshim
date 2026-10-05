@@ -152,7 +152,7 @@ def walk(f, ttbr, va):
 
 def transferRecord(f):
     w = words(f, BLOB_BASE + BLOB_TRANSFER_OFFSET, 12, physical=True)
-    if not w or w[0] != 0x5241544E55534555:
+    if not w or w[0] != 0x00534E4152545355:   # "USTRANS"
         return w[:1] if w else None
     names = ["magic", "poolPa", "poolVaBefore", "poolVaAfter", "kernelEntry",
              "mappedSize", "probes/mapped", "exhausted/faulted",

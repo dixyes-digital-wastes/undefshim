@@ -41,7 +41,7 @@ typedef struct UsTransferRecord_t {
     uint64_t loaderBlock;
 } UsTransferRecord;
 
-#define US_TRANSFER_MAGIC 0x5241544e55534555ULL /* "UUSENTAR", readable in a dump */
+#define US_TRANSFER_MAGIC 0x00534E4152545355ULL /* "USTRANS" - the handover */
 
 /*
  * Kept in the payload's own data so a later stage, or a dump of the running

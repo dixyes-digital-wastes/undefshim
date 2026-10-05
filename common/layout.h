@@ -73,8 +73,16 @@
  */
 #define US_FAULT_SPILL_BYTES 160U
 
-/* "USPL", used to tell a plausible pool from an uninitialised page */
-#define US_POOL_MAGIC 0x4C505355U
+/*
+ * Marks for the pool and for the records the payload leaves in it
+ *
+ * ASCII on purpose, so that a dump reads as words: a reader has to be able to
+ * tell a record that was written from a page that is still zero, and a word
+ * says that at a glance. Each is US in front of what it marks, and the pool's
+ * own is four characters because its field is four bytes while the records'
+ * are eight
+ */
+#define US_POOL_MAGIC 0x4C505355U                /* "USPL" - the pool */
 
 /*
  * What the payload records about being entered
@@ -87,7 +95,7 @@
  * payload sits in memory the firmware keeps for code, which may well be
  * mapped read only by the time anything would want to write here
  */
-#define US_POOL_ENTRY_MAGIC 0x5952544E55504355ULL /* "UCPUNTRY", readable in a dump */
+#define US_POOL_ENTRY_MAGIC 0x005952544E455355ULL /* "USENTRY" - the record */
 
 /*
  * One exception, as it was when the handler was entered
@@ -168,7 +176,7 @@ typedef struct UsPoolStats_t {
     UsPoolStat slots[US_STATS_SLOTS];
 } UsPoolStats;
 
-#define US_POOL_STATS_MAGIC 0x5354415453554F50ULL   /* "POUSSTAT" backwards */
+#define US_POOL_STATS_MAGIC 0x0053544154535355ULL   /* "USSTATS" - trap counts */
 
 typedef struct UsPoolEntry_t {
     uint64_t magic;
