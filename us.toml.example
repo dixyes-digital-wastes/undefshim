@@ -47,7 +47,7 @@ enabled = false
 # exception. It is never trusted - the handler checks it against the hardware's
 # own translation and carries on without it if the two disagree.
 # 0xE06368 is the value for the 26100 PE kernel used in development.
-descriptorBaseRva = 0xE06368
+descriptorBaseRVA = 0xE06368
 
 [patch]
 # Directory of patch list files, relative to the volume this configuration was

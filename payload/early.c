@@ -39,6 +39,40 @@ bool usPayloadEarly(void) {
     cfg->selfVA = payloadVA;
     cfg->highPoolVA = poolVA;
     __atomic_store_n(&cfg->highVA, payloadVA, __ATOMIC_RELEASE);
+
+    /*
+     * The kernel image's stubs are pointed at the payload's new address here,
+     * while the switch is still in progress.
+     *
+     * They are reached from the kernel's vector table, which only exists once
+     * the kernel has rebuilt the address space - and by then the address the
+     * boot gave the payload may no longer be mapped. A stub still holding it
+     * would branch nowhere, the resulting fault would arrive back at the same
+     * stub, and the payload would never run to publish it: the publication
+     * has to happen before the kernel can use it, not on the first exception.
+     *
+     * The write goes to the stub's physical address, which is reachable at
+     * this instant; the same page is what the kernel will fetch from once its
+     * tables are up, so the new address survives the switch. The loader's
+     * stubs are left alone: they are used before the kernel's tables are in
+     * force, when the payload's new address need not be mapped yet
+     */
+    for (uint64_t i = 0; i < cfg->stubCount && i < US_PAYLOAD_MAX_STUBS; i++) {
+        UsPayloadStub *stub = &cfg->stubs[i];
+        uint32_t branch;
+        uint32_t *words;
+
+        if (stub->kernelImage == 0 || stub->addressPA == 0 || stub->published == 1) {
+            continue;
+        }
+        usEncodeBranch(stub->targetIndex * 4U, US_SLOT_STUB_WORDS * 4U, &branch);
+        words = (uint32_t *)(uintptr_t)stub->addressPA;
+        usEncodeSlotTarget(words + US_SLOT_STUB_WORDS, payloadVA + cfg->entryOffset);
+        usCacheFlushRange(words + US_SLOT_STUB_WORDS, US_SLOT_TARGET_BYTES);
+        __atomic_store_n(words + stub->targetIndex, branch, __ATOMIC_RELEASE);
+        usCacheFlushRange(words + stub->targetIndex, sizeof(branch));
+        __atomic_store_n(&stub->published, 1, __ATOMIC_RELEASE);
+    }
     return true;
 }
 
