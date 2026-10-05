@@ -14,6 +14,7 @@
 
 #include "common/layout.h"
 #include "core/ldr.h"
+#include "payload/early.h"
 #include "payload/payload.h"
 #include "payload/selfmap.h"
 #include "payload/transfer.h"
@@ -95,4 +96,10 @@ void usTransferEntry(uint64_t kernelEntryVA, uint64_t loaderBlockVA) {
     usTransferRecord.probes = self.probes;
     usTransferRecord.exhausted = self.exhausted ? 1U : 0U;
     usTransferRecord.faulted = self.faulted ? 1U : 0U;
+
+    /* The images are on the other side of the switch now: the loader's is where
+     * it was, the kernel's where its image names it, and the payload's runtime
+     * address is already known from the address change. Every stub is pointed
+     * at it before the kernel runs */
+    usPayloadPublishAll(usTransferRecord.kernelBase);
 }

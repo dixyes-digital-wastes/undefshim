@@ -18,6 +18,62 @@
 #include "uefi/src/payload_place.h"
 #include "uefi/src/registry.h"
 
+bool usArmTransfer(UsSession *s) {
+    UsImage *loader = usRegistryGet(&s->registry, UsImageWinload);
+    UsLeafSite leaf;
+    UsSpareSlot slot;
+    uint32_t branch;
+    uint8_t *slotAt;
+    uint8_t *branchAt;
+    uint64_t payloadEntry;
+
+    if (!s->payloadPlaced || loader == NULL) {
+        return false;
+    }
+    leaf = usLocateTransferLeaf(loader);
+    if (!leaf.found) {
+        usConsolePuts("arm: no handover to take over\n");
+        return false;
+    }
+    slot = usLocateSpareSlot(loader, US_TRANSFER_BYTES);
+    if (!slot.found) {
+        usConsolePuts("arm: no slot for the handover stub\n");
+        return false;
+    }
+    /*
+     * The stub goes at the end of the run of zeros, not its start. The vector
+     * table stubs are placed at the start of the same run -- it is the
+     * longest hole in the image, and both locators take the longest -- so a
+     * stub at the start would be overwritten by them and the handover would
+     * branch into a vector stub instead
+     */
+    slot.rva += slot.bytes - US_TRANSFER_BYTES;
+    if (!usEncodeBranch(leaf.patchRVA, slot.rva, &branch)) {
+        usConsolePuts("arm: the stub slot is out of branch range\n");
+        return false;
+    }
+    branchAt = (uint8_t *)(uintptr_t)usImageRVAToPtr(loader, leaf.patchRVA);
+    slotAt = (uint8_t *)(uintptr_t)usImageRVAToPtr(loader, slot.rva);
+    if (branchAt == NULL || slotAt == NULL) {
+        usConsolePuts("arm: the loader's code is not reachable\n");
+        return false;
+    }
+    memcpy(slotAt, kTransferStub, US_TRANSFER_BYTES);
+    payloadEntry = s->payloadPlace.baseVA + US_PAYLOAD_TRANSFER_OFFSET;
+    memcpy(slotAt + US_TRANSFER_TARGET_OFFSET, &payloadEntry, sizeof(payloadEntry));
+    memcpy(branchAt, &branch, sizeof(branch));
+    usCacheFlushRange(slotAt, US_TRANSFER_BYTES);
+    usCacheFlushRange(branchAt, sizeof(branch));
+    usConsolePuts("arm: handover +");
+    usConsolePutHex(leaf.patchRVA);
+    usConsolePuts(" -> slot +");
+    usConsolePutHex(slot.rva);
+    usConsolePuts(" -> payload ");
+    usConsolePutHex(payloadEntry);
+    usConsolePuts("\n");
+    return true;
+}
+
 /*
  * Drawing the exception path into the payload, see arm.h
  *
