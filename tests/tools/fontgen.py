@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Turn an Atari font's outlines into a glyph table the driver can draw with.
+"""Turn a BDF bitmap font into a glyph table the driver can draw with.
 
 The screen is the only channel left when the UART is not configured or is not
 mapped, so the error paths need to draw text themselves. Drawing needs a font,
@@ -7,151 +7,83 @@ and a font is a table of small integers nobody wants to read or maintain by
 hand, so it is generated once and the result is committed: the build then
 needs nothing but what is in the tree.
 
-    tests/tools/fontgen.py \
-        "third_party/EightBit-Atari-Fonts/Truetype/EightBit Atari-90.ttf" \
-        uefi/font.h \
-        "third_party/EightBit-Atari-Fonts/Original Files/PNG/90.png"
+    tests/tools/fontgen.py third_party/atarist-font/atarist-normal.bdf uefi/font.h
 
-Pillow is needed to run this, and only to run this. It is not needed to build.
-
-The collection holds outlines traced from the original Atari 8-bit bitmaps,
-and it holds those bitmaps as well. Rendering the outlines at the size below
-reproduces them, which is what the reference image is for: given one, every
-glyph is compared against the original and a disagreement fails the run. That
-check is the reason the outlines can be trusted at all. An outline font is not
-a bitmap, so whether a renderer at a given size lands on the original's pixels
-is a fact about the renderer and has to be measured rather than assumed.
-
-The four characters the Atari character set does not have -- the grave, the
-braces and the tilde -- have no bitmap to match and come from the outlines
-alone. They are reported, not silently accepted.
+The source is https://github.com/ntwk/atarist-font: a BDF, which is a bitmap
+written out as text, so the glyphs are read rather than rendered. That is the
+reason this font was picked over an outline one: there is no question of
+whether a renderer lands on the right pixels at the right size, because the
+pixels are what is in the file.
 """
+import re
 import sys
 
 # The printable range, which is what a message can be made of
 FIRST = 32
 LAST = 126
 
-# What the face is rendered at, and where the glyph sits in that image. Both
-# are measured: at eight, two rows down, the render lands on the original
-# bitmap pixel for pixel, which the reference check confirms. Nothing here
-# scales a glyph -- what comes out is what the face draws at the size it draws
-# it
-SIZE = 8
-OFFSET_X = 0
-OFFSET_Y = 2
-
-# A pixel is ink when the coverage is past half. These faces are bitmaps
-# traced into outlines, so an edge is already where the original's pixel was
-INK = 96
-
-# Where the original keeps each printable character. The Atari character set
-# puts the printable ones in its first sixty-four cells and the lower case at
-# the character's own code, rather than in ASCII's order; this is that layout,
-# read off the reference image
-def referenceCell(code):
-    if FIRST <= code <= 95:
-        return code - FIRST
-    if 97 <= code <= 122:
-        return code
-    if code == 124:
-        return 124
-    return None
+# What the drawer lays a line out with. Every glyph states its own size in its
+# BBX line, and one that is not this is refused rather than guessed at
+ROWS = 16
+COLUMNS = 8
 
 
-def render(font, ch):
-    """One glyph, as the bits of an image the face was drawn into."""
-    from PIL import Image, ImageDraw
+def glyphsOf(text):
+    """Every glyph in the file, as {code: [row, ...]}."""
+    glyphs = {}
 
-    image = Image.new("L", (SIZE + OFFSET_X + 2, SIZE + OFFSET_Y + 4), 0)
-    ImageDraw.Draw(image).text((0, 0), ch, fill=255, font=font)
-    rows = []
-    for y in range(SIZE):
-        bits = 0
-        for x in range(SIZE):
-            if image.getpixel((x + OFFSET_X, y + OFFSET_Y)) > INK:
-                bits |= 0x80 >> x
-        rows.append(bits)
-    # The glyph has to fit the window it is read out of, in both directions
-    for x in range(image.width):
-        for y in range(image.height):
-            if image.getpixel((x, y)) > INK:
-                inside = OFFSET_X <= x < OFFSET_X + SIZE and OFFSET_Y <= y < OFFSET_Y + SIZE
-                if not inside:
-                    raise SystemExit("%r draws outside the eight by eight a glyph "
-                                     "has" % ch)
-    return rows
-
-
-def readReference(path):
-    """The original bitmap: 32 by 4 cells of eight by eight, in one image."""
-    from PIL import Image
-
-    image = Image.open(path).convert("L")
-    cells = []
-    for n in range(128):
-        x0 = (n % 32) * 8
-        y0 = (n // 32) * 8
-        cell = []
-        for y in range(8):
-            bits = 0
-            for x in range(8):
-                if image.getpixel((x0 + x, y0 + y)) > INK:
-                    bits |= 0x80 >> x
-            cell.append(bits)
-        cells.append(cell)
-    return cells
+    for block in re.findall(r"^STARTCHAR .*?^ENDCHAR$", text, re.M | re.S):
+        code = re.search(r"^ENCODING (-?\d+)$", block, re.M)
+        bbx = re.search(r"^BBX (\d+) (\d+) (-?\d+) (-?\d+)$", block, re.M)
+        bitmap = re.search(r"^BITMAP$(.*)", block, re.M | re.S)
+        if code is None or bbx is None or bitmap is None:
+            continue
+        width, rows, xOffset, yOffset = (int(v) for v in bbx.groups())
+        if width != COLUMNS or rows != ROWS or xOffset != 0 or yOffset != -2:
+            raise SystemExit("a glyph is %dx%d at (%d,%d), and this font is "
+                             "%dx%d at (0,-2)"
+                             % (width, rows, xOffset, yOffset, COLUMNS, ROWS))
+        cells = []
+        for line in bitmap.group(1).strip().split("\n"):
+            # The block ends with ENDCHAR, which is not a row of the glyph
+            if line == "ENDCHAR":
+                break
+            if len(line) != COLUMNS // 4:
+                raise SystemExit("a row is %r, and a row of this font is %d hex "
+                                 "digits" % (line, COLUMNS // 4))
+            cells.append(int(line, 16))
+        if len(cells) != ROWS:
+            raise SystemExit("a glyph has %d rows, and this font has %d"
+                             % (len(cells), ROWS))
+        glyphs[int(code.group(1))] = cells
+    return glyphs
 
 
 def main():
-    if len(sys.argv) not in (3, 4):
-        raise SystemExit("usage: fontgen.py <font.ttf> <out.h> [reference.png]")
+    if len(sys.argv) != 3:
+        raise SystemExit("usage: fontgen.py <font.bdf> <out.h>")
     source, target = sys.argv[1], sys.argv[2]
-    reference = readReference(sys.argv[3]) if len(sys.argv) == 4 else None
+    glyphs = glyphsOf(open(source, encoding="latin1").read())
 
-    from PIL import ImageFont
-
-    font = ImageFont.truetype(source, SIZE)
-
-    glyphs = []
-    matched = 0
-    absent = []
-    wrong = []
+    table = []
     for code in range(FIRST, LAST + 1):
-        rows = render(font, chr(code))
+        if code not in glyphs:
+            raise SystemExit("the font has no glyph for 0x%02x" % code)
+        rows = glyphs[code]
         if not any(rows) and code != FIRST:
-            raise SystemExit("%r came out blank" % chr(code))
-        glyphs.append((code, rows))
-        if reference is None:
-            continue
-        at = referenceCell(code)
-        if at is None:
-            absent.append(chr(code))
-        elif reference[at] == rows:
-            matched += 1
-        else:
-            wrong.append(chr(code))
-
-    if reference is not None:
-        print("%d glyphs match the original bitmap" % matched)
-        print("%d have none: %s" % (len(absent), " ".join(absent)))
-        if wrong:
-            raise SystemExit("these do not match the original: %s"
-                             % " ".join(wrong))
-        if matched + len(absent) != LAST - FIRST + 1:
-            raise SystemExit("only %d of the %d glyphs were accounted for"
-                             % (matched + len(absent), LAST - FIRST + 1))
+            raise SystemExit("%r is blank" % chr(code))
+        table.append((code, rows))
 
     out = []
     out.append("/*")
     out.append(" * The glyphs the screen drawer uses, for ASCII %d to %d" % (FIRST, LAST))
     out.append(" *")
-    out.append(" * Generated by tests/tools/fontgen.py from the outlines of EightBit")
-    out.append(" * Atari-90, at the height that face draws at, which is the height of")
-    out.append(" * the original Atari bitmap it was traced from. Committed rather than")
-    out.append(" * generated at build time so that a build needs nothing but this tree")
+    out.append(" * Generated by tests/tools/fontgen.py from the font at")
+    out.append(" * https://github.com/ntwk/atarist-font, which is %d by %d. Committed" % (COLUMNS, ROWS))
+    out.append(" * rather than generated at build time so that a build needs nothing but")
+    out.append(" * this tree")
     out.append(" *")
-    out.append(" * One byte per row, most significant bit on the left, %d rows a glyph," % SIZE)
+    out.append(" * One byte per row, most significant bit on the left, %d rows a glyph," % ROWS)
     out.append(" * the first row at the top. This file is not meant to be edited")
     out.append(" */")
     out.append("")
@@ -162,11 +94,11 @@ def main():
     out.append("")
     out.append("#define US_FONT_FIRST %d" % FIRST)
     out.append("#define US_FONT_LAST %d" % LAST)
-    out.append("#define US_FONT_WIDTH %d" % SIZE)
-    out.append("#define US_FONT_HEIGHT %d" % SIZE)
+    out.append("#define US_FONT_WIDTH %d" % COLUMNS)
+    out.append("#define US_FONT_HEIGHT %d" % ROWS)
     out.append("")
     out.append("static const uint8_t kFont[US_FONT_LAST - US_FONT_FIRST + 1][US_FONT_HEIGHT] = {")
-    for code, rows in glyphs:
+    for code, rows in table:
         cells = ", ".join("0x%02x" % value for value in rows)
         shown = "space" if code == FIRST else chr(code)
         out.append("    { %s }, /* %s */" % (cells, shown))
@@ -175,7 +107,8 @@ def main():
     out.append("#endif")
     with open(target, "w") as f:
         f.write("\n".join(out) + "\n")
-    print("wrote %s: %d glyphs, %dx%d" % (target, len(glyphs), SIZE, SIZE))
+    print("wrote %s: %d glyphs, %dx%d"
+          % (target, len(table), COLUMNS, ROWS))
 
 
 if __name__ == "__main__":
