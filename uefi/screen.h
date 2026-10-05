@@ -7,7 +7,7 @@
  * the case where something needs to be said. The screen is the other channel,
  * and it does not depend on the configuration having been read
  *
- * Text is drawn by writing pixels, with the glyphs in font8x16.h. Nothing is
+ * Text is drawn by writing pixels, with the glyphs in font.h. Nothing is
  * drawn until usScreenInit has found a frame buffer, and everything here is
  * safe to call when it has not
  */
