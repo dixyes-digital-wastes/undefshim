@@ -21,6 +21,7 @@ import json
 import re
 import socket
 import sys
+import logtext
 
 MAGIC = 0x005952544E455355  # "USENTRY", the pool entry record
 
@@ -118,7 +119,7 @@ def readAll(f, addr, count):
 
 
 def poolFromSerial(path):
-    text = open(path, "rb").read().decode("latin1")
+    text = logtext.read(path)
     m = re.search(r"pool: pa=0x([0-9a-f]+)", text)
     return int(m.group(1), 16) if m else None
 

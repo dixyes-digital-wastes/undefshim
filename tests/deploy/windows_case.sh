@@ -23,6 +23,9 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 
+CHECK="windows_case"
+. tests/deploy/check.sh
+
 BUILD_DIR="${BUILD_DIR:-build}"
 WORK="$BUILD_DIR/windows"
 WIN_DISK="${WIN_DISK:-}"
@@ -33,12 +36,10 @@ INTERVAL="${INTERVAL:-60}"
 QMP_PORT="${QMP_PORT:-4444}"
 
 if [ -z "$WIN_DISK" ]; then
-    echo "WIN_DISK not set, skipping"
-    exit 0
+    checkSkip "WIN_DISK is not set"
 fi
 if [ ! -f "$WIN_DISK" ]; then
-    echo "missing windows disk: $WIN_DISK" >&2
-    exit 1
+    checkFail "no windows disk at $WIN_DISK"
 fi
 
 mkdir -p "$WORK"
@@ -48,6 +49,17 @@ mkdir -p "$WORK"
 # a picture of the wrong mechanism is a picture of nothing.
 REWRITE="${REWRITE:-true}"
 cat > "$WORK/run.toml" <<EOF
+
+[uart]
+# Where the machine's serial port is. Without this the driver has no port to
+# report on, and a check that reads the log would be reading nothing
+baseAddr = 0x09000000
+type = "pl011"
+width = 32
+# A log with no colour escapes in it: a check reads these lines by
+# matching text, and a colour sequence between the tag and the words
+# is one more thing that can come between them and the pattern
+color = false
 
 [scan]
 ldaprRewrite = $REWRITE
@@ -67,7 +79,7 @@ mkdir -p "$shots"
 
 if ! CONFIG="$WORK/run.toml" ESP="$WORK/run.img" tests/deploy/build_esp.sh \
         >"$WORK/esp.out" 2>&1; then
-    echo "FAIL: could not build the volume"
+    checkNote "the volume could not be built"
     cat "$WORK/esp.out"
     exit 1
 fi
@@ -93,11 +105,11 @@ for _ in $(seq 1 $((WATCH + 240))); do
     sleep 1
 done
 if [ "$armed" != "yes" ]; then
-    echo "FAIL: the shim was never armed"
+    checkNote "the shim was never armed"
     tests/deploy/plain.sh "$log" | grep -aE 'arm:|M5' | tail -6
     exit 1
 fi
-echo "armed: $(tests/deploy/plain.sh "$log" | grep -a 'arm: vbar' | tail -1)"
+checkNote "armed: $(tests/deploy/plain.sh "$log" | grep -a 'arm: vbar' | tail -1)"
 
 # Then leave it alone and watch. The pictures are the result.
 elapsed=0
@@ -130,9 +142,9 @@ cmd({"execute": "qmp_capabilities"})
 cmd({"execute": "screendump", "arguments": {"filename": sys.argv[1]}})
 PY
     then
-        echo "  ${elapsed}s: $shot"
+        checkNote "${elapsed}s: $shot"
     else
-        echo "  ${elapsed}s: the machine did not answer, it may be gone"
+        checkNote "${elapsed}s: the machine did not answer, it may be gone"
         break
     fi
 done

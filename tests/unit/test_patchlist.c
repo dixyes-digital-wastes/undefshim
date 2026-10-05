@@ -15,6 +15,9 @@
 #include "core/patchlist.h"
 #include "core/sha256.h"
 
+#define US_CHECK_NAME "test_patchlist"
+#include "check.h"
+
 static unsigned checks;
 static unsigned failures;
 
@@ -22,7 +25,7 @@ static void ok(const char *what, bool value) {
     checks++;
     if (!value) {
         failures++;
-        printf("FAIL %s\n", what);
+        usCheckFail("%s\n", what);
     }
 }
 
@@ -30,7 +33,7 @@ static void eq32(const char *what, uint32_t got, uint32_t want) {
     checks++;
     if (got != want) {
         failures++;
-        printf("FAIL %s: want %u, got %u\n", what, want, got);
+        usCheckFail("%s: want %u, got %u\n", what, want, got);
     }
 }
 
@@ -38,7 +41,7 @@ static void eq64(const char *what, uint64_t got, uint64_t want) {
     checks++;
     if (got != want) {
         failures++;
-        printf("FAIL %s: want %#llx, got %#llx\n", what,
+        usCheckFail("%s: want %#llx, got %#llx\n", what,
                (unsigned long long)want, (unsigned long long)got);
     }
 }
@@ -80,7 +83,7 @@ static void testSHA256(void) {
         checks++;
         if (memcmp(want, got, 32) != 0) {
             failures++;
-            printf("FAIL sha256 vector %u\n", i);
+            usCheckFail("sha256 vector %u\n", i);
         }
         /* Fed in pieces, the answer has to be the same */
         usSHA256Init(&ctx);
@@ -91,7 +94,7 @@ static void testSHA256(void) {
         checks++;
         if (memcmp(want, got, 32) != 0) {
             failures++;
-            printf("FAIL sha256 vector %u, byte at a time\n", i);
+            usCheckFail("sha256 vector %u, byte at a time\n", i);
         }
     }
 }
@@ -289,7 +292,7 @@ static void testGarbage(void) {
         for (uint32_t i = 0; i < file.sites; i++) {
             if (sites[i].width == 0U || sites[i].width > US_PATCH_MAX_WIDTH) {
                 failures++;
-                printf("FAIL garbage produced a site of width %u\n", sites[i].width);
+                usCheckFail("garbage produced a site of width %u\n", sites[i].width);
             }
         }
     }
@@ -385,6 +388,5 @@ int main(void) {
     testCapacity();
     testGarbage();
 
-    printf("patchlist: %u checks, %u failures\n", checks, failures);
-    return failures == 0 ? 0 : 1;
+    return usCheckSummary(checks, failures);
 }

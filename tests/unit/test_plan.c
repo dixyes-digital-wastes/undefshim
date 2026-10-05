@@ -17,6 +17,9 @@
 #include "core/plan.h"
 #include "core/scan.h"
 
+#define US_CHECK_NAME "test_plan"
+#include "check.h"
+
 static int failures;
 static int checks;
 
@@ -24,7 +27,7 @@ static void ok(const char *name, int cond) {
     checks++;
     if (!cond) {
         failures++;
-        printf("FAIL %s\n", name);
+        usCheckFail("%s\n", name);
     }
 }
 
@@ -32,7 +35,7 @@ static void eqSize(const char *name, size_t got, size_t want) {
     checks++;
     if (got != want) {
         failures++;
-        printf("FAIL %-44s want %zu got %zu\n", name, want, got);
+        usCheckFail("%-44s want %zu got %zu\n", name, want, got);
     }
 }
 
@@ -40,7 +43,7 @@ static void eqStr(const char *name, const char *got, const char *want) {
     checks++;
     if (got == NULL || strcmp(got, want) != 0) {
         failures++;
-        printf("FAIL %-44s want \"%s\" got \"%s\"\n", name, want, got ? got : "(null)");
+        usCheckFail("%-44s want \"%s\" got \"%s\"\n", name, want, got ? got : "(null)");
     }
 }
 
@@ -489,6 +492,5 @@ int main(void) {
     testCompletePlan();
     testVBARDiscovery();
 
-    printf("%d checks, %d failures\n", checks, failures);
-    return failures != 0;
+    return usCheckSummary(checks, failures);
 }

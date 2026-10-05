@@ -8,9 +8,15 @@ emulation destination, and both ways out: eret back to the interrupted code,
 or a branch to the handler the slot originally held.
 """
 
+import os
 from pathlib import Path
 import re
 import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import check as checklib
+
+REPORT = checklib.Check("check_entry_frame")
 
 MASK = (1 << 64) - 1
 
@@ -335,11 +341,10 @@ def main():
     try:
         check(path.read_text())
     except (AssertionError, KeyError, ValueError, IndexError) as exc:
-        print("FAIL %s: %s" % (path, exc))
+        REPORT.fail("%s: %s" % (path, exc))
         return 1
-    print("PASS %s: all 31 register slots, three SP paths, the fault entry, "
-          "and both exits" % path)
-    return 0
+    return REPORT.passed("%s: all 31 register slots, three SP paths, the fault "
+                         "entry, and both exits" % path)
 
 
 if __name__ == "__main__":

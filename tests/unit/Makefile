@@ -101,23 +101,23 @@ test_par: test_par.c $(ROOT)/core/par.c
 	$(CC) -std=gnu23 -O2 -Wall -Wextra -I$(ROOT) $^ -o $@
 
 check: all
-	./test_cfg
-	./test_layout
-	./test_scan_images
-	./test_rva_patch
-	./test_plan
-	./test_pgtable
-	./test_par
-	./test_thunk
-	./test_stackgen
-	./test_payload_place
-	./test_early
-	./test_ldapr
-	./test_patchlist
-	./test_screen
-	./test_acpi
-	./test_ldr
-	python3 check_entry_frame.py $(ROOT)/payload/entry.S
-	python3 check_rewrite.py
-	python3 check_pte.py
-	python3 check_watch.py
+	@./test_cfg
+	@./test_layout
+	@./test_scan_images
+	@./test_rva_patch
+	@./test_plan
+	@./test_pgtable
+	@./test_par
+	@./test_thunk
+	@./test_stackgen
+	@./test_payload_place
+	@./test_early
+	@./test_ldapr
+	@./test_patchlist
+	@./test_screen
+	@./test_acpi
+	@./test_ldr
+	@python3 check_entry_frame.py $(ROOT)/payload/entry.S
+	@python3 check_rewrite.py
+	@python3 check_pte.py
+	@python3 check_watch.py

@@ -24,6 +24,9 @@ int atoi(const char *s);
 #include "uefi/font.h"
 #include "uefi/screen.h"
 
+#define US_CHECK_NAME "test_screen"
+#include "check.h"
+
 /* usScreenInit looks the protocol up; this test sets the frame buffer itself
  * and never calls it, but the symbols have to exist for the linker */
 efi_system_table_t *ST;
@@ -89,12 +92,12 @@ static void putUintTo(FILE *out, uint32_t value) {
 static void checkGuards(const char *what) {
     for (uint32_t i = 0; i < WIDTH; i++) {
         if (arena[i] != GUARD) {
-            printf("FAIL %s: wrote above the frame buffer at column %u\n", what, i);
+            usCheckFail("%s: wrote above the frame buffer at column %u\n", what, i);
             failures++;
             return;
         }
         if (arena[(HEIGHT + 1U) * WIDTH + i] != GUARD) {
-            printf("FAIL %s: wrote below the frame buffer at column %u\n", what, i);
+            usCheckFail("%s: wrote below the frame buffer at column %u\n", what, i);
             failures++;
             return;
         }
@@ -126,13 +129,13 @@ static void checkDrawn(const char *what) {
             }
         }
     }
-    printf("%s: ink %u, paper %u, other %u\n", what, ink, paper, other);
+    usCheckNote("%s: ink %u, paper %u, other %u\n", what, ink, paper, other);
     if (other != 0) {
-        printf("FAIL %s: %u pixels are neither ink nor paper\n", what, other);
+        usCheckFail("%s: %u pixels are neither ink nor paper\n", what, other);
         failures++;
     }
     if (ink == 0) {
-        printf("FAIL %s: nothing was drawn\n", what);
+        usCheckFail("%s: nothing was drawn\n", what);
         failures++;
     }
 }
@@ -199,14 +202,14 @@ static void testColour(void) {
     usScreenClear();
     usScreenPuts("X");
     if (firstInk() != 0x00000000U) {
-        printf("FAIL colour: a plain line is not black\n");
+        usCheckFail("colour: a plain line is not black\n");
         failures++;
     }
 
     usScreenClear();
     usScreenPuts("\x1b[31mX");
     if (firstInk() == 0x00000000U) {
-        printf("FAIL colour: an escape was drawn instead of taken\n");
+        usCheckFail("colour: an escape was drawn instead of taken\n");
         failures++;
     }
 
@@ -214,13 +217,13 @@ static void testColour(void) {
     usScreenClear();
     usScreenPuts("\x1b[35mY\x1b[0m");
     if (firstInk() == 0x00000000U) {
-        printf("FAIL colour: the reset came too late to be seen\n");
+        usCheckFail("colour: the reset came too late to be seen\n");
         failures++;
     }
     usScreenClear();
     usScreenPuts("\x1b[35m\x1b[0mX");
     if (firstInk() != 0x00000000U) {
-        printf("FAIL colour: the reset did not put the ink back\n");
+        usCheckFail("colour: the reset did not put the ink back\n");
         failures++;
     }
 
@@ -241,7 +244,7 @@ static void testColour(void) {
             }
         }
         if (firstInk() == 0x00FFFFFFU || second == 0) {
-            printf("FAIL colour: an unknown sequence was swallowed\n");
+            usCheckFail("colour: an unknown sequence was swallowed\n");
             failures++;
         }
     }
@@ -251,7 +254,7 @@ static void testColour(void) {
     usScreenPuts("\x1b[3");
     usScreenPuts("\nX");
     if (inkInLines(0, 1) == 0 || inkInLines(1, 1) == 0) {
-        printf("FAIL colour: a newline inside a sequence was lost\n");
+        usCheckFail("colour: a newline inside a sequence was lost\n");
         failures++;
     }
 }
@@ -307,7 +310,7 @@ static void preview(const char *path) {
 
     out = fopen(path, "wb");
     if (out == NULL) {
-        printf("FAIL preview: cannot write %s\n", path);
+        usCheckFail("preview: cannot write %s\n", path);
         failures++;
         return;
     }
@@ -350,7 +353,7 @@ static void testLevel(void) {
     usScreenClear();
     usLogD("quiet", "not worth saying\n");
     if (inkInLines(0, 2) != 0) {
-        printf("FAIL level: a line below the level was written\n");
+        usCheckFail("level: a line below the level was written\n");
         failures++;
     }
 
@@ -358,7 +361,7 @@ static void testLevel(void) {
     usLogI("loud", "worth saying\n");
     loudOnly = inkInLines(0, 1);
     if (loudOnly == 0) {
-        printf("FAIL level: a line at the level was dropped\n");
+        usCheckFail("level: a line at the level was dropped\n");
         failures++;
     }
 
@@ -368,7 +371,7 @@ static void testLevel(void) {
     usLogD("quiet", "not worth saying\n");
     usLogI("loud", "worth saying\n");
     if (inkInLines(0, 1) != loudOnly || inkInLines(1, 2) != 0) {
-        printf("FAIL level: the dropped line left something behind\n");
+        usCheckFail("level: the dropped line left something behind\n");
         failures++;
     }
 
@@ -376,7 +379,7 @@ static void testLevel(void) {
     usScreenClear();
     usLogD("quiet", "worth saying now\n");
     if (inkInLines(0, 1) == 0) {
-        printf("FAIL level: a line was dropped below its level\n");
+        usCheckFail("level: a line was dropped below its level\n");
         failures++;
     }
 
@@ -385,7 +388,7 @@ static void testLevel(void) {
     usScreenClear();
     usLogE("x", "gone " US_VALUE("%u") "\n", 42U);
     if (inkInLines(0, 2) != 0) {
-        printf("FAIL level: something was written with the level off\n");
+        usCheckFail("level: something was written with the level off\n");
         failures++;
     }
     usConsoleLevel(UsLogDebug);
@@ -407,7 +410,7 @@ static void testColourIsScreenIndependent(void) {
     usScreenClear();
     usLogE("patch", "a failure\n");
     if (firstInk() != RED_INK) {
-        printf("FAIL colour switch: the screen lost its colour with it off\n");
+        usCheckFail("colour switch: the screen lost its colour with it off\n");
         failures++;
     }
 
@@ -415,7 +418,7 @@ static void testColourIsScreenIndependent(void) {
     usScreenClear();
     usLogE("patch", "a failure\n");
     if (firstInk() != RED_INK) {
-        printf("FAIL colour switch: the screen lost its colour with it on\n");
+        usCheckFail("colour switch: the screen lost its colour with it on\n");
         failures++;
     }
 }
@@ -425,7 +428,7 @@ int main(int argc, char **argv) {
     usScreenUseFrameBuffer(frame, WIDTH, HEIGHT, WIDTH, false);
     checkGuards("after starting up");
     if (inkInLines(0, 1) != 0) {
-        printf("FAIL starting up: a line was drawn before anything was said\n");
+        usCheckFail("starting up: a line was drawn before anything was said\n");
         failures++;
     }
 
@@ -434,11 +437,11 @@ int main(int argc, char **argv) {
     usScreenPuts("X");
     checkGuards("after one character");
     if (inkInLines(0, 1) == 0) {
-        printf("FAIL after one character: nothing on the first line\n");
+        usCheckFail("after one character: nothing on the first line\n");
         failures++;
     }
     if (inkInLines(1, 7) != 0) {
-        printf("FAIL after one character: it was not the first line\n");
+        usCheckFail("after one character: it was not the first line\n");
         failures++;
     }
 
@@ -450,12 +453,12 @@ int main(int argc, char **argv) {
     }
     checkGuards("after one full line");
     if (inkInLines(0, 1) == 0 || inkInLines(1, 7) != 0) {
-        printf("FAIL after one full line: the wrap came early or late\n");
+        usCheckFail("after one full line: the wrap came early or late\n");
         failures++;
     }
     usScreenPutc('X');
     if (inkInLines(1, 1) == 0) {
-        printf("FAIL after one more character: it did not wrap\n");
+        usCheckFail("after one more character: it did not wrap\n");
         failures++;
     }
 
@@ -471,7 +474,7 @@ int main(int argc, char **argv) {
     checkGuards("after more lines than fit");
     checkDrawn("after more lines than fit");
     if (inkInLines(7, 1) == 0) {
-        printf("FAIL after more lines than fit: the last line is empty\n");
+        usCheckFail("after more lines than fit: the last line is empty\n");
         failures++;
     }
 
@@ -488,7 +491,7 @@ int main(int argc, char **argv) {
         usScreenUseFrameBuffer(frame, WIDTH, HEIGHT, WIDTH, false);
     }
     if (failures == 0) {
-        printf("screen: all checks passed\n");
+        return usCheckPassed("all checks passed");
         return 0;
     }
     printf("screen: %d failures\n", failures);

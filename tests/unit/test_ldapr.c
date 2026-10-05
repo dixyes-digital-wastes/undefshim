@@ -12,6 +12,9 @@
 
 #include "core/ldapr.h"
 
+#define US_CHECK_NAME "test_ldapr"
+#include "check.h"
+
 static int failures;
 static int checks;
 
@@ -19,7 +22,7 @@ static void ok(const char *name, int cond) {
     checks++;
     if (!cond) {
         failures++;
-        printf("FAIL %s\n", name);
+        usCheckFail("%s\n", name);
     }
 }
 
@@ -27,7 +30,7 @@ static void eqInt(const char *name, int got, int want) {
     checks++;
     if (got != want) {
         failures++;
-        printf("FAIL %-44s want %d got %d\n", name, want, got);
+        usCheckFail("%-44s want %d got %d\n", name, want, got);
     }
 }
 
@@ -35,7 +38,7 @@ static void eqHex(const char *name, uint32_t got, uint32_t want) {
     checks++;
     if (got != want) {
         failures++;
-        printf("FAIL %-44s want 0x%08x got 0x%08x\n", name, want, got);
+        usCheckFail("%-44s want 0x%08x got 0x%08x\n", name, want, got);
     }
 }
 
@@ -76,28 +79,28 @@ static void testScannerAgrees(void) {
 
             got = usLDAPRDecode(0x38BFC000U | base);
             if (got.kind != UsLDAPRByte || got.rn != rn || got.rt != rt) {
-                printf("FAIL ldaprb rn=%u rt=%u\n", rn, rt);
+                usCheckFail("ldaprb rn=%u rt=%u\n", rn, rt);
                 failures++;
                 checks++;
                 return;
             }
             got = usLDAPRDecode(0x78BFC000U | base);
             if (got.kind != UsLDAPRHalf || got.rn != rn || got.rt != rt) {
-                printf("FAIL ldaprh rn=%u rt=%u\n", rn, rt);
+                usCheckFail("ldaprh rn=%u rt=%u\n", rn, rt);
                 failures++;
                 checks++;
                 return;
             }
             got = usLDAPRDecode(0xB8BFC000U | base);
             if (got.kind != UsLDAPRWord || got.rn != rn || got.rt != rt) {
-                printf("FAIL ldapr rn=%u rt=%u\n", rn, rt);
+                usCheckFail("ldapr rn=%u rt=%u\n", rn, rt);
                 failures++;
                 checks++;
                 return;
             }
             got = usLDAPRDecode(0xF8BFC000U | base);
             if (got.kind != UsLDAPRXword || got.rn != rn || got.rt != rt) {
-                printf("FAIL ldapr x rn=%u rt=%u\n", rn, rt);
+                usCheckFail("ldapr x rn=%u rt=%u\n", rn, rt);
                 failures++;
                 checks++;
                 return;
@@ -284,6 +287,5 @@ int main(void) {
     testSubstitution();
     testAlignment();
 
-    printf("%d checks, %d failures\n", checks, failures);
-    return failures != 0;
+    return usCheckSummary(checks, failures);
 }

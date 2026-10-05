@@ -15,6 +15,9 @@
 
 #include "core/thunk.h"
 
+#define US_CHECK_NAME "test_thunk"
+#include "check.h"
+
 static int failures;
 static int checks;
 
@@ -22,7 +25,7 @@ static void ok(const char *name, int cond) {
     checks++;
     if (!cond) {
         failures++;
-        printf("FAIL %s\n", name);
+        usCheckFail("%s\n", name);
     }
 }
 
@@ -30,7 +33,7 @@ static void eq64(const char *name, uint64_t got, uint64_t want) {
     checks++;
     if (got != want) {
         failures++;
-        printf("FAIL %-44s want 0x%llx got 0x%llx\n", name,
+        usCheckFail("%-44s want 0x%llx got 0x%llx\n", name,
                (unsigned long long)want, (unsigned long long)got);
     }
 }
@@ -342,12 +345,12 @@ static void testSlotStubKeepingRegisters(void) {
         checks++;
         if (!run.reachedPayload) {
             failures++;
-            printf("FAIL ec 0x%02x reached %s instead of the payload\n", ec,
+            usCheckFail("ec 0x%02x reached %s instead of the payload\n", ec,
                    run.reachedTail ? "the tail" : "nothing");
         } else if (run.reachedTail) {
             failures++;
             checks++;
-            printf("FAIL ec 0x%02x reached the tail as well\n", ec);
+            usCheckFail("ec 0x%02x reached the tail as well\n", ec);
         }
         eq64("at the address it was given", run.payloadTarget, target);
     }
@@ -501,7 +504,7 @@ static void testSlotTargetPublication(void) {
             checks++;
             if (!run.reachedPayload || run.payloadTarget != lowTarget) {
                 failures++;
-                printf("FAIL shape %u staged %u: reached %#llx (payload=%d, tail=%d)\n",
+                usCheckFail("shape %u staged %u: reached %#llx (payload=%d, tail=%d)\n",
                        shape, staged, (unsigned long long)run.payloadTarget,
                        (int)run.reachedPayload, (int)run.reachedTail);
             }
@@ -554,6 +557,5 @@ int main(void) {
     testSlotTargetEncoding();
     testSlotTargetPublication();
 
-    printf("%d checks, %d failures\n", checks, failures);
-    return failures != 0;
+    return usCheckSummary(checks, failures);
 }

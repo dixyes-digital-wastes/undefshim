@@ -20,6 +20,9 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 
+CHECK="patch_case"
+. tests/deploy/check.sh
+
 BUILD_DIR="${BUILD_DIR:-build}"
 WORK="$BUILD_DIR/patch-case"
 WIN_DISK="${WIN_DISK:-}"
@@ -28,18 +31,27 @@ PATCH_RVA="${PATCH_RVA:-0x74c8}"
 PATCH_TAG="${PATCH_TAG:-entry breakpoint}"
 
 if [ -z "$WIN_DISK" ]; then
-    echo "WIN_DISK not set, skipping"
-    exit 0
+    checkSkip "WIN_DISK is not set"
 fi
 
 if [ ! -f "$WIN_DISK" ]; then
-    echo "missing windows disk: $WIN_DISK" >&2
-    exit 1
+    checkFail "no windows disk at $WIN_DISK"
 fi
 
 mkdir -p "$WORK"
 cat > "$WORK/patch.toml" <<EOF
 version = 1
+
+[uart]
+# Where the machine's serial port is. Without this the driver has no port to
+# report on, and a check that reads the log would be reading nothing
+baseAddr = 0x09000000
+type = "pl011"
+width = 32
+# A log with no colour escapes in it: a check reads these lines by
+# matching text, and a colour sequence between the tag and the words
+# is one more thing that can come between them and the pattern
+color = false
 
 [log]
 level = "verbose"
@@ -58,7 +70,7 @@ EOF
 log="$WORK/patch.log"
 if ! CONFIG="$WORK/patch.toml" ESP="$WORK/patch.img" tests/deploy/build_esp.sh \
         >"$WORK/patch.esp" 2>&1; then
-    echo "FAIL: could not build the volume"
+    checkNote "the volume could not be built"
     cat "$WORK/patch.esp"
     exit 1
 fi
@@ -66,13 +78,13 @@ fi
 if ! ESP="$WORK/patch.img" SERIAL_LOG="$log" WIN_DISK="$WIN_DISK" \
      STOP_PATTERN='M4 patched|M4 failed' BOOT_TIMEOUT="${BOOT_TIMEOUT:-420}" \
      tests/deploy/run.sh >"$WORK/patch.run" 2>&1; then
-    echo "FAIL: the patch was never applied"
+    checkNote "the patch was never applied"
     tests/deploy/plain.sh "$log" | grep -E 'loadimage|gmm|patch' | tail -8
     exit 1
 fi
 
 if ! tests/deploy/plain.sh "$log" | grep -q "patch: $PATCH_TAG at "; then
-    echo "FAIL: no patch report"
+    checkNote "no patch report"
     tests/deploy/plain.sh "$log" | grep -E 'patch: ' | tail -5
     exit 1
 fi
@@ -82,7 +94,7 @@ wrote=$(tests/deploy/plain.sh "$log" | sed -n "s/.*patch: $PATCH_TAG at 0x\([0-9
 value=$(tests/deploy/plain.sh "$log" | sed -n "s/.*patch: $PATCH_TAG at 0x[0-9a-f]* = \(0x[0-9a-f]*\)\/.*/\1/p" | head -1)
 
 if [ -z "$base" ] || [ -z "$wrote" ]; then
-    echo "FAIL: the reports are not parseable"
+    checkNote "the reports are not parseable"
     tests/deploy/plain.sh "$log" | grep -E 'gmm: winload found|patch: ' | tail -5
     exit 1
 fi
@@ -91,14 +103,12 @@ fi
 expected=$(( 16#$base + PATCH_RVA ))
 wroteDec=$(( 16#$wrote ))
 if [ "$wroteDec" != "$expected" ]; then
-    echo "FAIL: wrote at 0x$(printf %x "$wroteDec"), expected 0x$(printf %x "$expected")"
-    echo "      image base 0x$base plus rva $PATCH_RVA"
-    exit 1
+    checkNote "wrote at 0x$(printf %x "$wroteDec"), expected 0x$(printf %x "$expected")"
+    checkNote "image base 0x$base plus rva $PATCH_RVA"
 fi
 
 if [ "$value" != "0x14000000" ]; then
-    echo "FAIL: reported value $value, expected 0x14000000"
-    exit 1
+    checkNote "reported value $value, expected 0x14000000"
 fi
 
-echo "PASS: winload base 0x$base, patched 0x$(printf %x "$expected") with $value"
+checkPass "winload base 0x$base, patched 0x$(printf %x "$expected") with $value"

@@ -21,6 +21,9 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 
+CHECK="breakpoint_case"
+. tests/deploy/check.sh
+
 BUILD_DIR="${BUILD_DIR:-build}"
 WORK="$BUILD_DIR/breakpoint-case"
 WIN_DISK="${WIN_DISK:-}"
@@ -31,12 +34,23 @@ NTO_RVA="${NTO_RVA:-0xa5f7a0}"
 # machine is watched for a while after the patch lands before looking at it.
 SETTLE="${SETTLE:-60}"
 
-[ -f "$WIN_DISK" ] || { echo "WIN_DISK not set or missing, skipping"; exit 0; }
-command -v "$GDB" >/dev/null || { echo "missing $GDB, skipping"; exit 0; }
+[ -f "$WIN_DISK" ] || checkSkip "WIN_DISK is not set or missing"
+command -v "$GDB" >/dev/null || checkSkip "no $GDB to read the machine with"
 
 mkdir -p "$WORK"
 cat > "$WORK/bp.toml" <<EOF
 version = 1
+
+[uart]
+# Where the machine's serial port is. Without this the driver has no port to
+# report on, and a check that reads the log would be reading nothing
+baseAddr = 0x09000000
+type = "pl011"
+width = 32
+# A log with no colour escapes in it: a check reads these lines by
+# matching text, and a colour sequence between the tag and the words
+# is one more thing that can come between them and the pattern
+color = false
 
 [debug]
 enabled = true
@@ -51,20 +65,27 @@ EOF
 
 log="$WORK/bp.log"
 CONFIG="$WORK/bp.toml" ESP="$WORK/bp.img" tests/deploy/build_esp.sh >"$WORK/bp.esp" 2>&1 || {
-    echo "FAIL: could not build the volume"
+    checkNote "the volume could not be built"
     cat "$WORK/bp.esp"
     exit 1
 }
 
 # The run is not stopped by a marker: the machine has to stay up so gdb can be
 # attached to it, and run.sh is what owns the QEMU process.
-ESP="$WORK/bp.img" SERIAL_LOG="$log" WIN_DISK="$WIN_DISK" \
-STOP_PATTERN='breakpoint-never-matches' BOOT_TIMEOUT=$((SETTLE + 300)) \
+#
+# Its own process group, so that everything it starts goes away with it. The
+# pid the shell reports after a background command with an environment prefix
+# is the subshell that prefix creates, not run.sh: killing it leaves the
+# machine running, and the ports it holds are then the next check's problem
+setsid env ESP="$WORK/bp.img" SERIAL_LOG="$log" WIN_DISK="$WIN_DISK" \
+    STOP_PATTERN='breakpoint-never-matches' BOOT_TIMEOUT=$((SETTLE + 300)) \
     tests/deploy/run.sh >"$WORK/bp.run" 2>&1 &
 runpid=$!
 
 stop() {
-    kill "$runpid" 2>/dev/null || true
+    kill -TERM -"$runpid" 2>/dev/null || true
+    sleep 1
+    kill -KILL -"$runpid" 2>/dev/null || true
     # run.sh kills its own QEMU when it exits, but a run killed mid flight may
     # not get there; the ESP path makes this specific enough to be safe.
     pkill -f "file=$WORK/bp.img" 2>/dev/null || true
@@ -77,12 +98,12 @@ for _ in $(seq 1 200); do
     sleep 1
 done
 if ! tests/deploy/plain.sh "$log" | grep -q 'M4 patched'; then
-    echo "FAIL: the patch was never applied"
+    checkNote "the patch was never applied"
     tests/deploy/plain.sh "$log" | grep -aE 'patch|gmm|milestone' | tail -5
     exit 1
 fi
 
-echo "patch applied, waiting ${SETTLE}s for the kernel to run"
+checkNote "the patch is applied; waiting ${SETTLE}s for the kernel to run"
 sleep "$SETTLE"
 
 gdbout="$WORK/bp.gdb"
@@ -96,15 +117,14 @@ timeout 60 "$GDB" -q -batch \
 pc=$(sed -n 's/^PCVAL \([0-9a-f]*\)$/0x\1/p' "$gdbout" | head -1)
 
 if [ -z "$pc" ] || [ "$pc" = "0x" ]; then
-    echo "FAIL: could not read the PC"
+    checkNote "the program counter could not be read"
     tail -10 "$gdbout"
     exit 1
 fi
 
 # The word gdb printed at the PC has to be what the table asked for.
 if ! grep -qP '^0x[0-9a-f]+:\s+0x14000000$' "$gdbout"; then
-    echo "FAIL: the instruction at the PC is not the patch"
-    echo "      pc $pc"
+    checkNote "pc $pc does not hold the patch"
     grep -E '0x[0-9a-f]+:' "$gdbout" | head -2
     exit 1
 fi
@@ -115,16 +135,16 @@ pcval=$((pc))
 rvaval=$((NTO_RVA))
 base=$(( pcval - rvaval ))
 if [ $(( base & 0xfff )) -ne 0 ]; then
-    echo "FAIL: pc $pc is not page aligned against the rva, base is $(printf 0x%x "$base")"
+    checkNote "pc $pc is not page aligned against the rva, base is $(printf 0x%x "$base")"
     exit 1
 fi
 
 case "$pc" in
 0xffff*) ;;
 *)
-    echo "FAIL: pc $pc is not in the higher half"
+    checkNote "pc $pc is not in the higher half"
     exit 1
     ;;
 esac
 
-echo "PASS: kernel executing the patch at $pc (base $(printf 0x%x "$base"))"
+checkPass "the kernel is executing the patch at $pc (base $(printf 0x%x "$base"))"

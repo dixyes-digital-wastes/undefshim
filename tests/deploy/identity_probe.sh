@@ -25,6 +25,9 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 
+CHECK="identity_probe"
+. tests/deploy/check.sh
+
 BUILD_DIR="${BUILD_DIR:-build}"
 WORK="$BUILD_DIR/probe"
 ESP="${ESP:-$BUILD_DIR/esp.img}"
@@ -40,8 +43,8 @@ QEMU_SMP="${QEMU_SMP:-8,sockets=1,clusters=2,cores=4,threads=1}"
 QMP_PORT="${QMP_PORT:-4444}"
 WIN_DISK="${WIN_DISK:-}"
 
-[ -f "$ESP" ] || { echo "missing esp: $ESP (run make esp first)" >&2; exit 1; }
-[ -f "$WIN_DISK" ] || { echo "WIN_DISK not set or missing, skipping"; exit 0; }
+[ -f "$ESP" ] || checkFail "no image at $ESP (run make esp first)"
+[ -f "$WIN_DISK" ] || checkSkip "WIN_DISK is not set or missing"
 
 mkdir -p "$WORK"
 rm -f "$LOG"
@@ -68,7 +71,7 @@ for _ in $(seq 1 300); do
     sleep 1
 done
 if ! tests/deploy/plain.sh "$LOG" | grep -q 'pool: pa=' 2>/dev/null; then
-    echo "FAIL: the driver never reported a pool"
+    checkNote "the driver never reported a pool"
     tests/deploy/plain.sh "$LOG" | tail -5
     exit 1
 fi
@@ -80,8 +83,11 @@ sleep "$SETTLE"
 python3 - "$LOG" "$QMP_PORT" "${PROBES[@]}" <<'PY'
 import json, re, socket, sys
 
+sys.path.insert(0, "tests/deploy")
+import logtext
+
 log_path, port, probes = sys.argv[1], int(sys.argv[2]), sys.argv[3:]
-log = open(log_path, "rb").read().decode("latin1")
+log = logtext.read(log_path)
 
 
 def find(pattern, what):

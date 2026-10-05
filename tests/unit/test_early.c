@@ -10,6 +10,9 @@
 #include "payload/payload.h"
 #include "payload/vamap.h"
 
+#define US_CHECK_NAME "test_early"
+#include "check.h"
+
 #define PAYLOAD_PA UINT64_C(0x12345000)
 #define PAYLOAD_VA UINT64_C(0xFFFFF80030000000)
 #define POOL_VA UINT64_C(0xFFFFF80040000000)
@@ -235,7 +238,7 @@ static void testLandingCache(void) {
     /* Nor is another table's */
     uint64_t cached = 0;
     assert(!usPayloadSlotTailCached(0xdead000, spsr[0], &cached));
-    printf("landing cache: works out once, remembers per table and slot\n");
+    usCheckNote("landing cache: works out once, remembers per table and slot\n");
 }
 
 int main(void) {
@@ -336,6 +339,5 @@ int main(void) {
     assert(memcmp(stubs[0], original[0], sizeof(stubs[0])) == 0);
     cfg.stubs[0].published = 0;
     assert(usPayloadPublish(tableVA(0)) && flushes == 4);
-    puts("early: conversion, deferred ASLR publication, table/image identity, write checks and retry passed");
-    return 0;
+    return usCheckPassed("conversion, deferred ASLR publication, table/image identity, write checks and retry passed");
 }

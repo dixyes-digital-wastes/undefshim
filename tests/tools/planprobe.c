@@ -21,6 +21,12 @@
 
 #include "core/plan.h"
 
+/* Its plan goes to standard output and is compared byte for byte, so
+ * the report has to go somewhere else */
+#define US_CHECK_NAME "planprobe"
+#define US_CHECK_OUT stderr
+#include "check.h"
+
 static void sinkPuts(void *ctx, const char *s) {
     (void)ctx;
     fputs(s, stdout);
@@ -107,5 +113,8 @@ int main(int argc, char **argv) {
 
     free(winloadData);
     free(kernelData);
-    return plan.complete ? 0 : 1;
+    if (!plan.complete) {
+        usCheckFail("the plan is not complete\n");
+    }
+    return usCheckPassed("every site was worked out and put in the plan");
 }

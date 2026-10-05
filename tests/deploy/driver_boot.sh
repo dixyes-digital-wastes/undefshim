@@ -13,18 +13,22 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 
+CHECK="driver_boot"
+. tests/deploy/check.sh
+
 BUILD_DIR="${BUILD_DIR:-build}"
 SERIAL_LOG="${SERIAL_LOG:-$BUILD_DIR/driver-boot.log}"
 
 SERIAL_LOG="$SERIAL_LOG" \
 STOP_PATTERN='M4 setup|M4 failed|M2 failed' \
 BOOT_TIMEOUT="${BOOT_TIMEOUT:-60}" \
+WIN_DISK= \
     tests/deploy/run.sh || exit 1
 
 fail() {
-    echo "FAIL: $1"
+    checkNote "what the driver said:"
     tests/deploy/plain.sh "$SERIAL_LOG" | grep -E 'pool|config|loadimage|milestone' | tail -8
-    exit 1
+    checkFail "$1"
 }
 
 tests/deploy/plain.sh "$SERIAL_LOG" | grep -q 'M4 setup' || fail "the driver did not finish bringing up"
@@ -69,5 +73,6 @@ last=$(printf '%s' "$stacks" | sed -n 's/.*stack\[[0-9]*\]=\(0x[0-9a-f]*\).*/\1/
     || fail "the first stack top $first is not a stack above the header at $pa"
 [ $(( last )) -le $(( pa + got_bytes )) ] || fail "the last stack runs past the pool"
 
-echo "pool: $pa identity mapped, $((got_bytes)) bytes, $slots stacks, first=$first last=$last"
-echo "PASS: the driver brings itself up"
+checkNote "pool $pa is identity mapped, $((got_bytes)) bytes, $slots stacks"
+checkNote "first stack top $first, last $last"
+checkPass "the driver brings itself up"

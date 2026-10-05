@@ -18,6 +18,8 @@ import tempfile
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "deploy"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import check as checklib  # noqa: E402
 import bugcheck_probe  # noqa: E402
 import watch  # noqa: E402
 
@@ -107,8 +109,9 @@ def main():
     with patch.object(bugcheck_probe, "readWords", return_value=[0] * 5):
         assert bugcheck_probe.findBugCheckRecord(object(), 0) == (None, None)
 
-    print("PASS: watching reads the pool only when named, and halts on all CPUs")
+    return checklib.Check("check_watch").passed(
+        "reads the pool only when named, and halts on all CPUs")
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

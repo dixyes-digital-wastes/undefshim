@@ -14,6 +14,9 @@
 #include "uefi/console.h"
 #include "uefi/session.h"
 
+#define US_CHECK_NAME "test_payload_place"
+#include "check.h"
+
 #define PAYLOAD_PAGES ((US_PAYLOAD_BYTES + US_PAGE_SIZE - 1) / US_PAGE_SIZE)
 
 static _Alignas(US_PAGE_SIZE) uint8_t pages[PAYLOAD_PAGES * US_PAGE_SIZE];
@@ -163,6 +166,5 @@ int main(void) {
         assert(!session.payloadPlaced);
         assert(out.basePA == 0 && out.baseVA == 0);
     }
-    printf("payload_place: preflight, session cfg/lookup and idempotence passed\n");
-    return 0;
+    return usCheckPassed("preflight, session cfg/lookup and idempotence passed");
 }

@@ -21,6 +21,9 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 
+CHECK="${CHECK:-screen_case}"
+. tests/deploy/check.sh
+
 ESP="$1"
 QMP_PORT="$2"
 EXPECT="$3"
@@ -33,14 +36,13 @@ out="$WORK/run.log"
 text="$WORK/screen.txt"
 
 if ! command -v tesseract >/dev/null; then
-    echo "SKIP: no tesseract, cannot read the screen"
-    exit 2
+    checkSkip "no tesseract, so the screen cannot be read"
 fi
 
 # The monitor has to outlive the boot, so the run is told not to stop on
 # anything and is killed once the screen has been read
 QMP_PORT="$QMP_PORT" KEEP=1 STOP_PATTERN='no such line' BOOT_TIMEOUT="$((TIMEOUT + 60))" \
-ESP="$ESP" SERIAL_LOG="$log" \
+ESP="$ESP" SERIAL_LOG="$log" WIN_DISK= \
     tests/deploy/run.sh >"$out" 2>&1 &
 runner=$!
 
@@ -53,11 +55,9 @@ trap cleanup EXIT INT TERM
 
 if tests/deploy/screenread.py --qmp-port "$QMP_PORT" \
         --poll "$EXPECT" --timeout "$TIMEOUT" >"$text" 2>&1; then
-    echo "PASS: the screen says \"$EXPECT\""
-    exit 0
+    checkPass "the screen says \"$EXPECT\""
 fi
 
-echo "FAIL: the screen never said \"$EXPECT\""
-echo "--- what it did say ---"
+checkNote "what it did say:"
 cat "$text" 2>/dev/null || true
-exit 1
+checkFail "the screen never said \"$EXPECT\""
