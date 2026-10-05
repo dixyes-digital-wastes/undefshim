@@ -29,11 +29,11 @@ fsY:
 \EFI\Microsoft\Boot\bootmgfw.efi
 ```
 
-It reads `us.toml` from the volume it was loaded from, and carries on with its defaults when there is none -- the serial port it would report on is one of the things that file specifies, so without it nothing is printed and what it is doing is on the screen instead.
+It reads `us.toml` from the volume it was loaded from, and carries on with its defaults when there is none -- the serial port it would report on is one of the things that file specifies, so without it nothing is printed and what it is doing is on the screen instead. What the file can say is in [`docs/configuration.md`](docs/configuration.md).
 
 ## How it works
 
-See docs.
+See [`docs/`](docs/).
 
 ## TODOs
 
