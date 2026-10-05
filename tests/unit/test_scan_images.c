@@ -12,6 +12,9 @@
 
 #include "core/pe.h"
 
+#define US_CHECK_NAME "test_scan_images"
+#include "check.h"
+
 #define PAGE 4096U
 
 static int failures;
@@ -21,7 +24,7 @@ static void ok(const char *name, int cond) {
     checks++;
     if (!cond) {
         failures++;
-        printf("FAIL %s\n", name);
+        usCheckFail("%s\n", name);
     }
 }
 
@@ -29,7 +32,7 @@ static void eqInt(const char *name, int got, int want) {
     checks++;
     if (got != want) {
         failures++;
-        printf("FAIL %-40s want %d got %d\n", name, want, got);
+        usCheckFail("%-40s want %d got %d\n", name, want, got);
     }
 }
 
@@ -259,6 +262,5 @@ int main(void) {
     testIgnoresNonImages();
     testEmptyRegion();
 
-    printf("%d checks, %d failures\n", checks, failures);
-    return failures != 0;
+    return usCheckSummary(checks, failures);
 }

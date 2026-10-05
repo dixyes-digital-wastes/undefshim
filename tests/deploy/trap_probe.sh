@@ -15,6 +15,9 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 
+CHECK="trap_probe"
+. tests/deploy/check.sh
+
 WORK=build/trap
 SECONDS_TO_RUN="${1:-300}"
 WIN_DISK="${WIN_DISK:-../winemu/files/winpe_26100.qcow2}"
@@ -24,6 +27,17 @@ ESP="$WORK/probe.img"
 
 cat > "$WORK/probe.toml" <<EOF
 version = 1
+
+[uart]
+# Where the machine's serial port is. Without this the driver has no port to
+# report on, and a check that reads the log would be reading nothing
+baseAddr = 0x09000000
+type = "pl011"
+width = 32
+# A log with no colour escapes in it: a check reads these lines by
+# matching text, and a colour sequence between the tag and the words
+# is one more thing that can come between them and the pattern
+color = false
 
 [log]
 level = "verbose"
@@ -59,14 +73,19 @@ kill -TERM -"$QPID" 2>/dev/null || true
 sleep 2
 kill -KILL -"$QPID" 2>/dev/null || true
 
-echo "serial: $(tests/deploy/plain.sh "$WORK/serial.log" | grep -c . 2>/dev/null || echo 0) lines"
-echo "int log: $(wc -l < "$WORK/int.log" 2>/dev/null || echo 0) lines"
+checkNote "serial: $(tests/deploy/plain.sh "$WORK/serial.log" | grep -c . 2>/dev/null || echo 0) lines"
+checkNote "int log: $(wc -l < "$WORK/int.log" 2>/dev/null || echo 0) lines"
 
 python3 - "$WORK/int.log" "$WORK/serial.log" <<'PY'
 import re, sys
 
+sys.path.insert(0, "tests/deploy")
+import logtext
+
+# The exception log is QEMU's and has no escapes in it; the serial log is
+# the driver's and has
 raw = open(sys.argv[1], "rb").read().decode("latin1", "replace")
-log = open(sys.argv[2], "rb").read().decode("latin1", "replace")
+log = logtext.read(sys.argv[2])
 
 kbase = None
 m = re.search(r"gmm: ntoskrnl found at 0x([0-9a-f]+)", log)

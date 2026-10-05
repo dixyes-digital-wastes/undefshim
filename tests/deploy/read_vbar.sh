@@ -3,6 +3,9 @@
 set -uo pipefail
 cd "$(dirname "$0")/../.."
 
+CHECK="read_vbar"
+. tests/deploy/check.sh
+
 WORK=build/vbar
 mkdir -p "$WORK"
 LOG="$WORK/serial.log"
@@ -14,6 +17,17 @@ if [ ! -f "$ESP" ]; then
     cat > "$WORK/run.toml" <<EOF
 version = 1
 
+[uart]
+# Where the machine's serial port is. Without this the driver has no port to
+# report on, and a check that reads the log would be reading nothing
+baseAddr = 0x09000000
+type = "pl011"
+width = 32
+# A log with no colour escapes in it: a check reads these lines by
+# matching text, and a colour sequence between the tag and the words
+# is one more thing that can come between them and the pattern
+color = false
+
 [log]
 level = "verbose"
 
@@ -22,7 +36,7 @@ enabled = true
 arm = true
 EOF
     CONFIG="$WORK/run.toml" ESP="$ESP" tests/deploy/build_esp.sh >/dev/null 2>&1 || {
-        echo "could not build the volume"; exit 1; }
+        checkNote "the volume could not be built"; exit 1; }
 fi
 
 nohup ../qemu/build/qemu-system-aarch64 \
@@ -48,7 +62,7 @@ for _ in $(seq 1 120); do
     tests/deploy/plain.sh "$LOG" | grep -q 'M6.5 armed' 2>/dev/null && break
     sleep 2
 done
-echo "armed; waiting ${SETTLE:-90}s for the kernel to run"
+checkNote "armed; waiting ${SETTLE:-90}s for the kernel to run"
 sleep "${SETTLE:-90}"
 
 # Read the pool's entry record instead of the registers: gdb cannot reach the
@@ -56,7 +70,10 @@ sleep "${SETTLE:-90}"
 python3 - "$LOG" 4444 <<'PY'
 import json, re, socket, sys
 
-log = open(sys.argv[1], "rb").read().decode("latin1")
+sys.path.insert(0, "tests/deploy")
+import logtext
+
+log = logtext.read(sys.argv[1])
 m = re.search(r"pool: pa=0x([0-9a-f]+)", log)
 if not m:
     raise SystemExit("no pool address in the log")

@@ -285,7 +285,7 @@ $(DRIVER): $(DRIVER_OBJS) posix-uefi
 	@echo "built $@"
 
 # Deployment. See tests/deploy for the details.
-.PHONY: esp run check check-qemu clean
+.PHONY: esp run check check-qemu check-one clean
 # The fake kernel: an ordinary UEFI application, so it can use the firmware's
 # console, built for a processor that has the instructions at issue.
 FAKE_BUILD := $(BUILD_DIR)/fake
@@ -336,19 +336,33 @@ check:
 # raised, so the checks see the same document a machine would, and the
 # substitution is asserted: a sed that stops matching would otherwise leave
 # the checks passing over lines that are not there
+# What a check that skipped exits with; see tests/deploy/check.sh. Nothing
+# was asked of it, so it is not a failure and the run carries on
+SKIP := 77
+
 check-qemu: $(DRIVER)
-	@sed 's/^\(level *= *\)"[a-z]*"/\1"verbose"/' config/us.toml > $(BUILD_DIR)/check.toml
+	@sed -e 's/^\(level *= *\)"[a-z]*"/\1"verbose"/' -e 's/^\(color *= *\).*/\1false/' \
+	    config/us.toml > $(BUILD_DIR)/check.toml
 	@grep -q '^level = "verbose"' $(BUILD_DIR)/check.toml \
+	    && grep -q '^color = false' $(BUILD_DIR)/check.toml \
 	    || { echo "check.toml: the log level was not raised" >&2; exit 1; }
 	@CONFIG=$(BUILD_DIR)/check.toml ESP=$(BUILD_DIR)/esp.img tests/deploy/build_esp.sh
-	@tests/deploy/driver_boot.sh
-	@tests/deploy/config_cases.sh
-	@tests/deploy/payload_case.sh
-	@WIN_DISK=$(WIN_DISK) tests/deploy/boot_hook.sh
-	@WIN_DISK=$(WIN_DISK) tests/deploy/patch_case.sh
-	@WIN_DISK=$(WIN_DISK) PLAN_CORPUS=$(PLAN_CORPUS) tests/deploy/plan_case.sh
-	@WIN_DISK=$(WIN_DISK) tests/deploy/breakpoint_case.sh
-	@WIN_DISK=$(WIN_DISK) tests/deploy/vector_case.sh
+	@$(MAKE) --no-print-directory check-one CHECK=driver_boot
+	@$(MAKE) --no-print-directory check-one CHECK=config_cases
+	@$(MAKE) --no-print-directory check-one CHECK=payload_case
+	@$(MAKE) --no-print-directory check-one CHECK=boot_hook WIN_DISK=$(WIN_DISK)
+	@$(MAKE) --no-print-directory check-one CHECK=patch_case WIN_DISK=$(WIN_DISK)
+	@$(MAKE) --no-print-directory check-one CHECK=plan_case WIN_DISK=$(WIN_DISK) PLAN_CORPUS=$(PLAN_CORPUS)
+	@$(MAKE) --no-print-directory check-one CHECK=breakpoint_case WIN_DISK=$(WIN_DISK)
+	@$(MAKE) --no-print-directory check-one CHECK=vector_case WIN_DISK=$(WIN_DISK)
+
+# One check, with its own skip code understood. A check that has nothing to do
+# -- no windows disk, no corpus -- says so with $(SKIP) and that is not a
+# failure: the point of the run is to find out what this machine can be asked,
+# and "nothing" is an answer
+check-one:
+	@CHECK=$(CHECK) WIN_DISK=$(WIN_DISK) PLAN_CORPUS=$(PLAN_CORPUS) \
+	    tests/deploy/$(CHECK).sh || test $$? -eq $(SKIP)
 
 clean:
 	rm -rf $(BUILD_DIR)

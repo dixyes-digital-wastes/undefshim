@@ -18,6 +18,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 
+CHECK="fake_case"
+. tests/deploy/check.sh
+
 BUILD_DIR="${BUILD_DIR:-build}"
 DRIVER="${DRIVER:-$BUILD_DIR/undefshim_driver.efi}"
 FAKE_DIR="$BUILD_DIR/fake"
@@ -28,10 +31,10 @@ LIST="$FAKE_DIR/fake.txt"
 QEMU_CPU="${QEMU_CPU:-tsv110}"
 export QEMU_CPU
 
-[ -f "$DRIVER" ] || { echo "missing driver: $DRIVER (run make first)" >&2; exit 1; }
+[ -f "$DRIVER" ] || checkFail "no driver at $DRIVER (run make first)"
 
 make -s fake BUILD_DIR="$BUILD_DIR" >/dev/null
-[ -f "$FAKE_DIR/ntoskrnl.efi" ] || { echo "missing fake kernel" >&2; exit 1; }
+[ -f "$FAKE_DIR/ntoskrnl.efi" ] || checkFail "no fake kernel at $FAKE_DIR/ntoskrnl.efi"
 
 python3 tests/deploy/enumerate_sites.py --kernel "$FAKE_DIR/ntoskrnl.efi" \
     --pefile ntoskrnl --out "$LIST" | tail -1
@@ -56,7 +59,7 @@ open(path, "w").write("\n".join(kept))
 print("sites left out of the list: %d" % dropped)
 PY
 else
-    echo "sites left out of the list: none"
+    checkNote "sites left out of the list: none"
 fi
 
 DRIVER="$DRIVER" CONFIG=config/us.toml STARTUP=tests/deploy/fake_startup.nsh \
@@ -68,18 +71,16 @@ mcopy -i "$ESP" -o "$FAKE_DIR/ntoskrnl.efi" ::/ntoskrnl.efi
 # looks exactly like a boot that said nothing.
 rm -f "${SERIAL_SOCK:-$BUILD_DIR/serial.sock}"
 
-ESP="$ESP" SERIAL_LOG="$SERIAL_LOG" STOP_PATTERN="FAKEK: PASS" \
+ESP="$ESP" SERIAL_LOG="$SERIAL_LOG" STOP_PATTERN="FAKEK: PASS" WIN_DISK= \
     ARM_PATTERN="M6.5 armed" BOOT_TIMEOUT="${BOOT_TIMEOUT:-180}" \
     bash tests/deploy/run.sh >/dev/null 2>&1 || true
 
-echo "--- the fake kernel's report"
+checkNote "the fake kernel's report:"
 tests/deploy/plain.sh "$SERIAL_LOG" | grep -a "FAKEK:" || true
-echo "--- what the driver did"
+checkNote "what the driver did:"
 tests/deploy/plain.sh "$SERIAL_LOG" | grep -a "patch:" || true
 
 if tests/deploy/plain.sh "$SERIAL_LOG" | grep -qa "FAKEK: PASS"; then
-    echo "fake kernel: PASS"
-    exit 0
+    checkPass "the fake kernel carried out every instruction it was built with"
 fi
-echo "fake kernel: FAIL"
-exit 1
+checkFail "the fake kernel did not carry out every instruction"

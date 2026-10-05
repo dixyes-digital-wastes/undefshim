@@ -22,6 +22,9 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 
+CHECK="plan_case"
+. tests/deploy/check.sh
+
 BUILD_DIR="${BUILD_DIR:-build}"
 WORK="$BUILD_DIR/plan-case"
 SERIAL_LOG="$WORK/plan.log"
@@ -29,18 +32,15 @@ WIN_DISK="${WIN_DISK:-}"
 PLAN_CORPUS="${PLAN_CORPUS:-}"
 
 if [ -z "$WIN_DISK" ]; then
-    echo "WIN_DISK not set, skipping"
-    exit 0
+    checkSkip "WIN_DISK is not set"
 fi
 
 if [ -z "$PLAN_CORPUS" ]; then
-    echo "PLAN_CORPUS not set, skipping"
-    exit 0
+    checkSkip "PLAN_CORPUS is not set"
 fi
 
 if [ ! -f "$PLAN_CORPUS/winload.efi" ] || [ ! -f "$PLAN_CORPUS/ntoskrnl.exe" ]; then
-    echo "PLAN_CORPUS has no winload.efi and ntoskrnl.exe: $PLAN_CORPUS" >&2
-    exit 1
+    checkFail "PLAN_CORPUS has no winload.efi and ntoskrnl.exe: $PLAN_CORPUS"
 fi
 
 mkdir -p "$WORK"
@@ -50,13 +50,13 @@ mkdir -p "$WORK"
 if ! ESP="$BUILD_DIR/esp.img" SERIAL_LOG="$SERIAL_LOG" \
      STOP_PATTERN='M5 planned|M5 incomplete' BOOT_TIMEOUT="${BOOT_TIMEOUT:-300}" \
      WIN_DISK="$WIN_DISK" tests/deploy/run.sh >"$WORK/plan.run" 2>&1; then
-    echo "FAIL: the driver never produced a plan"
+    checkNote "the driver never produced a plan"
     tests/deploy/plain.sh "$SERIAL_LOG" | grep -aE 'gmm|work|plan' | tail -8
     exit 1
 fi
 
 if tests/deploy/plain.sh "$SERIAL_LOG" | grep -q 'M5 incomplete'; then
-    echo "FAIL: the driver's plan is not complete"
+    checkNote "the driver's plan is not complete"
     tests/deploy/plain.sh "$SERIAL_LOG" | grep -a 'plan:' | tail -20
     exit 1
 fi
@@ -69,28 +69,28 @@ tests/deploy/plain.sh "$SERIAL_LOG" | grep -a '^plan: ' >"$target_plan"
 
 if [ ! -x tests/tools/planprobe ]; then
     make --no-print-directory -C tests/tools planprobe >/dev/null || {
-        echo "FAIL: could not build the host tool"
+        checkNote "the host tool could not be built"
         exit 1
     }
 fi
 
 if ! tests/tools/planprobe "$PLAN_CORPUS/winload.efi" "$PLAN_CORPUS/ntoskrnl.exe" \
         >"$host_plan" 2>"$WORK/host.err"; then
-    echo "FAIL: the host tool could not build a plan"
+    checkNote "the host tool could not build a plan"
     cat "$WORK/host.err"
     exit 1
 fi
 
 if [ ! -s "$target_plan" ]; then
-    echo "FAIL: no plan lines in the serial log"
+    checkNote "no plan lines in the serial log"
     exit 1
 fi
 
 if ! diff -u "$host_plan" "$target_plan" >"$WORK/plan.diff"; then
-    echo "FAIL: the two plans differ"
+    checkNote "the two plans differ"
     sed -n '1,40p' "$WORK/plan.diff"
     exit 1
 fi
 
 sites=$(grep -c '^plan: site ' "$target_plan")
-echo "PASS: both plans agree ($sites sites, $(wc -l <"$target_plan") lines)"
+checkPass "both plans agree ($sites sites, $(wc -l <"$target_plan") lines)"

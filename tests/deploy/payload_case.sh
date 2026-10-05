@@ -21,18 +21,23 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 
+CHECK="payload_case"
+. tests/deploy/check.sh
+
 BUILD_DIR="${BUILD_DIR:-build}"
 SERIAL_LOG="${SERIAL_LOG:-$BUILD_DIR/payload.log}"
 
 SERIAL_LOG="$SERIAL_LOG" \
 STOP_PATTERN='M6 payload placed|M6 failed' \
 BOOT_TIMEOUT="${BOOT_TIMEOUT:-60}" \
+WIN_DISK= \
     tests/deploy/run.sh || exit 1
 
+# What the check says when it gives up, with the lines that say why
 fail() {
-    echo "FAIL: $1"
+    checkNote "last lines about the payload:"
     tests/deploy/plain.sh "$SERIAL_LOG" | grep -a 'payload' | tail -5
-    exit 1
+    checkFail "$1"
 }
 
 tests/deploy/plain.sh "$SERIAL_LOG" | grep -q 'M6 payload placed' || fail "the payload was never reported"
@@ -84,6 +89,6 @@ case "$mapping" in
     ;;
 esac
 
-echo "PASS: payload at $base ($bytes bytes), entry $entry, config $config"
-echo "      $alive"
-echo "      $mapping"
+checkPass "payload at $base ($bytes bytes), entry $entry, config $config"
+checkNote "$alive"
+checkNote "$mapping"

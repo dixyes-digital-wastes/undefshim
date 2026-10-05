@@ -14,6 +14,11 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 
+# Reports under the name of the check that started this run, or under its own
+# when it was started by hand
+CHECK="${CHECK:-run}"
+. tests/deploy/check.sh
+
 QEMU="${QEMU:-../qemu/build/qemu-system-aarch64}"
 QEMU_FW="${QEMU_FW:-../winemu/linaro_ovmf.fd}"
 QEMU_CPU="${QEMU_CPU:-cortex-a76-nolrcpc}"
@@ -44,10 +49,10 @@ FAULT_PATTERN="${FAULT_PATTERN-Synchronous Exception}"
 # the image is never written to.
 WIN_DISK="${WIN_DISK:-}"
 
-[ -f "$ESP" ] || { echo "missing esp: $ESP (run make esp first)" >&2; exit 1; }
-[ -f "$QEMU_FW" ] || { echo "missing firmware: $QEMU_FW" >&2; exit 1; }
+[ -f "$ESP" ] || fail "no image at $ESP (run make esp first)"
+[ -f "$QEMU_FW" ] || fail "no firmware at $QEMU_FW"
 if [ -n "$WIN_DISK" ] && [ ! -f "$WIN_DISK" ]; then
-    echo "missing windows disk: $WIN_DISK" >&2
+    checkFail "no windows disk at $WIN_DISK"
     exit 1
 fi
 
@@ -102,7 +107,7 @@ if [ -n "$KEEP" ]; then
     # Leaving it running means leaving it running: the exit trap would
     # otherwise kill the machine this mode exists to keep.
     trap - EXIT INT TERM
-    echo "left running: display 5900, qmp $QMP_PORT, serial $SERIAL_LOG"
+    checkNote "left running: display 5900, qmp $QMP_PORT, serial $SERIAL_LOG"
     exit 0
 fi
 
@@ -112,17 +117,15 @@ wait "$QEMU_PID" 2>/dev/null || true
 # An exception is a failure whatever else the log contains, so it is checked
 # before the expected marker.
 if tests/deploy/plain.sh "$SERIAL_LOG" | grep -q "$FAULT_PATTERN"; then
-    echo "FAIL: the guest took an exception"
+    checkNote "where it was taken:"
     tests/deploy/plain.sh "$SERIAL_LOG" | grep -n "$FAULT_PATTERN" | head -3
-    exit 1
+    checkFail "the guest took an exception"
 fi
 
 if [ "$rc" -eq 0 ]; then
-    echo "PASS: saw $STOP_PATTERN"
+    checkPass "saw $STOP_PATTERN"
 elif [ "$rc" -eq 2 ]; then
-    echo "FAIL: QEMU exited before $STOP_PATTERN"
-    exit 1
+    checkFail "qemu exited before $STOP_PATTERN"
 else
-    echo "FAIL: never saw $STOP_PATTERN"
-    exit 1
+    checkFail "never saw $STOP_PATTERN"
 fi

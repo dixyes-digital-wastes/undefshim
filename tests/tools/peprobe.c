@@ -28,6 +28,9 @@
 #include "core/pe.h"
 #include "core/scan.h"
 
+#define US_CHECK_NAME "peprobe"
+#include "check.h"
+
 #define MAX_VERSIONS 64
 
 static int gFailures;
@@ -159,7 +162,7 @@ static void expect(const char *version, const char *file, const char *what, bool
         return;
     }
     gFailures++;
-    printf("FAIL %-9s %-13s %s: expected %s, got %s\n", version, file, what,
+    usCheckFail("%-9s %-13s %s: expected %s, got %s\n", version, file, what,
            want ? "present" : "absent", got ? "present" : "absent");
 }
 
@@ -315,12 +318,10 @@ int main(int argc, char **argv) {
     }
 
     printf("\n");
-    printf("classification : %d ok, %d wrong\n", gClassOk, gClassBad);
-    printf("transfer leaf  : %d unique, %d absent, %d ambiguous\n",
-           gLeaf.unique, gLeaf.none, gLeaf.ambiguous);
-    printf("handoff        : %d unique, %d absent, %d ambiguous\n",
-           gHandoff.unique, gHandoff.none, gHandoff.ambiguous);
-    printf("%d checks, %d failures\n", gChecks, gFailures);
-
-    return gFailures != 0;
+    usCheckNote("classification: %d ok, %d wrong\n", gClassOk, gClassBad);
+    usCheckNote("transfer leaf: %d unique, %d absent, %d ambiguous\n",
+                gLeaf.unique, gLeaf.none, gLeaf.ambiguous);
+    usCheckNote("handoff: %d unique, %d absent, %d ambiguous\n",
+                gHandoff.unique, gHandoff.none, gHandoff.ambiguous);
+    return usCheckSummary(gChecks, gFailures);
 }

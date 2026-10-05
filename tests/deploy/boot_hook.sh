@@ -18,19 +18,15 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 
+CHECK="boot_hook"
+. tests/deploy/check.sh
+
 BUILD_DIR="${BUILD_DIR:-build}"
 SERIAL_LOG="${SERIAL_LOG:-$BUILD_DIR/boot-hook.log}"
 WIN_DISK="${WIN_DISK:-}"
 
-if [ -z "$WIN_DISK" ]; then
-    echo "WIN_DISK not set, skipping"
-    exit 0
-fi
-
-if [ ! -f "$WIN_DISK" ]; then
-    echo "missing windows disk: $WIN_DISK" >&2
-    exit 1
-fi
+[ -n "$WIN_DISK" ] || checkSkip "WIN_DISK is not set"
+[ -f "$WIN_DISK" ] || checkFail "no windows disk at $WIN_DISK"
 
 # Loading and starting the Windows boot manager under emulation takes a while,
 # so the timeout here is generous and the run stops as soon as the hook has
@@ -43,16 +39,17 @@ BOOT_TIMEOUT="${BOOT_TIMEOUT:-420}" \
 
 status=$?
 if [ "$status" -ne 0 ]; then
-    echo "FAIL: the hook never reported an image"
+    checkNote "last lines of the serial log:"
     tests/deploy/plain.sh "$SERIAL_LOG" | tail -5
-    exit 1
+    checkFail "the hook never reported an image"
 fi
 
 if ! tests/deploy/plain.sh "$SERIAL_LOG" | grep -q 'loadimage: registered'; then
-    echo "FAIL: the hook fired but did not register the image"
+    checkNote "what the hook said:"
     tests/deploy/plain.sh "$SERIAL_LOG" | grep -E 'loadimage' | tail -5
-    exit 1
+    checkFail "the hook fired but did not register the image"
 fi
 
-echo "PASS: the hook fired and registered the boot manager"
+checkNote "what the hook said:"
 tests/deploy/plain.sh "$SERIAL_LOG" | grep -E 'loadimage' | tail -5
+checkPass "the hook fired and registered the boot manager"

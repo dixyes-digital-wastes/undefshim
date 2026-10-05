@@ -15,6 +15,9 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 
+CHECK="config_cases"
+. tests/deploy/check.sh
+
 BUILD_DIR="${BUILD_DIR:-build}"
 WORK="$BUILD_DIR/config-cases"
 # The screen cases leave their machine running while the picture is read, so
@@ -22,7 +25,7 @@ WORK="$BUILD_DIR/config-cases"
 QMP_PORT="${QMP_PORT:-4455}"
 DRIVER="${DRIVER:-$BUILD_DIR/undefshim_driver.efi}"
 
-[ -f "$DRIVER" ] || { echo "missing driver: $DRIVER (run make first)" >&2; exit 1; }
+[ -f "$DRIVER" ] || checkFail "no driver at $DRIVER (run make first)"
 
 mkdir -p "$WORK"
 failures=0
@@ -33,27 +36,29 @@ run_case() {
     local out="$WORK/$name.log"
 
     if ! CONFIG="$config" ESP="$WORK/$name.img" tests/deploy/build_esp.sh >"$out.esp" 2>&1; then
-        echo "FAIL $name: could not build the volume"
+        checkSoft "$name: the volume could not be built"
         cat "$out.esp"
         failures=$((failures + 1))
         return
     fi
 
-    if ! ESP="$WORK/$name.img" SERIAL_LOG="$out" STOP_PATTERN="$marker" BOOT_TIMEOUT=60 \
-         tests/deploy/run.sh >"$out.run" 2>&1; then
-        echo "FAIL $name: never reached $marker"
+    # No windows disk, whether or not the environment has one: this boots a
+    # volume and reads what the driver makes of it
+    if ! WIN_DISK= ESP="$WORK/$name.img" SERIAL_LOG="$out" STOP_PATTERN="$marker" \
+         BOOT_TIMEOUT=60 tests/deploy/run.sh >"$out.run" 2>&1; then
+        checkSoft "$name: never reached $marker"
         tail -5 "$out"
         failures=$((failures + 1))
         return
     fi
 
     if ! grep -q "$expect" "$out"; then
-        echo "FAIL $name: reached $marker but did not see \"$expect\""
+        checkSoft "$name: reached $marker but did not see \"$expect\""
         failures=$((failures + 1))
         return
     fi
 
-    echo "PASS $name"
+    checkGood "$name"
 }
 
 # run_screen_case <name> <config-path-or-empty> <expected-text>
@@ -66,7 +71,7 @@ run_screen_case() {
     local img="$WORK/$name.img"
 
     if ! CONFIG="$config" ESP="$img" tests/deploy/build_esp.sh >"$WORK/$name.esp" 2>&1; then
-        echo "FAIL $name: could not build the volume"
+        checkSoft "$name: the volume could not be built"
         cat "$WORK/$name.esp"
         failures=$((failures + 1))
         return
@@ -75,10 +80,10 @@ run_screen_case() {
     WORK="$WORK/$name-screen" tests/deploy/screen_case.sh "$img" "$QMP_PORT" "$expect" 90
     case $? in
     0)
-        echo "PASS $name"
+        checkGood "$name"
         ;;
-    2)
-        echo "SKIP $name: the screen cannot be read"
+    "$US_SKIP")
+        checkNote "$name: the screen cannot be read, so it was not checked"
         ;;
     *)
         failures=$((failures + 1))
@@ -99,6 +104,10 @@ cat > "$WORK/good.toml" <<'EOF'
 baseAddr = 0x09000000
 type = "pl011"
 width = 32
+# A log with no colour escapes in it: a check reads these lines by
+# matching text, and a colour sequence between the tag and the words
+# is one more thing that can come between them and the pattern
+color = false
 
 [log]
 level = "verbose"
@@ -151,27 +160,24 @@ run_screen_case absent ""                 "using defaults"
 
 # The loaded case has to show the file's values, not the defaults.
 if ! tests/deploy/plain.sh "$WORK/loaded.log" | grep -q "config: level=4 rewrite=0 debug=1 patches=1"; then
-    echo "FAIL loaded: values do not match the file"
+    checkSoft "loaded: the values are not the ones the file states"
     tests/deploy/plain.sh "$WORK/loaded.log" | grep -E 'level=' || true
     failures=$((failures + 1))
 else
-    echo "PASS loaded: values came from the file"
+    checkGood "loaded: the values came from the file"
 fi
 
 # The reason a file was refused is the point of the screen path: it is what a
 # machine with no port to say it on has to show
 if [ -f "$WORK/broken-screen/screen.txt" ]; then
     if grep -q "broken" "$WORK/broken-screen/screen.txt"; then
-        echo "PASS broken: reason reported on the screen"
+        checkGood "broken: the reason was reported on the screen"
     else
-        echo "FAIL broken: no reason was reported"
+        checkSoft "broken: no reason was reported"
         cat "$WORK/broken-screen/screen.txt"
         failures=$((failures + 1))
     fi
 fi
 
-if [ "$failures" -ne 0 ]; then
-    echo "$failures configuration case(s) failed"
-    exit 1
-fi
-echo "configuration cases: all passed"
+[ "$failures" -eq 0 ] || checkFail "$failures of the cases failed"
+checkPass "every configuration was read the way it should be"

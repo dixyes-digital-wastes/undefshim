@@ -10,7 +10,13 @@ has to produce exactly.
 """
 
 import re
+import os
 import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import check as checklib
+
+REPORT = checklib.Check("check_pte")
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -40,7 +46,7 @@ def check(name, cond):
     checks += 1
     if not cond:
         failures += 1
-        print("FAIL " + name)
+        REPORT.fail(name)
 
 
 def pte(va):
@@ -126,5 +132,4 @@ for desc in (0x0000000000000001, 0x0000FFFFFFFFF70F, 0x8000000000000403,
         check("writable when asked (0x%x)" % desc, (got & AP2 == 0) == writable)
         check("and back (0x%x)" % desc, with_write(got, (desc & AP2) == 0) == desc)
 
-print("%d checks, %d failures" % (checks, failures))
-sys.exit(1 if failures else 0)
+sys.exit(REPORT.summary(checks, failures))

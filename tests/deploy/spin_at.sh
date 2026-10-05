@@ -23,6 +23,9 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 
+CHECK="spin_at"
+. tests/deploy/check.sh
+
 BUILD_DIR="${BUILD_DIR:-build}"
 WORK="$BUILD_DIR/spin"
 RVA="${1:?usage: spin_at.sh <kernel-rva> [settle] [probe...]}"
@@ -37,7 +40,7 @@ QEMU_MEM="${QEMU_MEM:-4096}"
 QEMU_SMP="${QEMU_SMP:-8,sockets=1,clusters=2,cores=4,threads=1}"
 WIN_DISK="${WIN_DISK:-}"
 
-[ -f "$WIN_DISK" ] || { echo "WIN_DISK not set or missing, skipping"; exit 0; }
+[ -f "$WIN_DISK" ] || checkSkip "WIN_DISK is not set or missing"
 
 mkdir -p "$WORK"
 name=$(printf '%s' "$RVA" | tr -d 'x')
@@ -46,6 +49,17 @@ log="$WORK/$name.log"
 
 cat > "$WORK/$name.toml" <<EOF
 version = 1
+
+[uart]
+# Where the machine's serial port is. Without this the driver has no port to
+# report on, and a check that reads the log would be reading nothing
+baseAddr = 0x09000000
+type = "pl011"
+width = 32
+# A log with no colour escapes in it: a check reads these lines by
+# matching text, and a colour sequence between the tag and the words
+# is one more thing that can come between them and the pattern
+color = false
 
 [log]
 level = "verbose"
@@ -62,7 +76,7 @@ tag    = "spin at $RVA"
 EOF
 
 CONFIG="$WORK/$name.toml" ESP="$esp" tests/deploy/build_esp.sh >"$WORK/$name.esp" 2>&1 || {
-    echo "FAIL: could not build the volume"
+    checkNote "the volume could not be built"
     cat "$WORK/$name.esp"
     exit 1
 }
@@ -91,7 +105,7 @@ for _ in $(seq 1 300); do
     sleep 1
 done
 if ! tests/deploy/plain.sh "$log" | grep -q 'M4 patched' 2>/dev/null; then
-    echo "FAIL: the spin was never written"
+    checkNote "the spin was never written"
     tests/deploy/plain.sh "$log" | grep -aE 'patch|gmm|milestone' | tail -5
     exit 1
 fi

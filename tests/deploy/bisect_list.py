@@ -25,6 +25,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import bugcheck_probe  # noqa: E402
+import logtext
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
 DRIVER = "build/rwClean/undefshim_driver.efi"
@@ -69,7 +70,7 @@ def boots(work, lists, port, vnc, gdb, wait):
                     "--work", os.path.join(work, "run")],
                    cwd=ROOT, env=env, capture_output=True)
     serial = os.path.join(work, "run", "serial.log")
-    text = open(serial, "rb").read().decode("latin1") if os.path.exists(serial) else ""
+    text = logtext.read(serial) if os.path.exists(serial) else ""
     applied = re.search(r"applied (\d+) refused (\d+)", text)
     pool = re.search(r"pool: pa=0x([0-9a-f]+)", text)
     result = {"applied": int(applied.group(1)) if applied else 0,

@@ -23,6 +23,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import bugcheck_probe  # noqa: E402
+import logtext
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
 DRIVER = "build/rwClean/undefshim_driver.efi"
@@ -94,7 +95,7 @@ def round_(args, roundIndex, sites):
          "--work", os.path.join(work, "run")],
         cwd=ROOT, env=env, capture_output=True)
     serial = os.path.join(work, "run", "serial.log")
-    text = open(serial, "rb").read().decode("latin1") if os.path.exists(serial) else ""
+    text = logtext.read(serial) if os.path.exists(serial) else ""
     applied = re.search(r"patch: (\S+) applied (\d+) refused (\d+) out of range (\d+)", text)
     digest = re.search(r"patch: text sha256 ([0-9a-f]{64})", text)
     if digest:

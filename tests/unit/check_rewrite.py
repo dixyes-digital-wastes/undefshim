@@ -9,13 +9,18 @@ register. A conversion that quietly changed a field would produce an
 instruction that still decodes - just not that one.
 """
 
+import os
 import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import check as checklib
+
+REPORT = checklib.Check("check_rewrite")
 
 try:
     import capstone
 except ImportError:
-    print("PASS check_rewrite.py: skipped, capstone is not installed")
-    sys.exit(0)
+    sys.exit(REPORT.skip("capstone is not installed"))
 
 # (the encoding an assembler gives each form, the one it gives the acquire
 # load for the same operands, the operands as text)
@@ -56,7 +61,7 @@ def check(name, cond):
     checks += 1
     if not cond:
         failures += 1
-        print("FAIL " + name)
+        REPORT.fail(name)
 
 
 for ldapr, ldar, operands in PAIRS:
@@ -71,5 +76,4 @@ for ldapr, ldar, operands in PAIRS:
     check("the replacement decodes as one (%s)" % want_acquire, mnemonic == want_acquire)
     check("with the same operands (%s)" % operands, same(got, operands))
 
-print("%d checks, %d failures" % (checks, failures))
-sys.exit(1 if failures else 0)
+sys.exit(REPORT.summary(checks, failures))

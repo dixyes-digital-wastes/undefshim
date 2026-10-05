@@ -21,6 +21,7 @@ import socket
 import subprocess
 import sys
 import time
+import logtext
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -137,7 +138,7 @@ def main():
         else:
             print("the bugcheck record could not be read")
 
-    text = open(os.path.join(args.work, "serial.log"), "rb").read().decode("latin1")
+    text = logtext.read(os.path.join(args.work, "serial.log"))
     m = re.search(r"pool: pa=0x([0-9a-f]+)", text)
     if not m:
         print("no pool address in the log")

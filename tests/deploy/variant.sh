@@ -23,6 +23,9 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 
+CHECK="variant"
+. tests/deploy/check.sh
+
 VARIANT="${1:?usage: variant.sh <variant-file> <name>}"
 NAME="${2:?usage: variant.sh <variant-file> <name>}"
 WIN_DISK="${WIN_DISK:-../winemu/files/winpe_26100.qcow2}"
@@ -43,14 +46,14 @@ VARIANT="$(realpath "$VARIANT")"
 lock="$BUILD_DIR/variant.lock"
 mkdir -p "$BUILD_DIR"
 if ! mkdir "$lock" 2>/dev/null; then
-    echo "$NAME: another variant run is in progress ($lock)" >&2
+    checkNote "another variant run is in progress ($lock)" >&2
     exit 1
 fi
 trap 'rmdir "$lock" 2>/dev/null || true' EXIT INT TERM
 
 BUILD_DIR="$BUILD_DIR/variant/$NAME"
 if ! make BUILD_DIR="$BUILD_DIR" DRIVER_MAIN="$VARIANT" >/dev/null 2>&1; then
-    echo "$NAME: BUILD FAILED"
+    checkNote "the build failed"
     exit 1
 fi
 # BUILD_DIR is passed on explicitly: both scripts default it to the shared
@@ -58,7 +61,7 @@ fi
 # variant result meaningless.
 BUILD_DIR="$BUILD_DIR" DRIVER="$BUILD_DIR/undefshim_driver.efi" \
 ESP="$BUILD_DIR/esp.img" tests/deploy/build_esp.sh >/dev/null || {
-    echo "$NAME: ESP BUILD FAILED"
+    checkNote "the image could not be built"
     exit 1
 }
 
@@ -92,4 +95,4 @@ else
     verdict="INCONCLUSIVE (never reached the boot manager)"
 fi
 
-echo "$NAME: $verdict (started=$started chainload=$chainload faults=$faults)"
+checkPass "$verdict (started=$started chainload=$chainload faults=$faults)"

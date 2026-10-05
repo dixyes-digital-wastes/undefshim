@@ -11,6 +11,9 @@
 
 #include "core/cfg.h"
 
+#define US_CHECK_NAME "test_cfg"
+#include "check.h"
+
 static int failures;
 static int checks;
 
@@ -18,7 +21,7 @@ static void ok(const char *name, int cond) {
     checks++;
     if (!cond) {
         failures++;
-        printf("FAIL %s\n", name);
+        usCheckFail("%s\n", name);
     }
 }
 
@@ -26,7 +29,7 @@ static void eqInt(const char *name, int64_t got, int64_t want) {
     checks++;
     if (got != want) {
         failures++;
-        printf("FAIL %-30s want %lld got %lld\n", name, (long long)want, (long long)got);
+        usCheckFail("%-30s want %lld got %lld\n", name, (long long)want, (long long)got);
     }
 }
 
@@ -34,7 +37,7 @@ static void eqStr(const char *name, const char *got, const char *want) {
     checks++;
     if (got == NULL || strcmp(got, want) != 0) {
         failures++;
-        printf("FAIL %-30s want \"%s\" got \"%s\"\n", name, want, got ? got : "(null)");
+        usCheckFail("%-30s want \"%s\" got \"%s\"\n", name, want, got ? got : "(null)");
     }
 }
 
@@ -45,7 +48,7 @@ static UsConfig *accept(const char *name, const char *doc) {
     checks++;
     if (c == NULL) {
         failures++;
-        printf("FAIL %-30s rejected: %s\n", name, err);
+        usCheckFail("%-30s rejected: %s\n", name, err);
     }
     return c;
 }
@@ -57,14 +60,14 @@ static void reject(const char *name, const char *doc) {
     checks++;
     if (c != NULL) {
         failures++;
-        printf("FAIL %-30s accepted but should not be\n", name);
+        usCheckFail("%-30s accepted but should not be\n", name);
         usConfigFree(c);
         return;
     }
     checks++;
     if (err[0] == '\0') {
         failures++;
-        printf("FAIL %-30s rejected without a message\n", name);
+        usCheckFail("%-30s rejected without a message\n", name);
     }
 }
 
@@ -203,6 +206,5 @@ int main(void) {
     testRejections();
     testWidths();
 
-    printf("%d checks, %d failures\n", checks, failures);
-    return failures != 0;
+    return usCheckSummary(checks, failures);
 }

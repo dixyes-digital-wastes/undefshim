@@ -12,6 +12,9 @@
 
 #include "core/pgtable.h"
 
+#define US_CHECK_NAME "test_pgtable"
+#include "check.h"
+
 /* The kernel's virtual half, at the layout the walk assumes */
 #define KVA_BASE 0xFFFF000000000000ULL
 
@@ -22,7 +25,7 @@ static void ok(const char *name, int cond) {
     checks++;
     if (!cond) {
         failures++;
-        printf("FAIL %s\n", name);
+        usCheckFail("%s\n", name);
     }
 }
 
@@ -30,7 +33,7 @@ static void eqU64(const char *name, uint64_t got, uint64_t want) {
     checks++;
     if (got != want) {
         failures++;
-        printf("FAIL %-42s want 0x%llx got 0x%llx\n", name,
+        usCheckFail("%-42s want 0x%llx got 0x%llx\n", name,
                (unsigned long long)want, (unsigned long long)got);
     }
 }
@@ -268,6 +271,5 @@ int main(void) {
     testLeafStopsAtABlock();
     testLeafUnmappedAndReserved();
 
-    printf("%d checks, %d failures\n", checks, failures);
-    return failures != 0;
+    return usCheckSummary(checks, failures);
 }

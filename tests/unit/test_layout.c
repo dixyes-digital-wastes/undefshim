@@ -12,6 +12,9 @@
 
 #include "core/pool.h"
 
+#define US_CHECK_NAME "test_layout"
+#include "check.h"
+
 static int failures;
 static int checks;
 
@@ -19,7 +22,7 @@ static void ok(const char *name, int cond) {
     checks++;
     if (!cond) {
         failures++;
-        printf("FAIL %s\n", name);
+        usCheckFail("%s\n", name);
     }
 }
 
@@ -27,7 +30,7 @@ static void eqU64(const char *name, uint64_t got, uint64_t want) {
     checks++;
     if (got != want) {
         failures++;
-        printf("FAIL %-34s want 0x%llx got 0x%llx\n", name,
+        usCheckFail("%-34s want 0x%llx got 0x%llx\n", name,
                (unsigned long long)want, (unsigned long long)got);
     }
 }
@@ -194,6 +197,5 @@ int main(void) {
     testValidation();
     testMPIDRMask();
 
-    printf("%d checks, %d failures\n", checks, failures);
-    return failures != 0;
+    return usCheckSummary(checks, failures);
 }

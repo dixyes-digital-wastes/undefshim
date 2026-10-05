@@ -4,6 +4,9 @@
 #include <stdio.h>
 #include <string.h>
 
+#define US_CHECK_NAME "test_stackgen"
+#include "check.h"
+
 static int64_t signedImmediate(uint32_t value, unsigned width) {
     return (value & (1U << (width - 1))) != 0
            ? (int64_t)value - (INT64_C(1) << width) : (int64_t)value;
@@ -194,6 +197,5 @@ int main(void) {
                                 0xFFFFFFFC, 0xFFFFFA00, code) == 7);
     /* The first ready branch fits, but the next one crosses the lower bound */
     rejected(twoClusters, 8, 0x08000000, 0x08000800, 0x14, 0x08001000);
-    puts("stackgen: native interpreter and input/bounds checks passed");
-    return 0;
+    return usCheckPassed("native interpreter and input/bounds checks passed");
 }

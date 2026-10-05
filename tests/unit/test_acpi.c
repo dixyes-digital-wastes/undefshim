@@ -18,6 +18,9 @@
 
 #include "core/acpi.h"
 
+#define US_CHECK_NAME "test_acpi"
+#include "check.h"
+
 static int failures;
 static int checks;
 
@@ -25,7 +28,7 @@ static void ok(const char *name, int cond) {
     checks++;
     if (!cond) {
         failures++;
-        printf("FAIL %s\n", name);
+        usCheckFail("%s\n", name);
     }
 }
 
@@ -33,7 +36,7 @@ static void eqInt(const char *name, int got, int want) {
     checks++;
     if (got != want) {
         failures++;
-        printf("FAIL %-46s want %d got %d\n", name, want, got);
+        usCheckFail("%-46s want %d got %d\n", name, want, got);
     }
 }
 
@@ -265,6 +268,5 @@ int main(void) {
     testChecksums();
     testRobustness();
 
-    printf("%d checks, %d failures\n", checks, failures);
-    return failures != 0;
+    return usCheckSummary(checks, failures);
 }

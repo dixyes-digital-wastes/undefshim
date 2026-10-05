@@ -17,6 +17,9 @@
 
 #include "core/ldr.h"
 
+#define US_CHECK_NAME "test_ldr"
+#include "check.h"
+
 static int failures;
 static int checks;
 
@@ -24,7 +27,7 @@ static void ok(const char *name, int cond) {
     checks++;
     if (!cond) {
         failures++;
-        printf("FAIL %s\n", name);
+        usCheckFail("%s\n", name);
     }
 }
 
@@ -32,7 +35,7 @@ static void eqU64(const char *name, uint64_t got, uint64_t want) {
     checks++;
     if (got != want) {
         failures++;
-        printf("FAIL %-46s want 0x%llx got 0x%llx\n", name,
+        usCheckFail("%-46s want 0x%llx got 0x%llx\n", name,
                (unsigned long long)want, (unsigned long long)got);
     }
 }
@@ -96,7 +99,7 @@ static void addEntry(Fixture *fx, const char *name, uint64_t base, uint64_t size
  * Links the entries in order and points the head at the first. The last points
  * back at the head, which is what ends the walk
  */
-static void link(Fixture *fx) {
+static void linkList(Fixture *fx) {
     uint64_t head = (uint64_t)(uintptr_t)fx->block + LIST_HEAD;
 
     for (uint32_t i = 0; i < fx->count; i++) {
@@ -118,7 +121,7 @@ static void testFindsTheNamedModule(void) {
     memset(&fx, 0, sizeof(fx));
     addEntry(&fx, "ntoskrnl.exe", 0xFFFFF80053C00000ULL, 0x1249000);
     addEntry(&fx, "hal.dll", 0xFFFFF80055200000ULL, 0x6000);
-    link(&fx);
+    linkList(&fx);
 
     ok("the first entry is found",
        usLDRFindModule(fx.block, "ntoskrnl.exe", &m));
@@ -146,7 +149,7 @@ static void testPrefixesDoNotMatch(void) {
 
     memset(&fx, 0, sizeof(fx));
     addEntry(&fx, "ntoskrnl.exe", 0xFFFFF80053C00000ULL, 0x1249000);
-    link(&fx);
+    linkList(&fx);
 
     ok("a shorter name does not match a longer one",
        !usLDRFindModule(fx.block, "ntoskrnl", &m));
@@ -162,7 +165,7 @@ static void testCaseDoesNotMatter(void) {
 
     memset(&fx, 0, sizeof(fx));
     addEntry(&fx, "CLFS.SYS", 0xFFFFF8004D460000ULL, 0x7e000);
-    link(&fx);
+    linkList(&fx);
 
     ok("a lower case query finds an upper case name",
        usLDRFindModule(fx.block, "clfs.sys", &m));
@@ -175,7 +178,7 @@ static void testStopsAtTheEnd(void) {
 
     memset(&fx, 0, sizeof(fx));
     addEntry(&fx, "kdcom.dll", 0xFFFFF8004D400000ULL, 0xb000);
-    link(&fx);
+    linkList(&fx);
 
     /* The ring terminates the walk, so a name that is not in it costs one
      * entry and not a lap of memory */
@@ -194,7 +197,7 @@ static void testRefusesABrokenList(void) {
     memset(&fx, 0, sizeof(fx));
     addEntry(&fx, "ntoskrnl.exe", 0xFFFFF80053C00000ULL, 0x1249000);
     addEntry(&fx, "hal.dll", 0xFFFFF80055200000ULL, 0x6000);
-    link(&fx);
+    linkList(&fx);
 
     /* The first node points somewhere that is not the second entry */
     wr64(fx.entries[0], 0x0000000000000010ULL);
@@ -204,14 +207,14 @@ static void testRefusesABrokenList(void) {
     /* A base that cannot be one */
     memset(&fx, 0, sizeof(fx));
     addEntry(&fx, "ntoskrnl.exe", 0x10, 0x1249000);
-    link(&fx);
+    linkList(&fx);
     ok("an implausible base is refused",
        !usLDRFindModule(fx.block, "ntoskrnl.exe", &m));
 
     /* A size of zero is how an uninitialised entry reads */
     memset(&fx, 0, sizeof(fx));
     addEntry(&fx, "ntoskrnl.exe", 0xFFFFF80053C00000ULL, 0);
-    link(&fx);
+    linkList(&fx);
     ok("a zero size is refused",
        !usLDRFindModule(fx.block, "ntoskrnl.exe", &m));
 }
@@ -236,6 +239,5 @@ int main(void) {
     testRefusesABrokenList();
     testRefusesNothing();
 
-    printf("%d checks, %d failures\n", checks, failures);
-    return failures != 0;
+    return usCheckSummary(checks, failures);
 }

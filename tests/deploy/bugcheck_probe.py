@@ -38,6 +38,7 @@ import signal
 import socket
 import subprocess
 import sys
+import logtext
 import threading
 import time
 
@@ -249,7 +250,7 @@ def payloadRecord(qmp_file, serialLog):
     and what the first one it carried out was.
     """
     try:
-        text = open(serialLog, "rb").read().decode("latin1")
+        text = logtext.read(serialLog)
     except OSError:
         return "  (no serial log to read the pool address from)"
 
