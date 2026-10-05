@@ -4,7 +4,7 @@
 
 #include <string.h>
 
-#include "uefi/src/registry.h"
+#include "uefi/registry.h"
 
 void usRegistryInit(UsRegistry *reg) {
     memset(reg, 0, sizeof(*reg));

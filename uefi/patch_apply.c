@@ -13,9 +13,9 @@ static uint32_t rd16le(const uint8_t *p) {
     return (uint32_t)p[0] | ((uint32_t)p[1] << 8);
 }
 #include "core/sha256.h"
-#include "uefi/src/config.h"
-#include "uefi/src/console.h"
-#include "uefi/src/patch_apply.h"
+#include "uefi/config.h"
+#include "uefi/console.h"
+#include "uefi/patch_apply.h"
 
 /* A list this large is a mistake, not a list */
 #define US_PATCH_FILE_MAX_BYTES (512U * 1024U)

@@ -7,11 +7,11 @@
 #include "core/ldapr.h"
 #include "core/pe.h"
 #include "core/scan.h"
-#include "uefi/src/cache.h"
-#include "uefi/src/console.h"
-#include "uefi/src/registry.h"
-#include "uefi/src/rewrite.h"
-#include "uefi/src/session.h"
+#include "uefi/cache.h"
+#include "uefi/console.h"
+#include "uefi/registry.h"
+#include "uefi/rewrite.h"
+#include "uefi/session.h"
 
 /*
  * Walks the executable sections of one image and replaces each RCpc load

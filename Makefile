@@ -32,7 +32,7 @@ PAYLOAD_BUILD := $(BUILD_DIR)/payload
 # one of them rebuilds only the files make happens to know depend on it, and a
 # machine can end up running two different ideas of the same layout - which is
 # how a pool that grew a field on one side and not the other reads as garbage.
-US_HEADERS := $(wildcard core/*.h common/*.h payload/*.h uefi/src/*.h)
+US_HEADERS := $(wildcard core/*.h common/*.h payload/*.h uefi/*.h)
 
 PAYLOAD_CFLAGS := --target=aarch64-none-elf -std=gnu23 -ffreestanding \
                   -ffixed-x18 \
@@ -97,25 +97,22 @@ POSIX_CRT := $(POSIX_UEFI)/crt_aarch64.o
 POSIX_LIB := $(POSIX_UEFI)/libuefi.a
 
 # The driver entry point is replaceable so that a variant can be built
-# without touching the source tree: overwriting uefi/src/driver.c from a test
+# without touching the source tree: overwriting uefi/driver.c from a test
 # script has already cost this project a working file.
-DRIVER_MAIN ?= uefi/src/driver.c
+DRIVER_MAIN ?= uefi/driver.c
 DRIVER_MAIN_OBJ := $(BUILD_DIR)/driver_main.o
 
-DRIVER_SRCS := uefi/src/config.c uefi/src/patch_apply.c uefi/src/registry.c \
-               uefi/src/loadimage_hook.c core/cache.c uefi/src/console.c uefi/src/screen.c \
-               uefi/src/pool.c uefi/src/service_hook.c uefi/src/gmm_hook.c \
-               uefi/src/patch.c uefi/src/work.c uefi/src/payload_place.c uefi/src/arm.c \
-               uefi/src/rewrite.c \
-               uefi/src/acpi.c \
-               uefi/src/vamap.c \
-               uefi/src/session.c \
-               core/cfg.c core/pe.c core/scan.c core/plan.c core/rva_patch.c core/pool.c \
-               core/patchlist.c core/patchapply.c core/sha256.c \
-               core/thunk.c core/ldapr.c core/acpi.c core/stackgen.c core/translate.c \
-               core/par.c \
+DRIVER_SRCS := uefi/config.c uefi/patch_apply.c uefi/registry.c \
+               uefi/loadimage_hook.c uefi/console.c uefi/screen.c uefi/pool.c \
+               uefi/service_hook.c uefi/gmm_hook.c uefi/patch.c uefi/work.c \
+               uefi/payload_place.c uefi/arm.c uefi/rewrite.c uefi/acpi.c \
+               uefi/vamap.c uefi/session.c \
+               core/cache.c core/cfg.c core/pe.c core/scan.c core/plan.c \
+               core/rva_patch.c core/pool.c core/patchlist.c core/patchapply.c \
+               core/sha256.c core/thunk.c core/ldapr.c core/acpi.c \
+               core/stackgen.c core/translate.c core/par.c \
                $(TOML)/toml.c
-DRIVER_ASM := uefi/src/stack.S
+DRIVER_ASM := uefi/stack.S
 DRIVER_OBJS := $(DRIVER_MAIN_OBJ) \
                $(patsubst %.c,$(BUILD_DIR)/%.o,$(DRIVER_SRCS)) \
                $(patsubst %.S,$(BUILD_DIR)/%.o,$(DRIVER_ASM))
@@ -123,7 +120,7 @@ DRIVER := $(BUILD_DIR)/undefshim_driver.efi
 
 all: $(DRIVER)
 
-$(BUILD_DIR)/uefi/src $(BUILD_DIR)/core $(BUILD_DIR)/$(TOML) $(PAYLOAD_BUILD):
+$(BUILD_DIR)/uefi $(BUILD_DIR)/core $(BUILD_DIR)/$(TOML) $(PAYLOAD_BUILD):
 	@mkdir -p $@
 
 # --- payload rules -------------------------------------------------------
@@ -254,7 +251,7 @@ $(TRANSFER_HDR): $(TRANSFER_BIN) $(TRANSFER_ELF)
 
 # Named explicitly because the source can come from outside the tree, and
 # because the generated payload header has to exist before it is compiled.
-$(DRIVER_MAIN_OBJ): $(DRIVER_MAIN) $(PAYLOAD_HDR) $(TRANSFER_HDR) $(US_HEADERS) | $(BUILD_DIR)/uefi/src
+$(DRIVER_MAIN_OBJ): $(DRIVER_MAIN) $(PAYLOAD_HDR) $(TRANSFER_HDR) $(US_HEADERS) | $(BUILD_DIR)/uefi
 	$(CC) $(US_DRIVER_CFLAGS) -c $< -o $@
 
 # Every other translation unit.
@@ -266,11 +263,11 @@ $(DRIVER_MAIN_OBJ): $(DRIVER_MAIN) $(PAYLOAD_HDR) $(TRANSFER_HDR) $(US_HEADERS) 
 # forgot a unit three times over, so every unit is rebuilt instead: the
 # objects are small, and the failure mode of the list is silent.
 $(BUILD_DIR)/%.o: %.c $(PAYLOAD_HDR) $(TRANSFER_HDR) $(US_HEADERS) \
-        | $(BUILD_DIR)/uefi/src $(BUILD_DIR)/core $(BUILD_DIR)/$(TOML)
+        | $(BUILD_DIR)/uefi $(BUILD_DIR)/core $(BUILD_DIR)/$(TOML)
 	$(CC) $(US_DRIVER_CFLAGS) -c $< -o $@
 
 # Assembly needs no C dialect flags, but does need the target.
-$(BUILD_DIR)/%.o: %.S | $(BUILD_DIR)/uefi/src
+$(BUILD_DIR)/%.o: %.S | $(BUILD_DIR)/uefi
 	$(CC) --target=$(TARGET_TRIPLE) -ffreestanding -c $< -o $@
 
 # Rebuild the library whenever the fork changes.

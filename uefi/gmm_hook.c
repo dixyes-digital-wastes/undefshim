@@ -7,12 +7,12 @@
 #include "common/layout.h"
 #include "core/pe.h"
 #include "core/scan.h"
-#include "uefi/src/console.h"
-#include "uefi/src/gmm_hook.h"
-#include "uefi/src/patch.h"
-#include "uefi/src/service_hook.h"
-#include "uefi/src/stack.h"
-#include "uefi/src/work.h"
+#include "uefi/console.h"
+#include "uefi/gmm_hook.h"
+#include "uefi/patch.h"
+#include "uefi/service_hook.h"
+#include "uefi/stack.h"
+#include "uefi/work.h"
 
 static UsSession *gSession;
 static UsServiceHook gHook;

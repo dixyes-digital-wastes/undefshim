@@ -4,8 +4,8 @@
 
 #include <uefi.h>
 
-#include "uefi/src/cache.h"
-#include "uefi/src/service_hook.h"
+#include "uefi/cache.h"
+#include "uefi/service_hook.h"
 
 /*
  * The boot services table carries a CRC32 over its header, which the firmware

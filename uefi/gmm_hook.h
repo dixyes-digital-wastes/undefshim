@@ -20,7 +20,7 @@
 
 #include <stdbool.h>
 
-#include "uefi/src/session.h"
+#include "uefi/session.h"
 
 /*
  * Installs the hook. Returns false when the table entry could not be written

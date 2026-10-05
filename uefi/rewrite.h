@@ -22,7 +22,7 @@
 
 #include <stddef.h>
 
-#include "uefi/src/session.h"
+#include "uefi/session.h"
 
 /*
  * Replaces every RCpc load in the images that have been registered. Returns

@@ -14,10 +14,10 @@
 #include "core/stackgen.h"
 #include "payload/payload.h"
 #include "payload_blob.h"
-#include "uefi/src/cache.h"
-#include "uefi/src/console.h"
-#include "uefi/src/payload_place.h"
-#include "uefi/src/session.h"
+#include "uefi/cache.h"
+#include "uefi/console.h"
+#include "uefi/payload_place.h"
+#include "uefi/session.h"
 
 /*
  * The payload is a blob, not an object this image is linked against, so it is

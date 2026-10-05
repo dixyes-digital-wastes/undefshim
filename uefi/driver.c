@@ -15,15 +15,15 @@
 
 #include "common/layout.h"
 #include "common/version.h"
-#include "uefi/src/config.h"
-#include "uefi/src/console.h"
-#include "uefi/src/screen.h"
-#include "uefi/src/gmm_hook.h"
-#include "uefi/src/loadimage_hook.h"
-#include "uefi/src/payload_place.h"
-#include "uefi/src/registry.h"
-#include "uefi/src/session.h"
-#include "uefi/src/vamap.h"
+#include "uefi/config.h"
+#include "uefi/console.h"
+#include "uefi/screen.h"
+#include "uefi/gmm_hook.h"
+#include "uefi/loadimage_hook.h"
+#include "uefi/payload_place.h"
+#include "uefi/registry.h"
+#include "uefi/session.h"
+#include "uefi/vamap.h"
 
 /* The driver's state. One instance, because there is one driver */
 static UsSession gSession;

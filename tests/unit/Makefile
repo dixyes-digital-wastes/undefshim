@@ -28,11 +28,11 @@ test_early: test_early.c $(ROOT)/payload/early.c $(ROOT)/payload/vamap.c \
 
 # The screen drawer is built for the host with the firmware headers, and the
 # frame buffer it draws into is an array in the test.
-test_screen: test_screen.c $(ROOT)/uefi/src/screen.c $(ROOT)/uefi/src/screen.h \
-             $(ROOT)/uefi/src/font8x16.h
+test_screen: test_screen.c $(ROOT)/uefi/screen.c $(ROOT)/uefi/screen.h \
+             $(ROOT)/uefi/font8x16.h
 	$(CC) -std=gnu23 -O2 -Wall -Wextra -I. -I$(ROOT) \
 	    -I$(ROOT)/third_party/posix-uefi/uefi \
-	    test_screen.c $(ROOT)/uefi/src/screen.c -o $@
+	    test_screen.c $(ROOT)/uefi/screen.c -o $@
 
 test_patchlist: test_patchlist.c $(ROOT)/core/patchlist.c $(ROOT)/core/patchapply.c \
                 $(ROOT)/core/sha256.c
@@ -57,12 +57,12 @@ test_stackgen: test_stackgen.c $(ROOT)/core/stackgen.c
 # Build only the blob; no firmware or AArch64 code runs in this host test.
 BUILD_DIR ?= build
 PLACEMENT_PAYLOAD_DIR := $(ROOT)/$(BUILD_DIR)/payload
-PLACEMENT_SRCS := test_payload_place.c $(ROOT)/uefi/src/payload_place.c \
+PLACEMENT_SRCS := test_payload_place.c $(ROOT)/uefi/payload_place.c \
                   $(ROOT)/core/stackgen.c
 PLACEMENT_HEADERS := payload_place_host/stdio.h \
                      $(ROOT)/common/layout.h $(ROOT)/core/stackgen.h \
-                     $(ROOT)/payload/payload.h $(ROOT)/uefi/src/session.h \
-                     $(ROOT)/uefi/src/payload_place.h
+                     $(ROOT)/payload/payload.h $(ROOT)/uefi/session.h \
+                     $(ROOT)/uefi/payload_place.h
 
 .PHONY: placement-payload
 placement-payload:

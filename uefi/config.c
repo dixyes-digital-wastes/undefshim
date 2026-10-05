@@ -8,7 +8,7 @@
 
 #include <uefi.h>
 
-#include "uefi/src/config.h"
+#include "uefi/config.h"
 
 /* A configuration this large is a mistake, not a configuration */
 #define US_CONFIG_MAX_BYTES (64 * 1024)

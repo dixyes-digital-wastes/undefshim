@@ -26,7 +26,7 @@
 
 #include <stdbool.h>
 
-#include "uefi/src/session.h"
+#include "uefi/session.h"
 
 /*
  * Takes over the handover: the branch the loader enters the kernel with is

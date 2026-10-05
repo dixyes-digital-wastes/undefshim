@@ -10,9 +10,9 @@
 
 #include "payload/vamap.h"
 #include "payload_blob.h"
-#include "uefi/src/console.h"
-#include "uefi/src/session.h"
-#include "uefi/src/vamap.h"
+#include "uefi/console.h"
+#include "uefi/session.h"
+#include "uefi/vamap.h"
 
 /*
  * Both the function that is entered and the record it writes live in the

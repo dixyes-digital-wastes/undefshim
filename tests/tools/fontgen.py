@@ -8,7 +8,7 @@ so it is generated once from a console font the system already has and the
 result is committed: the build then needs nothing but what is in the tree.
 
     tests/tools/fontgen.py /usr/share/kbd/consolefonts/cp850-8x16.psfu.gz \
-        uefi/src/font8x16.h
+        uefi/font8x16.h
 
 The source font is a PSF2 file, one byte per row for an eight wide glyph, most
 significant bit on the left, and the first ninety-five glyphs are ASCII from
