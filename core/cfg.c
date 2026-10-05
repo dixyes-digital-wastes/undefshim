@@ -116,6 +116,7 @@ static bool parseLogLevel(const char *s, int len, UsLogLevel *out) {
     } table[] = {
         { "off", UsLogOff },
         { "error", UsLogError },
+        { "warn", UsLogWarn },
         { "info", UsLogInfo },
         { "verbose", UsLogVerbose },
         { "debug", UsLogDebug },

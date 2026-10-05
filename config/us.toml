@@ -8,7 +8,7 @@ type = "pl011"       # pl011 | uart8250
 width = 32           # 8 | 32
 
 [log]
-level = "info"       # off | error | info | verbose | debug
+level = "info"       # off | error | warn | info | verbose | debug
 
 [scan]
 # Replace the RCpc loads in the images before they run.
