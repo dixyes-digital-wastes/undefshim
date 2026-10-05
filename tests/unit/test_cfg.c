@@ -162,6 +162,22 @@ static void testRejections(void) {
     reject("unknown uart type", "[uart]\nbaseAddr = 0x9000000\ntype = \"pl012\"\n");
     reject("bad uart width", "[uart]\nbaseAddr = 0x9000000\nwidth = 16\n");
     reject("bad uart base", "[uart]\nbaseAddr = 0\n");
+    reject("unknown uart table", "[uart]\ntable = \"SPCI\"\n");
+    reject("negative baud", "[uart]\nbaud = -1\n");
+    reject("negative clock", "[uart]\nclock = -1\n");
+    /* Zero is one of the answers rather than a mistake: it is what a
+     * configuration says to leave the port as the firmware set it, and every
+     * file in this tree says it. Refusing it made a whole boot silent */
+    {
+        UsConfig *c = accept("zero line settings",
+                             "[uart]\nclock = 0\nbaud = 0\n");
+
+        if (c != NULL) {
+            eqInt("a clock of zero is kept", (int)c->uartClock, 0);
+            eqInt("and so is a line rate of zero", (int)c->uartBaud, 0);
+            usConfigFree(c);
+        }
+    }
     /* A type with no base address is a table that says nothing: the serial
      * output stays off rather than the file being refused */
     {

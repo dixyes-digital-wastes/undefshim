@@ -31,18 +31,6 @@
 
 #define US_PL011_FR_TXFF (1U << 5)
 
-/*
- * TODO: debug only remove this
- * The Hi1620's UART0 runs at 200 MHz, which is what its firmware programs:
- * reading IBRD and FBRD back on the board gives 108 and 32, and those are the
- * divisors for 115200 off that clock. QEMU's virt is not this number, so a
- * run there wants its own; the clock is what the board states, not what the
- * driver can find out, and it is the one thing in this file that has to be
- * told rather than asked
- */
-#define US_PL011_CLK 200000000U
-#define US_PL011_BAUD 115200U
-
 /* The 8250's registers, a byte apart, or a word apart on a 32 bit bus */
 #define US_8250_THR 0x00U
 #define US_8250_IER 0x01U
@@ -89,17 +77,26 @@ static void writeReg(uint32_t index, uint32_t value) {
     *(volatile uint32_t *)regAt(index) = value;
 }
 
-static void bringUp(void) {
+static void bringUp(uint64_t clock, uint32_t baud) {
     if (gKind == UsUARTPL011) {
-        /* Divisor = clk / (16 * baud), as the PL011's own bit clock is 16
-         * times the line rate: the integer part in IBRD, the remaining
-         * sixty-fourths in FBRD */
-        uint32_t divisor = (uint32_t)(((uint64_t)US_PL011_CLK * 4U) / US_PL011_BAUD);
-
         writeReg(US_PL011_CR, 0U);
         writeReg(US_PL011_ICR, 0x7FFU);
-        writeReg(US_PL011_IBRD, divisor >> 6);
-        writeReg(US_PL011_FBRD, divisor & 0x3FU);
+        /*
+         * The line rate is programmed only when both halves of it are known,
+         * because a divisor is a function of the clock and nothing in ACPI
+         * states one. Left alone, the port keeps what the firmware put there,
+         * which is what it was printing the boot with
+         *
+         * Divisor = clk / (16 * baud): the PL011's bit clock is sixteen times
+         * the line rate, the integer part of the quotient goes in IBRD and
+         * the remaining sixty-fourths in FBRD
+         */
+        if (clock != 0 && baud != 0) {
+            uint32_t divisor = (uint32_t)((clock * 4U) / baud);
+
+            writeReg(US_PL011_IBRD, divisor >> 6);
+            writeReg(US_PL011_FBRD, divisor & 0x3FU);
+        }
         writeReg(US_PL011_LCRH, 0x70U); /* eight bits, no parity, FIFOs on */
         writeReg(US_PL011_CR, 0x301U);  /* enabled, transmitting, receiving */
         return;
@@ -115,13 +112,14 @@ static void bringUp(void) {
     writeReg(US_8250_MCR, 0x03U); /* terminal ready, request to send */
 }
 
-void usConsoleUse(UsUARTKind kind, uint64_t base, uint32_t width) {
+void usConsoleUse(UsUARTKind kind, uint64_t base, uint32_t width,
+                  uint64_t clock, uint32_t baud) {
     gKind = kind;
     gBase = (uintptr_t)base;
     gWidth = width == 8U ? 8U : 32U;
     gShift = (kind == UsUART8250 && gWidth == 32U) ? 2U : 0U;
     if (kind != UsUARTOff && gBase != 0) {
-        bringUp();
+        bringUp(clock, baud);
     }
 }
 

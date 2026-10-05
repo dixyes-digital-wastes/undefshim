@@ -43,17 +43,18 @@ static void writeConfig(const UsPayloadPlace *place, const UsSession *session) {
     UsPayloadConfig *cfg = (UsPayloadConfig *)(uintptr_t)place->configVA;
 
     /*
-     * Where to report from, as the configuration states it: a base of zero
-     * means the payload stays silent, which is what leaving it out means
+     * Where to report from, as the console ended up rather than as the file
+     * put it: the configuration may only say that the firmware knows, and
+     * what the firmware said is worked out while the console is being
+     * opened. A base of zero is a machine with no port at all, and the
+     * payload stays silent for it
      */
-    cfg->uartBase = session->config != NULL && session->config->hasUART
-                        ? session->config->uartBase
-                        : 0U;
-    cfg->uartKind = session->config == NULL || !session->config->hasUART
+    cfg->uartBase = session->uartOpen ? session->uartBase : 0U;
+    cfg->uartKind = !session->uartOpen
                         ? 0U
-                        : (session->config->uartType[0] == 'p' ? US_PAYLOAD_UART_PL011
-                                                               : US_PAYLOAD_UART_8250);
-    cfg->uartWidth = session->config != NULL ? session->config->uartWidth : 32U;
+                        : (session->uartKind == UsUARTPL011 ? US_PAYLOAD_UART_PL011
+                                                            : US_PAYLOAD_UART_8250);
+    cfg->uartWidth = session->uartOpen ? session->uartWidth : 32U;
     for (uint32_t i = 0; i < US_MAX_CPUS; i++) {
         cfg->stackTop[i] = session->pool->stackTop[i];
     }

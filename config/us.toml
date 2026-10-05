@@ -1,11 +1,26 @@
 # Runtime configuration, read from the first volume that provides it.
 
 [uart]
-# Where the serial output goes. Leaving this table out, or leaving baseAddr
-# out of it, means no serial output at all.
-baseAddr = 0x09000000
-type = "pl011"       # pl011 | uart8250
+# Where the serial output goes. The default is to read it out of the
+# firmware's own description of the machine, which both QEMU and the board
+# provide, so this table can be absent entirely and the machine will still
+# talk. "pl011" or "uart8250" with a baseAddr is for a machine that
+# describes no console and one that describes it wrongly.
+type = "acpi"        # acpi | pl011 | uart8250 | off
+table = "SPCR"       # acpi only: SPCR | DBG2 | DSDT
+# acpi + DSDT only: the device to read the port from. Written the way a file
+# can spell it, without the leading backslash that names the root
+# path = "_SB.COM0"
+# pl011/uart8250 only: the address and how wide its registers are read
+# baseAddr = 0x09000000
 width = 32           # 8 | 32
+# The clock that drives the port and the line rate. Both are the firmware's
+# business: leave either at zero and the port keeps what it was brought up
+# with, which is what every machine whose tables describe a console wants.
+# Nothing in ACPI states a PL011's clock, so a port that has to be told where
+# it is has to be told this too
+clock = 0            # Hz
+baud = 0             # 115200 is the rate the boards use
 # Whether the serial output carries the colour escapes a terminal understands.
 # The screen parses the same sequences and keeps its colours either way, so
 # this only decides whether they appear in the log

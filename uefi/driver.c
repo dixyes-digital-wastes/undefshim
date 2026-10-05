@@ -27,6 +27,7 @@
 #include "uefi/payload_place.h"
 #include "uefi/registry.h"
 #include "uefi/session.h"
+#include "uefi/uart.h"
 #include "uefi/vamap.h"
 
 /* The driver's state. One instance, because there is one driver */
@@ -35,6 +36,18 @@ static UsSession gSession;
 /* The two words a boolean is written with, so the dump reads like the file */
 static const char *boolWord(bool value) {
     return value ? "true" : "false";
+}
+
+/* The name the file used for the table, so the dump can print it back */
+static const char *tableName(int table) {
+    switch (table) {
+    case UsCfgUARTTableDBG2:
+        return "DBG2";
+    case UsCfgUARTTableDSDT:
+        return "DSDT";
+    default:
+        return "SPCR";
+    }
 }
 
 /*
@@ -51,15 +64,15 @@ static void printConfig(const UsConfig *cfg) {
     usLogV("config", "[log] level=\"" US_VALUE("%s") "\"\n",
            usConfigLogLevelName(cfg->logLevel));
 
-    if (cfg->hasUART) {
-        usLogV("config", "[uart] baseAddr=" US_VALUE("%#llx") " type=\""
-               US_VALUE("%s") "\" width=" US_VALUE("%u") " color=" US_VALUE("%s")
-               "\n",
-               (unsigned long long)cfg->uartBase, cfg->uartType,
-               (unsigned)cfg->uartWidth, boolWord(cfg->uartColour));
-    } else {
-        usLogV("config", "[uart] absent\n");
-    }
+    usLogV("config", "[uart] type=\"" US_VALUE("%s") "\" table=\"" US_VALUE("%s")
+           "\" path=\"" US_VALUE("%s") "\" baseAddr=" US_VALUE("%#llx")
+           " width=" US_VALUE("%u") " clock=" US_VALUE("%llu")
+           " baud=" US_VALUE("%u") " color=" US_VALUE("%s") "\n",
+           cfg->uartType, tableName(cfg->uartTable),
+           cfg->uartPath != NULL ? cfg->uartPath : "",
+           (unsigned long long)cfg->uartBase, (unsigned)cfg->uartWidth,
+           (unsigned long long)cfg->uartClock, (unsigned)cfg->uartBaud,
+           boolWord(cfg->uartColour));
 
     usLogV("config", "[ldapr] imageInplaceRewrite=" US_VALUE("%s")
            " el0InplaceRewrite=" US_VALUE("%s") "\n",
@@ -97,23 +110,39 @@ int main(int argc, char **argv) {
     (void)argv;
 
     /*
-     * The configuration is read before anything is said, because it is what
-     * says where to say it: a machine that does not name a UART wants no
-     * serial output at all, and until it is read the console stays silent.
-     * That includes the report of a broken configuration, which is why the
-     * error path is going to have to write to the screen instead
+     * Before the configuration is read: a configuration that cannot be read
+     * is the case where the screen is the only way to say so
      */
-    /* Before the configuration is read: a configuration that cannot be read
-     * is the case where the screen is the only way to say so */
     usScreenInit();
 
     result = usConfigLoad(&cfg, msg, sizeof(msg));
-    if (cfg != NULL && cfg->hasUART) {
-        usConsoleUse(cfg->uartType[0] == 'p' ? UsUARTPL011 : UsUART8250,
-                     cfg->uartBase, cfg->uartWidth);
-    }
+
+    /*
+     * How much is worth saying, and whether it is coloured, before anything
+     * is said: both are properties of the console rather than of the work, so
+     * they are set before it is opened and the report of opening it is
+     * subject to them like any other line
+     */
     if (cfg != NULL) {
+        usConsoleLevel(cfg->logLevel);
         usConsoleColour(cfg->uartColour);
+    }
+
+    /*
+     * A pool, and with it a stack of our own, before a word is said. What is
+     * said from here on is said from a frame we control, and finding the
+     * console is one of the things that needs it: chasing the firmware's own
+     * description of it runs an AML interpreter, which is not a frame to
+     * spend on whoever called us
+     */
+    if (!usSessionInit(&gSession)) {
+        usLogE("session", "no pool\n");
+        usConsoleMilestone("M4 failed");
+        return 0;
+    }
+
+    if (cfg != NULL) {
+        usConsoleOpen(cfg, &gSession);
     }
 
     usLogI("undefshim", US_VERSION_STRING "\n");
@@ -131,17 +160,8 @@ int main(int argc, char **argv) {
         return 0;
     }
 
-    usConsoleLevel(cfg->logLevel);
     printConfig(cfg);
     usConsoleMilestone("M2 done");
-
-    /* From here on the driver has to be resident to be useful, so this is
-     * where the work of staying in the loop starts */
-    if (!usSessionInit(&gSession)) {
-        usLogE("session", "no pool\n");
-        usConsoleMilestone("M4 failed");
-        return 0;
-    }
 
     /*
      * The switches come from the configuration, each named for what it stops,

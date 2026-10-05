@@ -383,45 +383,81 @@ UsConfig *usConfigParse(const char *text, size_t len, char *err, size_t errLen) 
     /*
      * Serial output, under a table of its own rather than under the kernel's:
      * the driver, the payload and anything reporting later all need it, and
-     * none of them is the kernel. No base address means no serial output at
-     * all, which is how a machine says it wants silence
+     * none of them is the kernel
+     *
+     * What the table names is the port, and it may name nothing at all: a
+     * machine whose own tables describe a console needs no address here, and
+     * looking for it is the default because the description travels with the
+     * machine while a copy of it in a file does not
      */
     cfg->hasUART = false;
-    cfg->uartType = "pl011";
+    cfg->uartKind = UsCfgUARTACPIFind;
+    cfg->uartType = "acpi";
     cfg->uartBase = 0;
     cfg->uartWidth = 32;
+    cfg->uartTable = UsCfgUARTTableSPCR;
+    cfg->uartPath = NULL;
+    cfg->uartClock = 0;
+    cfg->uartBaud = 0;
     cfg->uartColour = true;
-    toml_table_t *uart = toml_table_table(cfg->root, "uart");
-    if (uart != NULL && cfgHas(uart, "baseAddr")) {
-        int64_t base = 0;
-        int64_t width = 0;
+    {
+        toml_table_t *uart = toml_table_table(cfg->root, "uart");
         const char *type = NULL;
         int typeLen = 0;
 
-        if (!cfgInt(uart, "baseAddr", &base, err, errLen) || base <= 0) {
-            setErrKey(err, errLen, "not an address: ", "baseAddr");
-            usConfigFree(cfg);
-            return NULL;
-        }
-        cfg->uartBase = (uint64_t)base;
-        cfg->hasUART = true;
-        if (cfgHas(uart, "type")) {
+        if (uart != NULL && cfgHas(uart, "type")) {
             if (!cfgStr(uart, "type", &type, &typeLen, err, errLen)) {
                 usConfigFree(cfg);
                 return NULL;
             }
-            if (sameStr(type, typeLen, "pl011")) {
-                cfg->uartWidth = 32;
+            cfg->uartType = type;
+            if (sameStr(type, typeLen, "acpi")) {
+                cfg->uartKind = UsCfgUARTACPIFind;
+            } else if (sameStr(type, typeLen, "pl011")) {
+                cfg->uartKind = UsCfgUARTPl011;
             } else if (sameStr(type, typeLen, "uart8250")) {
-                cfg->uartWidth = 8;
+                cfg->uartKind = UsCfgUARTUart8250;
+            } else if (sameStr(type, typeLen, "off")) {
+                cfg->uartKind = UsCfgUARTOff;
             } else {
                 setErrKey(err, errLen, "unknown uart type: ", "type");
                 usConfigFree(cfg);
                 return NULL;
             }
-            cfg->uartType = type;
         }
-        if (cfgHas(uart, "width")) {
+        if (uart != NULL && cfgHas(uart, "table")) {
+            const char *which = NULL;
+            int whichLen = 0;
+
+            if (!cfgStr(uart, "table", &which, &whichLen, err, errLen)) {
+                usConfigFree(cfg);
+                return NULL;
+            }
+            if (sameStr(which, whichLen, "SPCR")) {
+                cfg->uartTable = UsCfgUARTTableSPCR;
+            } else if (sameStr(which, whichLen, "DBG2")) {
+                cfg->uartTable = UsCfgUARTTableDBG2;
+            } else if (sameStr(which, whichLen, "DSDT")) {
+                cfg->uartTable = UsCfgUARTTableDSDT;
+            } else {
+                setErrKey(err, errLen, "unknown uart table: ", "table");
+                usConfigFree(cfg);
+                return NULL;
+            }
+        }
+        if (uart != NULL && cfgHas(uart, "path")) {
+            const char *path = NULL;
+            int pathLen = 0;
+
+            if (!cfgStr(uart, "path", &path, &pathLen, err, errLen)) {
+                usConfigFree(cfg);
+                return NULL;
+            }
+            cfg->uartPath = path;
+        }
+        if (uart != NULL && cfgHas(uart, "width")) {
+            int64_t width = 0;
+
             if (!cfgInt(uart, "width", &width, err, errLen)
                 || (width != 8 && width != 32)) {
                 setErrKey(err, errLen, "must be 8 or 32: ", "width");
@@ -430,10 +466,57 @@ UsConfig *usConfigParse(const char *text, size_t len, char *err, size_t errLen) 
             }
             cfg->uartWidth = (uint32_t)width;
         }
-    }
-    if (uart != NULL && !cfgBool(uart, "color", &cfg->uartColour, err, errLen)) {
-        usConfigFree(cfg);
-        return NULL;
+        if (uart != NULL && cfgHas(uart, "clock")) {
+            int64_t clock = 0;
+
+            /* Zero is the value that means "leave the port alone", so it is
+             * one of the answers rather than a mistake */
+            if (!cfgInt(uart, "clock", &clock, err, errLen) || clock < 0) {
+                setErrKey(err, errLen, "not a frequency: ", "clock");
+                usConfigFree(cfg);
+                return NULL;
+            }
+            cfg->uartClock = (uint64_t)clock;
+        }
+        if (uart != NULL && cfgHas(uart, "baud")) {
+            int64_t baud = 0;
+
+            /* And the same here: a line rate of zero is "as the firmware set
+             * it", which is what a machine whose tables describe a console
+             * wants and what every configuration in this tree says */
+            if (!cfgInt(uart, "baud", &baud, err, errLen) || baud < 0
+                || baud > 0xFFFFFFFFLL) {
+                setErrKey(err, errLen, "not a line rate: ", "baud");
+                usConfigFree(cfg);
+                return NULL;
+            }
+            cfg->uartBaud = (uint32_t)baud;
+        }
+        /*
+         * A base address is only meaningful for a port the configuration
+         * names: with a type of its own the driver has somewhere to write,
+         * and with none it has to find one. Naming one is also the way a
+         * machine with no usable table is spoken to at all
+         */
+        if (uart != NULL && cfgHas(uart, "baseAddr")) {
+            int64_t base = 0;
+
+            if (!cfgInt(uart, "baseAddr", &base, err, errLen) || base <= 0) {
+                setErrKey(err, errLen, "not an address: ", "baseAddr");
+                usConfigFree(cfg);
+                return NULL;
+            }
+            cfg->uartBase = (uint64_t)base;
+            cfg->hasUART = true;
+            if (cfg->uartKind == UsCfgUARTACPIFind) {
+                cfg->uartKind = UsCfgUARTPl011;
+                cfg->uartType = "pl011";
+            }
+        }
+        if (uart != NULL && !cfgBool(uart, "color", &cfg->uartColour, err, errLen)) {
+            usConfigFree(cfg);
+            return NULL;
+        }
     }
 
     /*

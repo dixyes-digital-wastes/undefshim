@@ -56,4 +56,41 @@ const void *usACPIFindMADT(const void *rsdp);
 /* Collects the processors the MADT describes, in the order it lists them */
 UsACPICPUs usACPICollectCPUs(const void *madt);
 
+/*
+ * Where the firmware says its own console is
+ *
+ * There is no clock anywhere in ACPI: the tables name a port and a line rate
+ * and nothing about what drives it, which is why a port found this way is
+ * used as the firmware left it rather than being programmed again
+ */
+typedef enum UsACPIUARTKind_e {
+    UsACPIUARTNone = 0,
+    UsACPIUARTPl011,   /* ARM's, which the SBSA variants are a subset of */
+    UsACPIUART16550,   /* the PC-derived one, and what an 8250 is */
+} UsACPIUARTKind;
+
+typedef struct UsACPIUART_t {
+    UsACPIUARTKind kind;
+    uint64_t       base;
+    uint32_t       width;   /* bits per access the table asks for: 8 or 32 */
+} UsACPIUART;
+
+/*
+ * Reads the serial port out of a table, or answers UsACPIUARTNone when the
+ * table does not describe one this can drive
+ *
+ * Both take the table itself rather than a root pointer: finding it is the
+ * firmware side's business, and these stay pure so that the offsets -- which
+ * is where the mistakes would be -- can be checked without a machine
+ */
+UsACPIUART usACPIParseSPCR(const void *spcr);
+
+/*
+ * The debug port table holds a list of devices, each naming itself with a
+ * namespace string. 'name' is the path to match against, or NULL for the
+ * first serial port that can be driven
+ */
+UsACPIUART usACPIParseDBG2(const void *dbg2, const char *name);
+
+
 #endif
