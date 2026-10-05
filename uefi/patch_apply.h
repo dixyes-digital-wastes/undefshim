@@ -11,7 +11,7 @@
 #define US_PATCH_APPLY_H
 
 #include "core/pe.h"
-#include "uefi/src/session.h"
+#include "uefi/session.h"
 
 /*
  * Reads every file in the configured directory, applies the ones written for

@@ -15,9 +15,9 @@
 
 #include "core/acpi.h"
 #include "core/cfg.h"
-#include "uefi/src/payload_place.h"
-#include "uefi/src/pool.h"
-#include "uefi/src/registry.h"
+#include "uefi/payload_place.h"
+#include "uefi/pool.h"
+#include "uefi/registry.h"
 
 typedef struct UsSession_t {
     UsRegistry   registry;

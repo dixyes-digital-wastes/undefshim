@@ -17,7 +17,7 @@
 
 #include <stdint.h>
 
-#include "uefi/src/session.h"
+#include "uefi/session.h"
 
 /*
  * One bit per table entry lives in the session, so this is what bounds the

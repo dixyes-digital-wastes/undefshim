@@ -11,12 +11,12 @@
 #include "payload_blob.h"
 #include "payload/payload.h"
 #include "transfer_blob.h"
-#include "uefi/src/arm.h"
-#include "uefi/src/patch_apply.h"
-#include "uefi/src/cache.h"
-#include "uefi/src/console.h"
-#include "uefi/src/payload_place.h"
-#include "uefi/src/registry.h"
+#include "uefi/arm.h"
+#include "uefi/patch_apply.h"
+#include "uefi/cache.h"
+#include "uefi/console.h"
+#include "uefi/payload_place.h"
+#include "uefi/registry.h"
 
 bool usArmTransfer(UsSession *s) {
     UsImage *loader = usRegistryGet(&s->registry, UsImageWinload);

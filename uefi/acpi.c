@@ -15,8 +15,8 @@
 #include <uefi.h>
 
 #include "core/acpi.h"
-#include "uefi/src/acpi.h"
-#include "uefi/src/console.h"
+#include "uefi/acpi.h"
+#include "uefi/console.h"
 
 /*
  * The root pointer the firmware published. The newer guid is looked for

@@ -26,7 +26,7 @@
 
 #include <stdbool.h>
 
-#include "uefi/src/session.h"
+#include "uefi/session.h"
 
 /*
  * Registers for the address change. Called once, while boot services are

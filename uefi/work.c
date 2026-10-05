@@ -5,11 +5,11 @@
 #include <uefi.h>
 
 #include "core/plan.h"
-#include "uefi/src/arm.h"
-#include "uefi/src/console.h"
-#include "uefi/src/rewrite.h"
-#include "uefi/src/stack.h"
-#include "uefi/src/work.h"
+#include "uefi/arm.h"
+#include "uefi/console.h"
+#include "uefi/rewrite.h"
+#include "uefi/stack.h"
+#include "uefi/work.h"
 
 /*
  * The plan is a couple of kilobytes, most of it the site list. Keeping it

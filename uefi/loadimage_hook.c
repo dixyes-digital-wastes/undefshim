@@ -6,12 +6,12 @@
 
 #include "core/cfg.h"
 #include "core/pe.h"
-#include "uefi/src/console.h"
-#include "uefi/src/loadimage_hook.h"
-#include "uefi/src/patch.h"
-#include "uefi/src/rewrite.h"
-#include "uefi/src/service_hook.h"
-#include "uefi/src/stack.h"
+#include "uefi/console.h"
+#include "uefi/loadimage_hook.h"
+#include "uefi/patch.h"
+#include "uefi/rewrite.h"
+#include "uefi/service_hook.h"
+#include "uefi/stack.h"
 
 static UsSession *gSession;
 static UsServiceHook gHook;

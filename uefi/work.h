@@ -14,7 +14,7 @@
 #ifndef US_WORK_H
 #define US_WORK_H
 
-#include "uefi/src/session.h"
+#include "uefi/session.h"
 
 /*
  * Builds the plan from the registry and prints it. Safe to call more than

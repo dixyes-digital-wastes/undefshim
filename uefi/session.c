@@ -3,8 +3,8 @@
  */
 
 #include "core/pool.h"
-#include "uefi/src/acpi.h"
-#include "uefi/src/session.h"
+#include "uefi/acpi.h"
+#include "uefi/session.h"
 
 bool usSessionInit(UsSession *s) {
     usRegistryInit(&s->registry);

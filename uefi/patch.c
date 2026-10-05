@@ -5,9 +5,9 @@
 #include <uefi.h>
 
 #include "core/rva_patch.h"
-#include "uefi/src/cache.h"
-#include "uefi/src/console.h"
-#include "uefi/src/patch.h"
+#include "uefi/cache.h"
+#include "uefi/console.h"
+#include "uefi/patch.h"
 
 static bool isApplied(const UsSession *s, uint32_t i) {
     return (s->patchApplied & (1u << i)) != 0;

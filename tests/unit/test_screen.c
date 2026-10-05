@@ -10,8 +10,8 @@
 
 int printf(const char *format, ...);
 
-#include "uefi/src/font8x16.h"
-#include "uefi/src/screen.h"
+#include "uefi/font8x16.h"
+#include "uefi/screen.h"
 
 /* usScreenInit looks the protocol up; this test sets the frame buffer itself
  * and never calls it, but the symbols have to exist for the linker */

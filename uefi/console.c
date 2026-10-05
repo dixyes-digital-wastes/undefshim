@@ -5,8 +5,8 @@
 
 #include <uefi.h>
 
-#include "uefi/src/console.h"
-#include "uefi/src/screen.h"
+#include "uefi/console.h"
+#include "uefi/screen.h"
 
 /*
  * Both kinds are described by byte offsets from the port, which is how the

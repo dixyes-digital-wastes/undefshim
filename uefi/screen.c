@@ -4,8 +4,8 @@
 
 #include <uefi.h>
 
-#include "uefi/src/font8x16.h"
-#include "uefi/src/screen.h"
+#include "uefi/font8x16.h"
+#include "uefi/screen.h"
 
 /*
  * The graphics output protocol, which the firmware headers here do not

@@ -10,9 +10,9 @@
 #include "core/stackgen.h"
 #include "payload/payload.h"
 #include "payload_blob.h"
-#include "uefi/src/cache.h"
-#include "uefi/src/console.h"
-#include "uefi/src/session.h"
+#include "uefi/cache.h"
+#include "uefi/console.h"
+#include "uefi/session.h"
 
 #define PAYLOAD_PAGES ((US_PAYLOAD_BYTES + US_PAGE_SIZE - 1) / US_PAGE_SIZE)
 

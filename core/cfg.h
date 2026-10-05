@@ -6,7 +6,7 @@
  * boot behaves differently. See clean-room/design.md for the format
  *
  * Parsing is pure: this file only ever sees a buffer. Finding and reading that
- * buffer is the bootPhase's job, in uefi/src/config.c
+ * buffer is the bootPhase's job, in uefi/config.c
  *
  * Ownership: a parsed config owns the document buffer and the parsed table.
  * The strings reachable through UsPatch and the debug accessors point into

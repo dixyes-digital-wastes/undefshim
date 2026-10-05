@@ -5,7 +5,7 @@
 #include <uefi.h>
 
 #include "core/pool.h"
-#include "uefi/src/pool.h"
+#include "uefi/pool.h"
 
 /* Runtime services memory, so the OS keeps it instead of reclaiming it */
 #define US_POOL_MEMORY_TYPE EfiRuntimeServicesData
