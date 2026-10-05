@@ -25,4 +25,15 @@
  */
 void usPatchApplyLists(UsSession *session, UsImage *image);
 
+/*
+ * Reports which build an image is: the digest of its text and the identity of
+ * the program database it was linked against, both read out of the image. It
+ * is what a list is written from, so printing it is how one gets written for
+ * the build that is in memory rather than for a file that looks like it
+ *
+ * At verbose, and it does nothing at all below that: the digest is over the
+ * whole of the text
+ */
+void usImageReportBuild(UsImage *image);
+
 #endif
