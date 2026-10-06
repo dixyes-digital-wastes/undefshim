@@ -98,7 +98,27 @@ static void writeConfig(const UsPayloadPlace *place, const UsSession *session) {
      * trying, so it is told
      */
     cfg->quiet = 1;
-    cfg->el0InPlace = session->config != NULL && session->config->el0InplaceRewrite ? 1U : 0U;
+    /*
+     * Whether the user-mode replacement can happen at all, not just whether it
+     * was asked for
+     *
+     * Making an instruction's page writable needs the base of the image's
+     * descriptor mapping, and that comes from the configuration alone - see
+     * UsPayloadStub.descriptorBaseRVA, which the arming leaves at zero when
+     * there is none. With no base every attempt is refused, so a payload told
+     * to try anyway would take the trap path for every RCpc load in user code
+     * and spend, on each one, a stack the kernel owns, to reach an answer it
+     * could have been given here
+     *
+     * The exception path still stands: an RCpc load that is not replaced is
+     * carried out by the handler, which is correct and slower, and that is
+     * exactly what a machine with no base is
+     */
+    cfg->el0InPlace = session->config != NULL
+                          && session->config->el0InplaceRewrite
+                          && session->config->hasDescriptorBase
+                      ? 1U
+                      : 0U;
     cfg->statsEnabled = session->config != NULL && session->config->statsEnabled ? 1U : 0U;
 }
 
