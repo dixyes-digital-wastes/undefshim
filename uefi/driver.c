@@ -166,6 +166,22 @@ int main(int argc, char **argv) {
     usConsoleMilestone("M2 done");
 
     /*
+     * The combination that makes the user-mode replacement a no-op
+     *
+     * Rewriting a site needs to know where the kernel keeps its descriptor
+     * mapping, and the only thing that says so is descriptorBaseRVA. Without
+     * it every site is refused, the instruction stays in place, and every
+     * RCpc load keeps taking the exception - which is what a machine with the
+     * rewrite turned on and no base is doing, silently, for as long as it
+     * runs. It is a warning rather than a refusal because it is survivable:
+     * the exception path answers what the rewrite did not
+     */
+    if (!cfg->hasDescriptorBase && cfg->el0InplaceRewrite) {
+        usLogW("config", "[ldapr] el0InplaceRewrite is on but [kernel]"
+               " descriptorBaseRVA is not set, so no site can be rewritten\n");
+    }
+
+    /*
      * What this binary carries, after the milestone rather than before it: a
      * machine printing its licences should not hold up the stage the scripts
      * are waiting for

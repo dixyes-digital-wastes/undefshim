@@ -89,9 +89,11 @@ static void placed(const UsACPICPUs *cpus) {
      * payload reports through that port, so reading the file instead left
      * it printing to address zero
      */
+    UsConfig config = { .el0InplaceRewrite = true };
     UsSession session = { .pool = &pool, .cpus = *cpus,
                           .uartOpen = true, .uartKind = UsUARTPL011,
-                          .uartBase = 0x94080000ULL, .uartWidth = 32U };
+                          .uartBase = 0x94080000ULL, .uartWidth = 32U,
+                          .config = &config };
     UsPayloadPlace out;
     uint32_t expected[US_STACK_LOOKUP_WORDS];
     uint8_t snapshot[sizeof(pages)];
@@ -126,6 +128,14 @@ static void placed(const UsACPICPUs *cpus) {
     assert(cfg->uartKind == 1U);
     assert(cfg->uartWidth == 32U);
     assert(cfg->quiet == 1);
+    /*
+     * The replacement is asked for and cannot happen: the configuration states
+     * no base for the kernel's descriptor mapping, and without one every
+     * attempt is refused. A payload told to try anyway would take the probe
+     * bank - a stack the kernel owns - on every RCpc load in user code, to
+     * reach the answer it is given here instead
+     */
+    assert(cfg->el0InPlace == 0);
 
     /* Generator semantics have their own interpreter test. Here the complete
      * published lookup must be generated from exactly the cfg/session table,
