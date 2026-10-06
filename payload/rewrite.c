@@ -68,7 +68,8 @@ typedef struct UsRead_t {
  * entry onwards, so the switch is the only thing that has to be right
  */
 typedef struct UsProbeBank_t {
-    uint64_t restoreSP;   /* zero when no switch was made */
+    uint64_t restoreSP;    /* SP_EL0 to be put back; zero when no switch was made */
+    uint64_t restoreSPEL1; /* SP_EL1 as it was found, which is the kernel's */
 } UsProbeBank;
 
 /* How far below the stack in use the probing stack starts. Enough for the few
@@ -85,9 +86,12 @@ static UsProbeBank probeBankEnter(void) {
         return bank;              /* already on the bank that answers faults */
     }
     __asm__ volatile("mov %0, sp" : "=r"(sp));
-    /* The bank just selected may hold anything at all; it is pointed somewhere
-     * safe before anything is pushed, and no memory is touched in between */
+    /* Both banks are read before either is written: the one just selected
+     * holds the kernel's own exception stack, and it has to go back the way
+     * it was found. Only reading happens in between, so nothing is pushed
+     * onto a stack that may hold anything at all */
     __asm__ volatile("msr spsel, #1" ::: "memory");
+    __asm__ volatile("mov %0, sp" : "=r"(bank.restoreSPEL1));
     __asm__ volatile("mov sp, %0" ::"r"(sp - US_PROBE_STACK_BYTES));
     bank.restoreSP = sp;
     return bank;
@@ -97,8 +101,13 @@ static void probeBankLeave(const UsProbeBank *bank) {
     if (bank->restoreSP == 0) {
         return;
     }
-    __asm__ volatile("mov sp, %0" ::"r"(bank->restoreSP));
+    /* SP_EL1 first, while it is still the selected bank: it is the one the
+     * kernel will find the next time it takes an exception from a lower
+     * level, and a pool address left in it is a stack the kernel would run
+     * its own handler on */
+    __asm__ volatile("mov sp, %0" ::"r"(bank->restoreSPEL1));
     __asm__ volatile("msr spsel, #0" ::: "memory");
+    __asm__ volatile("mov sp, %0" ::"r"(bank->restoreSP));
 }
 
 static uint64_t currentVBAR(void) {
