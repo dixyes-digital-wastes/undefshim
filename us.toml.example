@@ -55,6 +55,9 @@ color = true
 #   "off" | "error" | "warn" | "info" | "verbose" | "debug"
 level = "info"
 
+# Whether the licences the binary carries are printed at boot. Absent is on
+showLicenses = false
+
 [ldapr]
 # What to do about the RCpc loads, which is the whole reason this project
 # exists: the hardware cannot carry them out. Both keys are on unless turned

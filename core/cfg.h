@@ -67,6 +67,15 @@ typedef struct UsConfig_t {
     UsLogLevel    logLevel;
 
     /*
+     * Whether the licences this binary carries are printed at boot, from
+     * [log]. On unless turned off: a driver is distributed as a binary and
+     * nothing else, so the notices that go with it have nowhere to live but
+     * inside it, and a machine that cannot be asked for them is a machine
+     * that does not carry them
+     */
+    bool          showLicenses;
+
+    /*
      * What to do about RCpc loads, from [ldapr]. Both are on unless turned
      * off, and turning either off costs exceptions rather than correctness:
      * the exception path carries out what the replacement did not

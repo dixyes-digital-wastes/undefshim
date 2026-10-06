@@ -23,6 +23,7 @@
 #include "uefi/console.h"
 #include "uefi/screen.h"
 #include "uefi/gmm_hook.h"
+#include "uefi/licenses.h"
 #include "uefi/loadimage_hook.h"
 #include "uefi/payload_place.h"
 #include "uefi/registry.h"
@@ -61,8 +62,9 @@ static const char *tableName(int table) {
  * compare than two that do not
  */
 static void printConfig(const UsConfig *cfg) {
-    usLogV("config", "[log] level=\"" US_VALUE("%s") "\"\n",
-           usConfigLogLevelName(cfg->logLevel));
+    usLogV("config", "[log] level=\"" US_VALUE("%s") "\" showLicenses=" US_VALUE("%s")
+           "\n", usConfigLogLevelName(cfg->logLevel),
+           boolWord(cfg->showLicenses));
 
     usLogV("config", "[uart] type=\"" US_VALUE("%s") "\" table=\"" US_VALUE("%s")
            "\" path=\"" US_VALUE("%s") "\" baseAddr=" US_VALUE("%#llx")
@@ -162,6 +164,22 @@ int main(int argc, char **argv) {
 
     printConfig(cfg);
     usConsoleMilestone("M2 done");
+
+    /*
+     * What this binary carries, after the milestone rather than before it: a
+     * machine printing its licences should not hold up the stage the scripts
+     * are waiting for
+     *
+     * The screen is left out of it. A licence is a document, and the screen is
+     * a status display: it shows the last of what was written, so a text this
+     * long would push the boot's own report off it - on exactly the machines
+     * that have no serial port to put the report anywhere else
+     */
+    if (cfg->showLicenses) {
+        usConsoleScreen(false);
+        usLicensesReport();
+        usConsoleScreen(true);
+    }
 
     /*
      * The switches come from the configuration, each named for what it stops,

@@ -54,6 +54,7 @@ static uint32_t gShift;
 static uint32_t gWidth = 32U;
 static UsLogLevel gLevel = UsLogInfo;
 static bool gColour = true;
+static bool gScreen = true;
 /* Set while an escape sequence is going out, so that the serial port can skip
  * one whole rather than leave its tail in the log */
 static bool gEscape;
@@ -167,7 +168,9 @@ static void emitSerial(char c) {
  * written and then taken back
  */
 static void emit(char c) {
-    usScreenPutc(c);
+    if (gScreen) {
+        usScreenPutc(c);
+    }
     emitSerial(c);
 }
 
@@ -237,6 +240,9 @@ void usConsoleColour(bool enabled) {
     gColour = enabled;
 }
 
+void usConsoleScreen(bool enabled) {
+    gScreen = enabled;
+}
 void usLog(UsLogLevel level, const char *tag, const char *fmt, ...) {
     char line[US_LINE_BYTES];
     va_list args;

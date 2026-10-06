@@ -118,6 +118,7 @@ DRIVER_SRCS := uefi/config.c uefi/patch_apply.c uefi/registry.c \
                uefi/service_hook.c uefi/gmm_hook.c uefi/patch.c uefi/work.c \
                uefi/payload_place.c uefi/arm.c uefi/rewrite.c uefi/acpi.c \
                uefi/vamap.c uefi/session.c uefi/uart.c uefi/uacpi_kernel.c \
+               uefi/licenses.c \
                core/cache.c core/cfg.c core/pe.c core/scan.c core/plan.c \
                core/rva_patch.c core/pool.c core/patchlist.c core/patchapply.c \
                core/sha256.c core/thunk.c core/ldapr.c core/acpi.c \

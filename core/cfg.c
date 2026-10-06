@@ -294,6 +294,7 @@ UsConfig *usConfigParse(const char *text, size_t len, char *err, size_t errLen) 
      */
     cfg->imageInplaceRewrite = true;
     cfg->el0InplaceRewrite = true;
+    cfg->showLicenses = true;
 
     /* toml_parse edits the buffer and keeps pointers into it, so it has to
      * outlive the table */
@@ -331,6 +332,10 @@ UsConfig *usConfigParse(const char *text, size_t len, char *err, size_t errLen) 
             usConfigFree(cfg);
             return NULL;
         }
+    }
+    if (!cfgBool(log, "showLicenses", &cfg->showLicenses, err, errLen)) {
+        usConfigFree(cfg);
+        return NULL;
     }
 
     /*
