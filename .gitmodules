@@ -1,6 +1,6 @@
 [submodule "third_party/posix-uefi"]
 	path = third_party/posix-uefi
-	url = https://gitlab.com/bztsrc/posix-uefi.git
+	url = https://github.com/dixyes-digital-wastes/posix-uefi
 [submodule "third_party/toml-c"]
 	path = third_party/toml-c
 	url = https://github.com/arp242/toml-c
