@@ -122,8 +122,18 @@ static efi_status_t EFIAPI loadImageHook(boolean_t bootPolicy, efi_handle_t pare
         RegisterRequest req = { .image = lip, .recorded = false };
 
         usStackRunOn(gSession->bootStackTop, registerOnOwnStack, &req);
-        /* And its instructions replaced, before anything runs out of it */
-        usStackRunOn(gSession->bootStackTop, rewriteOnOwnStack, &req);
+        /*
+         * And its instructions replaced, before anything runs out of it -
+         * unless the configuration says not to. That key reads "replace the
+         * RCpc loads in these images before either runs", and this is the
+         * moment it is talking about: leaving it out of here made the key a
+         * thing that only had an effect on a machine that also reached the
+         * memory map scan, and a machine that did not went on replacing
+         * everything while the file said it did not
+         */
+        if (gSession->imageInplaceRewrite) {
+            usStackRunOn(gSession->bootStackTop, rewriteOnOwnStack, &req);
+        }
         usLog(req.recorded ? UsLogInfo : UsLogVerbose, "loadimage",
               "%s at " US_VALUE("%#llx") "\n",
               req.recorded ? "registered" : "seen",
