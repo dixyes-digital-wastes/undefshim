@@ -147,7 +147,7 @@ int main(int argc, char **argv) {
         usConsoleOpen(cfg, &gSession);
     }
 
-    usLogI("undefshim", US_VERSION_STRING "\n");
+    usLogI("undefshim", US_VERSION_STRING " " US_BUILD_ID "\n");
     switch (result) {
     case UsConfigLoaded:
         usLogI("config", "loaded\n");
