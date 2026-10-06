@@ -10,9 +10,11 @@
 
 #include "core/cfg.h"
 #include "core/pe.h"
+#include "uefi/arm.h"
 #include "uefi/console.h"
 #include "uefi/loadimage_hook.h"
 #include "uefi/patch.h"
+#include "uefi/registry.h"
 #include "uefi/rewrite.h"
 #include "uefi/service_hook.h"
 #include "uefi/stack.h"
@@ -20,6 +22,9 @@
 static UsSession *gSession;
 static UsServiceHook gHook;
 static efi_image_load_t gOriginal;
+/* Whether the vectors were taken over at load time by the switch that does
+ * that without the plan, so it happens once and not once per image */
+static bool gArmed;
 
 /*
  * What runs on our own stack: taking the image apart and recording it
@@ -87,6 +92,28 @@ static void applyPatchesOnOwnStack(void *arg) {
     req->applied = usPatchApplyPending(gSession);
 }
 
+/*
+ * Taking the vectors over without the plan, for the stand-in kernel the fast
+ * test runs: see the key this is behind in core/cfg.h
+ *
+ * The plan is what normally recognises a kernel, and it is built from a scan
+ * of the memory map that only a boot manager asking for one produces. The
+ * image that was just loaded is offered to the same classifier here, by name,
+ * because that is the only thing that will ever name a kernel in this run
+ */
+typedef struct ArmRequest_t {
+    const void *base;
+    size_t      size;
+    bool        armed;
+} ArmRequest;
+
+static void armOnOwnStack(void *arg) {
+    ArmRequest *req = arg;
+
+    usRegistryScanRegion(&gSession->registry, req->base, req->size);
+    req->armed = usArmVectorTable(gSession);
+}
+
 static efi_status_t EFIAPI loadImageHook(boolean_t bootPolicy, efi_handle_t parent,
                                          efi_device_path_t *path, void *sourceBuffer,
                                          uintn_t sourceSize, efi_handle_t *image) {
@@ -146,6 +173,23 @@ static efi_status_t EFIAPI loadImageHook(boolean_t bootPolicy, efi_handle_t pare
         PatchRequest preq = { .applied = 0 };
 
         usStackRunOn(gSession->bootStackTop, applyPatchesOnOwnStack, &preq);
+    }
+
+    /*
+     * And the exception vectors, where the configuration asks for that rather
+     * than for the plan. Once: the first image that is registered is the one
+     * the arming is about, and every image after it would find the same table
+     * and write the same stubs over themselves
+     */
+    if (gSession->armOnLoad && !gArmed) {
+        ArmRequest areq = { .base = lip->ImageBase, .size = lip->ImageSize,
+                            .armed = false };
+
+        usStackRunOn(gSession->bootStackTop, armOnOwnStack, &areq);
+        gArmed = areq.armed;
+        if (areq.armed) {
+            usConsoleMilestone("M6.5 armed");
+        }
     }
 
     return status;

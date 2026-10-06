@@ -534,6 +534,7 @@ UsConfig *usConfigParse(const char *text, size_t len, char *err, size_t errLen) 
         || !cfgBool(dbg, "notArmVectorsEl1t", &cfg->notArmVectorsEl1t, err, errLen)
         || !cfgBool(dbg, "notArmHandover", &cfg->notArmHandover, err, errLen)
         || !cfgBool(dbg, "notVamap", &cfg->notVamap, err, errLen)
+        || !cfgBool(dbg, "armOnLoad", &cfg->armOnLoad, err, errLen)
         || !cfgBool(dbg, "spxStack", &cfg->spxStack, err, errLen)) {
         usConfigFree(cfg);
         return NULL;

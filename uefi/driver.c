@@ -96,10 +96,12 @@ static void printConfig(const UsConfig *cfg) {
      * so here rather than leaving it to be worked out from what it did not do */
     usLogV("config", "[debug] notArmVectors=" US_VALUE("%s")
            " notArmVectorsEl1t=" US_VALUE("%s") " notArmHandover=" US_VALUE("%s")
-           " notVamap=" US_VALUE("%s") " spxStack=" US_VALUE("%s")
+           " notVamap=" US_VALUE("%s") " armOnLoad=" US_VALUE("%s")
+           " spxStack=" US_VALUE("%s")
            " patches=" US_VALUE("%u") "\n",
            boolWord(cfg->notArmVectors), boolWord(cfg->notArmVectorsEl1t),
            boolWord(cfg->notArmHandover), boolWord(cfg->notVamap),
+           boolWord(cfg->armOnLoad),
            boolWord(cfg->spxStack), (unsigned)cfg->patchCount);
 }
 
@@ -209,6 +211,7 @@ int main(int argc, char **argv) {
     gSession.stubHandover = !cfg->notArmHandover;
     gSession.vamap = !cfg->notVamap;
     gSession.spxStack = cfg->spxStack;
+    gSession.armOnLoad = cfg->armOnLoad;
     gSession.imageInplaceRewrite = cfg->imageInplaceRewrite;
 
     /* Handed over rather than freed: the patch table names stages that are
