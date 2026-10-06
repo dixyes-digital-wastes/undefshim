@@ -121,3 +121,4 @@ check: all
 	@python3 check_rewrite.py
 	@python3 check_pte.py
 	@python3 check_watch.py
+	@python3 check_encodings.py $(ROOT)
