@@ -3,6 +3,7 @@
 include config.mk
 
 # A fresh id every build, so the running image can be matched to the artifact.
+# Override it to name a build: make BUILD_ID=anything
 BUILD_ID ?= $(shell head -c 6 /dev/urandom | base64 | tr -d '+/=' | tr 'A-Z' 'a-z')
 
 TOML := third_party/toml-c
@@ -112,6 +113,12 @@ POSIX_LIB := $(POSIX_UEFI)/libuefi.a
 # script has already cost this project a working file.
 DRIVER_MAIN ?= uefi/driver.c
 DRIVER_MAIN_OBJ := $(BUILD_DIR)/driver_main.o
+
+# The id is compiled into the banner, so it is a real input to driver_main.o
+# and has to be a prerequisite like any other. Without this the object keeps
+# the banner of whichever build came first and the machine reports an id that
+# names something else - which is the one thing the id exists to prevent
+BUILD_ID_FILE := $(BUILD_DIR)/build_id
 
 DRIVER_SRCS := uefi/config.c uefi/patch_apply.c uefi/registry.c \
                uefi/loadimage_hook.c uefi/console.c uefi/screen.c uefi/pool.c \
@@ -271,8 +278,20 @@ $(TRANSFER_HDR): $(TRANSFER_BIN) $(TRANSFER_ELF)
 
 # Named explicitly because the source can come from outside the tree, and
 # because the generated payload header has to exist before it is compiled.
-$(DRIVER_MAIN_OBJ): $(DRIVER_MAIN) $(PAYLOAD_HDR) $(TRANSFER_HDR) $(US_HEADERS) | $(BUILD_DIR)/uefi
+$(DRIVER_MAIN_OBJ): $(DRIVER_MAIN) $(PAYLOAD_HDR) $(TRANSFER_HDR) $(US_HEADERS) \
+                   $(BUILD_ID_FILE) | $(BUILD_DIR)/uefi
 	$(CC) $(US_DRIVER_CFLAGS) -c $< -o $@
+
+# What the id was last time it was compiled. Written only when it differs, so
+# an unchanged id does not touch the file and does not force the rebuild; the
+# shell test is what keeps that from being a rebuild on every make.
+$(BUILD_ID_FILE): FORCE | $(BUILD_DIR)
+	@if [ "$$(cat $@ 2>/dev/null)" != '$(BUILD_ID)' ]; then \
+	    printf '%s\n' '$(BUILD_ID)' > $@; \
+	    echo "build id $(BUILD_ID)"; \
+	fi
+
+FORCE:
 
 # Every other translation unit.
 #
