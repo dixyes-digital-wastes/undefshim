@@ -164,6 +164,24 @@ typedef struct UsConfig_t {
      */
     bool          spxStack;
 
+    /*
+     * Whether to take the vectors over as soon as a kernel is loaded, rather
+     * than when the plan that says which image the kernel is has been built
+     *
+     * The one key here that is not a "not", and the one that turns something
+     * on rather than off. Where a kernel's vector table is, and what room in
+     * its image the stubs may use, is normally answered by the plan - which
+     * is built when a kernel is found in the memory map, and only a boot
+     * manager asking for that map produces one. The stand-in kernel the fast
+     * test runs is loaded by the shell and never produces one, so with this
+     * off the test only ever exercises the replacement, and carrying out an
+     * instruction that was not replaced is not covered at all
+     *
+     * Off by default, and it must stay that way: arming on a name alone would
+     * take over the vectors of whatever image happened to be called that
+     */
+    bool          armOnLoad;
+
     UsPatch      *patches;    /* owned array */
     uint32_t      patchCount;
 } UsConfig;

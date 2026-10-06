@@ -81,6 +81,14 @@ typedef struct UsSession_t {
     bool           spxStack;
 
     /*
+     * Whether to take the vectors over at the moment a kernel is loaded,
+     * without waiting for the plan. For the stand-in kernel the fast test
+     * runs, which is loaded by the shell and so never produces the memory map
+     * scan that builds one; see the key in core/cfg.h
+     */
+    bool           armOnLoad;
+
+    /*
      * Whether to replace the RCpc loads in the images rather than only
      * handling the exceptions they cause. On by default: it is the mechanism
      * that covers the kernel, and the exception path covers what it cannot
