@@ -46,13 +46,15 @@ See [`docs/`](docs/).
 - This project is inspired by [EfiGuard](https://github.com/mattiwatti/efiguard).
 - This project uses a modified [posix-uefi](https://gitlab.com/bztsrc/posix-uefi) as its UEFI library.
 - This project uses a modified [toml-c](https://github.com/arp242/toml-c) as its config parser.
+- This project uses [uACPI](https://github.com/uACPI/uACPI) to run the firmware's ACPI tables.
+- This project uses [TLSF](https://github.com/mattconte/tlsf) as the allocator uACPI is given.
 - This project borrows some code from [musl](https://git.musl-libc.org/git/musl), through the UEFI library's formatted output.
 - This project uses [atarist-font](https://github.com/ntwk/atarist-font), under its own license, as its font.
 - 感谢[蓝色大肥鱼](https://deepseek.com/)，基本上所有代码都是大肥鱼写的
 
 ## License
 
-The project is licensed under the GNU Affero General Public License v3.0 or later. See the LICENSE file for details.
+The project is licensed under the GNU Affero General Public License v3.0 or later. See the LICENSE file for details. The driver is distributed as a binary with nothing beside it, so the text of that licence and of every third-party one it carries is embedded in it: a machine set to `debug` prints them at boot.
 
 ```text
 undefshim

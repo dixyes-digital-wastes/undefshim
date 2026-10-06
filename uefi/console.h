@@ -70,6 +70,17 @@ bool usConsoleWants(UsLogLevel level);
 void usConsoleColour(bool enabled);
 
 /*
+ * Whether what is written is drawn on the screen as well as sent to the port
+ *
+ * On unless turned off. The one thing this is for is a block of text that is a
+ * document rather than a report about this boot: the screen shows the last of
+ * what was written, so a block long enough to fill it pushes whatever came
+ * before off, and a machine whose only output is the screen would lose the
+ * report it needs to see
+ */
+void usConsoleScreen(bool enabled);
+
+/*
  * The colours a line can put its own parts in, as the escape sequences the
  * terminal and the screen both understand
  *

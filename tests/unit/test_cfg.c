@@ -82,6 +82,7 @@ static void testDefaults(void) {
         return;
     }
     eqInt("default log level", c->logLevel, UsLogInfo);
+    eqInt("showLicenses without a key", c->showLicenses, 1);
     eqInt("default imageInplaceRewrite", c->imageInplaceRewrite, 1);
     eqInt("default el0InplaceRewrite", c->el0InplaceRewrite, 1);
     ok("default no uart", c->hasUART == false);
@@ -101,6 +102,7 @@ static void testShippedShape(void) {
     static const char doc[] =
         "[log]\n"
         "level = \"verbose\"\n"
+        "showLicenses = false\n"
         "\n"
         "[ldapr]\n"
         "imageInplaceRewrite = false\n"
@@ -127,6 +129,7 @@ static void testShippedShape(void) {
     }
 
     eqInt("log level", c->logLevel, UsLogVerbose);
+    eqInt("showLicenses", c->showLicenses, 0);
     eqInt("imageInplaceRewrite", c->imageInplaceRewrite, 0);
     eqInt("el0InplaceRewrite untouched", c->el0InplaceRewrite, 1);
     eqInt("notArmVectors", c->notArmVectors, 1);
@@ -199,6 +202,7 @@ static void testRejections(void) {
     reject("patch rva out of range", "[[debug.patch]]\ntarget = \"ntoskrnl\"\nrva = 0x1ffffffff\nvalue = 1\nwidth = 4\n");
     reject("patch entry not a table", "debug = { patch = [1, 2] }\n");
     reject("unterminated string", "[log]\nlevel = \"info\n");
+    reject("showLicenses as string", "[log]\nshowLicenses = \"yes\"\n");
 }
 
 static void testWidths(void) {

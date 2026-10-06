@@ -28,6 +28,8 @@ color = true
 
 [log]
 level = "info"       # off | error | warn | info | verbose | debug
+# Absent is on
+showLicenses = false
 
 [ldapr]
 # Replace the RCpc loads in ntoskrnl and winload before either runs.

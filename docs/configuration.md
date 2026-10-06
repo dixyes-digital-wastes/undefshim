@@ -54,6 +54,10 @@ How much is printed.
 
 Each line is `tag: message`, and the tag is coloured by the level it was written at. The level decides whether a line is written at all, so a machine set to `error` does not format the lines it is not going to print.
 
+The other key is `showLicenses`, on by default. The driver carries the text of its own licence and of every third-party one it includes, and prints them at boot: a binary is what gets distributed, so the notices that have to travel with it have nowhere else to be. They are not a kind of log line, which is why they have a key of their own rather than being left to `debug`, but they are written at `info`, so a machine set to `warn` or below does not print them.
+
+They go to the serial port only. A licence is a document and the screen is a status display: the screen shows the last of what was written, so a text this long would push the boot's own report off it, on exactly the machines that have no port to put that report anywhere else.
+
 ## `[ldapr]`
 
 What is done to RCpc loads (`ldapr`, `ldaprb`, `ldaprh`) that the hardware cannot execute.
