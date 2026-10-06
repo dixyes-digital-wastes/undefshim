@@ -1,0 +1,32 @@
+# The configuration the stand-in kernel's check runs with.
+#
+# Two keys differ from the shipped file, and between them they are what makes
+# the check cover the exception path rather than only the replacement:
+#
+#   [debug] armOnLoad
+#       Take the vectors over when the kernel is loaded. Nothing in this run
+#       builds the plan, which is what normally decides that, because a plan
+#       comes from a memory map scan that only a boot manager asks for.
+#
+#   [ldapr] imageInplaceRewrite
+#       Off, so the instructions are left where they are and every one of them
+#       takes an exception. With it on the check would be reporting on the
+#       replacement, and the handler's own work would never run.
+#
+# Everything else is the ordinary answer, and none of it is mentioned here.
+
+[log]
+# The milestones this check looks for, and no more
+level = "info"
+color = false
+
+[ldapr]
+imageInplaceRewrite = false
+
+[stats]
+# Nothing reads the counters in this run, and the pool is the only place they
+# go
+enabled = false
+
+[debug]
+armOnLoad = true

@@ -412,8 +412,7 @@ check-qemu: $(DRIVER)
 	@$(MAKE) --no-print-directory check-one CHECK=plan_case WIN_DISK=$(WIN_DISK) PLAN_CORPUS=$(PLAN_CORPUS)
 	@$(MAKE) --no-print-directory check-one CHECK=breakpoint_case WIN_DISK=$(WIN_DISK)
 	@$(MAKE) --no-print-directory check-one CHECK=vector_case WIN_DISK=$(WIN_DISK)
-
-# One check, with its own skip code understood. A check that has nothing to do
+	@$(MAKE) --no-print-directory check-one CHECK=fake_case
 # -- no windows disk, no corpus -- says so with $(SKIP) and that is not a
 # failure: the point of the run is to find out what this machine can be asked,
 # and "nothing" is an answer
