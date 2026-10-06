@@ -53,6 +53,33 @@ __declspec(dllimport) DWORD __stdcall WaitForSingleObject(HANDLE handle,
                                                           DWORD milliseconds);
 __declspec(dllimport) DWORD __stdcall GetCurrentProcessorNumber(void);
 
+/*
+ * Virtual memory, for the group that places an instruction at the very end of
+ * a mapped page on purpose: it is only the site's own address that makes the
+ * read of it interesting, and the page after it has to be gone for that
+ */
+#define MEM_COMMIT 0x1000u
+#define MEM_RESERVE 0x2000u
+#define MEM_DECOMMIT 0x4000u
+#define PAGE_EXECUTE_READWRITE 0x40u
+
+__declspec(dllimport) void *__stdcall VirtualAlloc(void *address, size_t size,
+                                                   DWORD type, DWORD protect);
+__declspec(dllimport) int __stdcall VirtualFree(void *address, size_t size,
+                                                DWORD type);
+__declspec(dllimport) int __stdcall FlushInstructionCache(HANDLE process,
+                                                          const void *address,
+                                                          size_t size);
+
+/* What a thread that ran into a fault it had no handler for ends with, which
+ * is how the page edge group tells that ending from any other */
+__declspec(dllimport) int __stdcall GetExitCodeThread(HANDLE thread,
+                                                      DWORD *code);
+#define EXCEPTION_ACCESS_VIOLATION 0xC0000005u
+
+/* The pseudo-handle every process can pass to say "this one" */
+#define CURRENT_PROCESS ((HANDLE)-1)
+
 /* All of it is 8-bit text; there is no CRT and therefore no varargs */
 void conWrite(const char *s, u32 len);
 void conWriteZ(const char *s);

@@ -223,6 +223,77 @@ static void fillArena(void) {
     }
 }
 
+#define PAGE_BYTES 4096u
+
+/* ldapr w0, [x0]: the four byte form, no register named beyond the two the
+ * encoding always has */
+#define LDAPR_W0_X0 0xB8BFC000u
+
+/*
+ * A site in the last four bytes of a mapped page, with the page after it gone
+ *
+ * Reading a site's instruction is how the shim decides what it is looking at,
+ * and four byte aligned is all an instruction has to be. A read of eight bytes
+ * from one four bytes from the end of a page reaches into the page that is not
+ * there; the fault that comes back names that page rather than the site, and
+ * a handler that compares the two does not recognise its own read. On ARM64 a
+ * fault inside a handler is fatal to the machine, so this is the difference
+ * between a wrong answer here and a machine that never prints again
+ *
+ * The thread it runs on always ends with an access violation, whether or not
+ * the shim is there: the load reads four aligned bytes and is fine, but the
+ * instruction after the site is in the page that is gone, so nothing can run
+ * past it. That is not the question being asked - the question is whether the
+ * machine is still here to report it
+ */
+static u32 __stdcall edgeThread(void *parameter) {
+    u8 *pages = VirtualAlloc(NULL, 2 * PAGE_BYTES, MEM_COMMIT | MEM_RESERVE,
+                             PAGE_EXECUTE_READWRITE);
+    volatile u32 word = 0x11223344u;
+    u32 (*fn)(const volatile u32 *);
+
+    (void)parameter;
+    if (pages == NULL) {
+        return 0;
+    }
+    /* Written through the data mapping and flushed, because nothing makes the
+     * fetch see it otherwise */
+    *(volatile u32 *)(pages + PAGE_BYTES - 4) = LDAPR_W0_X0;
+    FlushInstructionCache(CURRENT_PROCESS, pages, 2 * PAGE_BYTES);
+
+    /* Decommitted rather than released, so this page goes and the reservation
+     * it came from stays */
+    VirtualFree(pages + PAGE_BYTES, PAGE_BYTES, MEM_DECOMMIT);
+
+    fn = (u32(*)(const volatile u32 *))(void *)(pages + PAGE_BYTES - 4);
+    (void)fn(&word);
+    return 0;
+}
+
+/* The one group that cannot be reported like the others, because the way it
+ * would end in a wrong result is the machine going away rather than a number
+ * coming back wrong. Reaching the line after the wait is the whole test */
+static void reportEdge(void) {
+    HANDLE thread = CreateThread(NULL, 0, edgeThread, NULL, 0, NULL);
+    DWORD code = 0;
+
+    if (thread == NULL) {
+        conWriteZ("  FAIL page edge: no thread\n");
+        failures++;
+        return;
+    }
+    WaitForSingleObject(thread, INFINITE);
+    if (!GetExitCodeThread(thread, &code)
+        || code != EXCEPTION_ACCESS_VIOLATION) {
+        conWriteZ("  FAIL page edge: the thread ended with ");
+        conHex32(code);
+        conWriteZ(" rather than an access violation\n");
+        failures++;
+        return;
+    }
+    conWriteZ("  PASS page edge: a site four bytes from the end of a page\n");
+}
+
 int demoMain(void) {
     conWriteZ("ldapr: the four widths, aligned, unaligned and threaded\n");
     fillArena();
@@ -244,6 +315,8 @@ int demoMain(void) {
     u32 count = 0;
     bad = runThreads(&cpus, &count);
     report("threads", bad, count, cpus);
+
+    reportEdge();
 
     if (failures != 0) {
         conWriteZ("FAIL: ldapr result mismatch\n");

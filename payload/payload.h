@@ -155,6 +155,11 @@ void usPayloadStuck(uint64_t kind);
 #define US_PAYLOAD_RESUME ((UsFrame *)(uintptr_t)1)
 
 bool usPayloadProbeRead(uint64_t at, uint64_t *value);
+/* One instruction wide, for the same reason the store below is: a site is four
+ * bytes and only four byte aligned, so a read of eight from one at the end of
+ * its page reaches into the next, and the fault it takes names that page
+ * rather than the address that was asked about */
+bool usPayloadProbeReadWord(uint64_t at, uint32_t *value);
 bool usPayloadProbeWrite(uint64_t at, uint64_t value);
 /* One instruction wide: a site is four bytes, and a store of eight would take
  * the instruction after it with it */

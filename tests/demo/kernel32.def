@@ -2,7 +2,11 @@ LIBRARY kernel32.dll
 EXPORTS
 CreateThread
 ExitProcess
+FlushInstructionCache
 GetCurrentProcessorNumber
+GetExitCodeThread
 GetStdHandle
+VirtualAlloc
+VirtualFree
 WaitForSingleObject
 WriteFile

@@ -197,6 +197,28 @@ bool usPayloadProbeRead(uint64_t at, uint64_t *value) {
     return true;
 }
 
+/*
+ * The same, one instruction wide. A site is four bytes and only has to be
+ * four byte aligned, so reading eight from one that sits at the end of its
+ * page reaches into the next - and a fault that comes back from there names
+ * the page that failed rather than the address the read started at, which is
+ * not the address the handler was told to expect
+ */
+bool usPayloadProbeReadWord(uint64_t at, uint32_t *value) {
+    int cpu = currentCPU();
+    uint32_t got;
+
+    if (value == NULL || !probeArm(cpu, at)) {
+        return false;
+    }
+    got = *(const volatile uint32_t *)(uintptr_t)at;
+    if (!probeDisarm(cpu)) {
+        return false;
+    }
+    *value = got;
+    return true;
+}
+
 /* Writes a word, saying whether the store happened */
 bool usPayloadProbeWrite(uint64_t at, uint64_t value) {
     int cpu = currentCPU();
