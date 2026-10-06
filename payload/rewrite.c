@@ -278,8 +278,8 @@ UsRewriteResult usRewriteSite(uint64_t site, UsLDAPRKind kind, uint64_t address)
     uint64_t baseTried = 0;
     uint64_t baseValue = 0;
     uint64_t original;
-    uint64_t now = 0;
     uint32_t insn;
+    uint32_t now = 0;
     uint32_t replacement;
     bool relaxed = false;
     bool written = false;
@@ -324,14 +324,17 @@ UsRewriteResult usRewriteSite(uint64_t site, UsLDAPRKind kind, uint64_t address)
      * replaced reads as the acquire load, and the only work left is this
      * processor's own stale copy: the caller has carried the load out, and
      * the instruction has to be fetched again here
+     *
+     * One instruction wide, not one word: the site is four byte aligned and
+     * the read has to be able to sit at the end of its page
      */
-    if (!usPayloadProbeRead(site, &now)) {
+    if (!usPayloadProbeReadWord(site, &now)) {
         usPANOn();
         probeBankLeave(&bank);
         record(site, 0, NULL, UsRewriteRefused);
         return UsRewriteRefused;
     }
-    insn = (uint32_t)now;
+    insn = now;
     if (!usLDAPRToLDAR(insn, &replacement)) {
         UsLDAPRInsn acquire = { 0 };
 
