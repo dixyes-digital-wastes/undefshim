@@ -432,6 +432,128 @@ UsSpareSlot usLocateSpareSlot(UsImage *img, uint32_t minBytes) {
     return best;
 }
 
+/* --- the kernel's driver load call ------------------------------------- */
+
+/*
+ * The target of a branch at an RVA, as an RVA
+ *
+ * link selects BL from B, and the distinction is the whole value of this
+ * scan: a function's tail branches outnumber its calls, and a sequence that
+ * counted them would be a different sequence in every build
+ *
+ * False when the word is not that branch, and false when the target leaves
+ * the image: a branch out of the image is not one this can follow, and an
+ * answer that wrapped around the address space would be worse than none
+ */
+static bool branchTargetRVA(const UsImage *img, uint32_t rva, bool link,
+                            uint32_t *out) {
+    uint32_t word = readInsn(img, rva);
+    int64_t offset = 0;
+    int64_t target;
+
+    if (link ? !usDecodeBranchLink(word, &offset) : !usDecodeBranch(word, &offset)) {
+        return false;
+    }
+    target = (int64_t)rva + offset;
+    if (target < 0 || target >= (int64_t)img->sizeOfImage) {
+        return false;
+    }
+    *out = (uint32_t)target;
+    return true;
+}
+
+UsDriverLoadHook usLocateDriverLoadHook(UsImage *img) {
+    UsDriverLoadHook hook = { 0 };
+    uint32_t anchor = 0;
+    uint32_t anchorEnd = 0;
+    uint32_t witness = 0;
+    uint32_t call19 = 0;
+    size_t index = 0;
+    size_t witnessAt = 0;
+    size_t witnessCount = 0;
+    bool have19 = false;
+
+    if (img == NULL || !img->valid) {
+        return hook;
+    }
+    /*
+     * The anchor is a name. An exported function is a function entry, so the
+     * table has to agree with the name, and a disagreement is a reason to
+     * stop rather than something to work around
+     */
+    if (!usImageExportRVA(img, US_DRIVER_LOAD_ANCHOR, &anchor)) {
+        return hook;
+    }
+    hook.anchorRVA = anchor;
+    if (!usImageFunctionRange(img, anchor, &hook.anchorStart, &anchorEnd)
+        || hook.anchorStart != anchor) {
+        return hook;
+    }
+    /*
+     * Its body is the call to the worker. A tail call would be a branch
+     * rather than a call and is not followed: the two builds this is for both
+     * call, and one that did not would fail here rather than be guessed at
+     */
+    for (uint32_t at = anchor; at + 4 <= anchorEnd; at += 4) {
+        uint32_t target = 0;
+        uint32_t start = 0;
+        uint32_t end = 0;
+
+        if (!branchTargetRVA(img, at, true, &target) || target == anchor) {
+            continue;
+        }
+        /* The worker is a function in its own right, entered at its start */
+        if (!usImageFunctionRange(img, target, &start, &end) || start != target) {
+            continue;
+        }
+        hook.functionRVA = target;
+        hook.functionEnd = end;
+        break;
+    }
+    if (hook.functionRVA == 0) {
+        return hook;
+    }
+
+    /*
+     * The sequence of calls the worker makes, in address order, and the one
+     * answerable question about it: the image exports the name that one entry
+     * of it goes to
+     *
+     * This is the only link in the chain that carries its own truth. Every
+     * other entry is an address that means nothing on its own, so the entry
+     * that has to be the witness is what fixes the meaning of all of them,
+     * and it is checked rather than assumed
+     */
+    if (!usImageExportRVA(img, US_DRIVER_LOAD_WITNESS, &witness)) {
+        return hook;
+    }
+    hook.witnessRVA = witness;
+    for (uint32_t at = hook.functionRVA; at + 4 <= hook.functionEnd; at += 4) {
+        uint32_t target = 0;
+
+        if (!branchTargetRVA(img, at, true, &target)) {
+            continue;
+        }
+        if (index == US_DRIVER_LOAD_CALL_INDEX) {
+            call19 = at;
+            have19 = true;
+        }
+        if (target == witness) {
+            witnessAt = index;
+            witnessCount++;
+        }
+        index++;
+    }
+    hook.calls = index;
+    if (!have19 || witnessCount != 1 || witnessAt != US_DRIVER_LOAD_CALL_INDEX) {
+        return hook;
+    }
+    hook.callRVA = call19;
+    hook.callIndex = US_DRIVER_LOAD_CALL_INDEX;
+    hook.found = true;
+    return hook;
+}
+
 /*
  * A synchronous slot, and the layout of the table it lives in: sixteen slots
  * of 0x80 bytes, fixed by the architecture

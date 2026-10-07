@@ -64,6 +64,13 @@ typedef struct UsImage_t {
     uint32_t sizeOfImage;
     uint32_t sizeOfHeaders;
     uint32_t entryRVA;
+    /*
+     * The COFF header's stamp. Under /Brepro the linker puts the low half of
+     * the reproducible-build hash here, which is what makes it a build's name
+     * rather than a time: two builds of the same source agree on it, and two
+     * different builds do not. Read, never computed
+     */
+    uint32_t timeDateStamp;
     /* Data directory RVAs and sizes, as many as the header carries */
     uint32_t dataDirectoryRVA[US_PE_MAX_DIRECTORIES];
     uint32_t dataDirectorySize[US_PE_MAX_DIRECTORIES];
@@ -111,6 +118,43 @@ const UsPESection *usImageFindSection(const UsImage *img, const char *name);
  * across boots: the loader writes relocated addresses into the image, and
  * those bytes differ every time it is loaded somewhere else */
 #define US_PE_DIRECTORY_RELOCATIONS 5U
+
+/*
+ * The two directories the locators read. The export table answers "where is
+ * this by name", which is the strongest anchor there is: a name survives a
+ * rebuild that moves everything else, and it is the same in every build that
+ * exports it at all
+ *
+ * The exception table is the list of functions. On ARM64 an entry is eight
+ * bytes, {BeginAddress, UnwindData}, not the twelve x64 uses, and the table
+ * is ordered by BeginAddress, so "which function owns this address" is a
+ * search for the last entry that begins at or before it
+ */
+#define US_PE_DIRECTORY_EXPORT 0U
+#define US_PE_DIRECTORY_EXCEPTION 3U
+#define US_PE_PDATA_ENTRY_BYTES 8U
+
+/*
+ * The RVA an export name resolves to. False when the image does not carry
+ * that name, and false when the answer would be a forwarder string rather
+ * than code: a forwarded export is not a function in this image, and every
+ * caller here wants an address
+ */
+bool usImageExportRVA(const UsImage *img, const char *name, uint32_t *outRVA);
+
+/*
+ * The function containing an RVA, from the exception table: where it begins
+ * and where the next one begins
+ *
+ * False when no entry covers it, which is a refusal rather than a default:
+ * every address these locators work on is inside a function, so one that is
+ * not means the table was read wrongly and its answer must not be used
+ *
+ * The extent is the next entry's start and not a length the table does not
+ * carry, which is exact for everything but the last function in the image
+ */
+bool usImageFunctionRange(const UsImage *img, uint32_t rva, uint32_t *outStart,
+                          uint32_t *outEnd);
 
 /* Where a data directory's bytes are, or NULL when it is absent */
 const uint8_t *usImageDataDirectory(const UsImage *img, uint32_t index,

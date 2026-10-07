@@ -48,6 +48,7 @@ typedef struct Tally_t {
 
 static Tally gLeaf;
 static Tally gHandoff;
+static Tally gHook;
 static int   gClassOk;
 static int   gClassBad;
 
@@ -109,6 +110,26 @@ static bool versionHasTransferLeaf(const char *version) {
 
     for (size_t i = 0; i < sizeof(withLeaf) / sizeof(withLeaf[0]); i++) {
         if (strcmp(version, withLeaf[i]) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/*
+ * Which kernels load a driver through a wrapper this can walk
+ *
+ * The chain starts at the exported MmLoadSystemImage and needs that name to be
+ * a thin wrapper around the function that does the work. The two builds that
+ * have been checked are the two this project runs on; the older ones export the
+ * name but their body is not a wrapper, so there is nothing to walk and the
+ * locator refuses rather than answering
+ */
+static bool versionHasDriverLoadHook(const char *version) {
+    static const char *withHook[] = { "24h2", "26100pe" };
+
+    for (size_t i = 0; i < sizeof(withHook) / sizeof(withHook[0]); i++) {
+        if (strcmp(version, withHook[i]) == 0) {
             return true;
         }
     }
@@ -191,6 +212,7 @@ static void probe(const char *version, const char *name, const char *path) {
     UsLeafSite leaf = usLocateTransferLeaf(&img);
     UsHandoffSite handoff = usLocateTTBRHandoff(&img);
     UsLDAPRCounts ldapr = usCountLDAPR(&img);
+    UsDriverLoadHook hook = usLocateDriverLoadHook(&img);
 
     printf("%-9s %-13s class=%-9s leaf=%-4zu handoff=%-10s ldapr=%-6zu (w%zu x%zu b%zu h%zu)\n",
            version, name, usImageKindName(kind), leaf.matches,
@@ -198,6 +220,11 @@ static void probe(const char *version, const char *name, const char *path) {
                ? (handoff.form == UsHandoffInTransSection ? "trans" : "sctlr")
                : (handoff.candidates == 0 ? "none" : "unresolved"),
            ldapr.total, ldapr.word, ldapr.xword, ldapr.byte, ldapr.half);
+    if (hook.found) {
+        printf("%-9s %-13s driver load +%#x -> +%#x (call %u of %zu)\n",
+               version, name, hook.callRVA, hook.witnessRVA,
+               (unsigned)hook.callIndex, hook.calls);
+    }
 
     /* Classification: ntoskrnl and winload are identified from content.
      * bootmgfw is not, and must not be mistaken for either */
@@ -248,6 +275,33 @@ static void probe(const char *version, const char *name, const char *path) {
         expect(version, name, "kernel uses LDAPR", ldapr.total > 0, versionUsesLDAPR(version));
     } else {
         expect(version, name, "loader free of LDAPR", ldapr.total == 0, true);
+    }
+
+    /*
+     * Where a driver is loaded. Only the kernel has it, and only the builds
+     * whose MmLoadSystemImage is a wrapper. The witness is the check that
+     * makes the answer true rather than plausible, so it is asserted as well:
+     * a hook site that does not call the exported name is a hook site in the
+     * wrong place
+     */
+    if (isKernel) {
+        bool want = versionHasDriverLoadHook(version);
+        uint32_t witness = 0;
+
+        tally(&gHook, hook.found ? 1U : 0U);
+        expect(version, name, "driver load hook", hook.found, want);
+        /* The hook has to sit on the call the locator identified by name, and
+         * that name has to be in the export table: a hook site that goes
+         * somewhere else is a hook site in the wrong place */
+        if (want) {
+            expect(version, name, "the call goes to the exported witness",
+                   hook.found
+                       && usImageExportRVA(&img, US_DRIVER_LOAD_WITNESS, &witness)
+                       && witness == hook.witnessRVA,
+                   true);
+        }
+    } else {
+        expect(version, name, "loader has no driver load", hook.found, false);
     }
 
     free(data);
@@ -327,5 +381,7 @@ int main(int argc, char **argv) {
                 gLeaf.unique, gLeaf.none, gLeaf.ambiguous);
     usCheckNote("handoff: %d unique, %d absent, %d ambiguous\n",
                 gHandoff.unique, gHandoff.none, gHandoff.ambiguous);
+    usCheckNote("driver load: %d found, %d absent, %d ambiguous\n",
+                gHook.unique, gHook.none, gHook.ambiguous);
     return usCheckSummary(gChecks, gFailures);
 }

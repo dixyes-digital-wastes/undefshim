@@ -62,6 +62,7 @@ ENCODINGS = [
     ("core/thunk.c", "0xB5000012U", "cbnz x18, .", 0xFFFFFFFF & ~IMM19, "cbnz"),
 
     ("core/thunk.h", "0x14000000U", "b .", 0xFFFFFFFF, "b"),
+    ("core/thunk.h", "0x94000000U", "bl .", 0xFFFFFFFF, "bl"),
     ("core/thunk.h", "0xD503201FU", "nop", 0xFFFFFFFF, "nop"),
 
     ("core/stackgen.c", "0xD53800B2U", "mrs x18, mpidr_el1", 0xFFFFFFFF, "mrs"),

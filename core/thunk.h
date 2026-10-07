@@ -151,4 +151,27 @@ static inline bool usDecodeBranch(uint32_t word, int64_t *offset) {
  * instruction replayed */
 #define US_NOP 0xD503201FU
 
+/*
+ * The other direct branch, which is what a call site is
+ *
+ * BL has the same 26 bit word offset as B and differs in one opcode bit, and
+ * the difference is the whole reason a locator needs it: a scan that matched
+ * both would find every tail branch a function has as a call, and the
+ * sequence of calls is exactly what identifies the function this is for
+ */
+#define US_BRANCH_LINK_OPCODE 0x25U  /* word >> 26, where B is 0x05 */
+#define US_BRANCH_LINK_WORD 0x94000000U
+
+/* Reads a BL back: false when the word is not one, and offset is then
+ * untouched. NULL says only the answer is wanted */
+static inline bool usDecodeBranchLink(uint32_t word, int64_t *offset) {
+    if ((word >> 26) != US_BRANCH_LINK_OPCODE) {
+        return false;
+    }
+    if (offset != NULL) {
+        *offset = (int64_t)((int32_t)(word << 6) >> 6) * 4;
+    }
+    return true;
+}
+
 #endif

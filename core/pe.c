@@ -88,6 +88,7 @@ static bool readHeaders(UsImage *img) {
 
     fh.machine = rd16(pe + 4);
     fh.sectionCount = rd16(pe + 6);
+    fh.timeDateStamp = rd32(pe + 8);
     fh.optionalHeaderSize = rd16(pe + 20);
     fh.characteristics = rd16(pe + 22);
     if (fh.machine != US_PE_MACHINE_ARM64) {
@@ -143,6 +144,7 @@ static bool readHeaders(UsImage *img) {
     img->sizeOfImage = oh.sizeOfImage;
     img->sizeOfHeaders = oh.sizeOfHeaders;
     img->entryRVA = oh.entryRVA;
+    img->timeDateStamp = fh.timeDateStamp;
     img->subsystem = oh.subsystem;
     img->sectionAlignment = (uint16_t)oh.sectionAlignment;
     img->sectionCount = fh.sectionCount;
@@ -318,6 +320,181 @@ const UsPESection *usImageFindSection(const UsImage *img, const char *name) {
 
 bool usImageHasSection(const UsImage *img, const char *name) {
     return usImageFindSection(img, name) != NULL;
+}
+
+/* One 32 bit field of the export directory, read through the image rather
+ * than from a pointer, so a truncated file cannot be read past */
+static bool exportField(const UsImage *img, uint32_t directoryRVA, uint32_t offset,
+                        uint32_t *out) {
+    const uint8_t *p = usImageRVAToPtr(img, directoryRVA + offset);
+
+    if (p == NULL) {
+        return false;
+    }
+    *out = rd32(p);
+    return true;
+}
+
+bool usImageExportRVA(const UsImage *img, const char *name, uint32_t *outRVA) {
+    uint32_t size = 0;
+    const uint8_t *table;
+    uint32_t directoryRVA;
+    uint32_t functionCount = 0;
+    uint32_t nameCount = 0;
+    uint32_t functionsRVA = 0;
+    uint32_t namesRVA = 0;
+    uint32_t ordinalsRVA = 0;
+    size_t nameLen = 0;
+
+    if (img == NULL || !img->valid || name == NULL) {
+        return false;
+    }
+    table = usImageDataDirectory(img, US_PE_DIRECTORY_EXPORT, &size);
+    if (table == NULL || size < 40U) {
+        return false;
+    }
+    directoryRVA = img->dataDirectoryRVA[US_PE_DIRECTORY_EXPORT];
+    while (name[nameLen] != '\0') {
+        nameLen++;
+    }
+    if (nameLen == 0) {
+        return false;
+    }
+    if (!exportField(img, directoryRVA, 20U, &functionCount)
+        || !exportField(img, directoryRVA, 24U, &nameCount)
+        || !exportField(img, directoryRVA, 28U, &functionsRVA)
+        || !exportField(img, directoryRVA, 32U, &namesRVA)
+        || !exportField(img, directoryRVA, 36U, &ordinalsRVA)) {
+        return false;
+    }
+    /*
+     * Name by name, comparing in place. The table is ordered and a binary
+     * search would be shorter to run, but this happens a handful of times in
+     * a boot and only around the anchors, and a linear walk cannot be wrong
+     * about an order it does not rely on
+     */
+    for (uint32_t i = 0; i < nameCount; i++) {
+        const uint8_t *entry = usImageRVAToPtr(img, namesRVA + i * 4U);
+        const uint8_t *spelling;
+        size_t available = 0;
+        uint32_t ordinal;
+        uint32_t rva;
+
+        if (entry == NULL) {
+            return false;
+        }
+        spelling = usImageRVASpan(img, rd32(entry), &available);
+        if (spelling == NULL || available <= nameLen) {
+            continue;
+        }
+        size_t k = 0;
+        while (k < nameLen && spelling[k] == (uint8_t)name[k]) {
+            k++;
+        }
+        if (k != nameLen || spelling[k] != '\0') {
+            continue;
+        }
+        if (usImageRVAToPtr(img, ordinalsRVA + i * 2U) == NULL) {
+            return false;
+        }
+        ordinal = (uint32_t)rd16(usImageRVAToPtr(img, ordinalsRVA + i * 2U));
+        if (ordinal >= functionCount) {
+            return false;
+        }
+        if (usImageRVAToPtr(img, functionsRVA + ordinal * 4U) == NULL) {
+            return false;
+        }
+        rva = rd32(usImageRVAToPtr(img, functionsRVA + ordinal * 4U));
+        /*
+         * A forwarded export holds a string naming another module, and the
+         * RVA points inside the export directory itself. No caller here wants
+         * that, and returning it would send a locator to a name
+         */
+        if (rva >= directoryRVA && rva < directoryRVA + size) {
+            return false;
+        }
+        if (rva == 0) {
+            return false;
+        }
+        *outRVA = rva;
+        return true;
+    }
+    return false;
+}
+
+bool usImageFunctionRange(const UsImage *img, uint32_t rva, uint32_t *outStart,
+                          uint32_t *outEnd) {
+    uint32_t size = 0;
+    uint32_t count;
+    uint32_t found = 0;
+    uint32_t end = 0;
+    bool have = false;
+
+    if (img == NULL || !img->valid) {
+        return false;
+    }
+    if (usImageDataDirectory(img, US_PE_DIRECTORY_EXCEPTION, &size) == NULL) {
+        return false;
+    }
+    count = size / US_PE_PDATA_ENTRY_BYTES;
+    if (count == 0U) {
+        return false;
+    }
+    /*
+     * The last entry that begins at or before the address. The table is
+     * ordered by BeginAddress and the entries are eight bytes, so the search
+     * is over that stride rather than over the bytes
+     */
+    uint32_t low = 0;
+    uint32_t high = count;
+
+    while (low < high) {
+        uint32_t mid = low + (high - low) / 2U;
+        const uint8_t *entry = usImageRVAToPtr(
+            img, img->dataDirectoryRVA[US_PE_DIRECTORY_EXCEPTION]
+                     + mid * US_PE_PDATA_ENTRY_BYTES);
+
+        if (entry == NULL) {
+            return false;
+        }
+        if (rd32(entry) <= rva) {
+            low = mid + 1U;
+            found = rd32(entry);
+            have = true;
+        } else {
+            high = mid;
+        }
+    }
+    if (!have) {
+        return false;
+    }
+    /*
+     * A function ends where the next one begins: the table says where
+     * functions start and nothing else, and this is the one reading of it
+     * that uses no field it does not have. Past the last entry the image is
+     * the only bound there is
+     */
+    end = img->sizeOfImage;
+    if (low < count) {
+        const uint8_t *next = usImageRVAToPtr(
+            img, img->dataDirectoryRVA[US_PE_DIRECTORY_EXCEPTION]
+                     + low * US_PE_PDATA_ENTRY_BYTES);
+
+        if (next == NULL) {
+            return false;
+        }
+        end = rd32(next);
+        if (rva >= end) {
+            return false;
+        }
+    }
+    if (outStart != NULL) {
+        *outStart = found;
+    }
+    if (outEnd != NULL) {
+        *outEnd = end;
+    }
+    return true;
 }
 
 /* Byte search inside the image, used by the classifier */

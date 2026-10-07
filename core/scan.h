@@ -317,4 +317,51 @@ const char *usSiteKindName(UsSiteKind kind);
  */
 size_t usCollectSites(UsSiteList *list, UsImage *img, UsImageKind kind);
 
+/*
+ * Where the kernel loads a driver
+ *
+ * This is the one moment a driver can be covered without handling its
+ * exceptions: the file has been read, the sections are built and mapped, the
+ * import table is resolved, and none of its code has run. It is the same
+ * situation the kernel itself is in when the boot rewrites it, which is why
+ * the same replacement can be done here
+ *
+ * Nothing about it is at a fixed address, so it is found by name. The anchor
+ * is the exported MmLoadSystemImage, a wrapper whose body is one call to the
+ * worker that does the work; the worker's body is a sequence of calls, and
+ * its identity is that the image exports the name one entry of the sequence
+ * goes to
+ *
+ * That entry is the whole of the search. Every other entry is an address that
+ * means nothing on its own - a helper, another wrapper, a function whose name
+ * is not exported - so one entry with a name attached is what turns a list of
+ * addresses into a shape, and it is checked rather than assumed
+ *
+ * Two builds have been verified this way, 26100pe and 24h2, and both agree on
+ * the position. The older builds fail before this: their MmLoadSystemImage is
+ * not a wrapper, so there is no worker to walk
+ */
+#define US_DRIVER_LOAD_ANCHOR "MmLoadSystemImage"
+#define US_DRIVER_LOAD_WITNESS "RtlImageNtHeader"
+#define US_DRIVER_LOAD_CALL_INDEX 19U
+
+typedef struct UsDriverLoadHook_t {
+    bool     found;
+    uint32_t anchorRVA;    /* the exported anchor */
+    uint32_t anchorStart;  /* the function the anchor's name resolves into */
+    uint32_t functionRVA;  /* the worker the anchor calls */
+    uint32_t functionEnd;  /* where the next function begins */
+    uint32_t callRVA;      /* the call to take over */
+    uint32_t witnessRVA;   /* where that call goes */
+    uint32_t callIndex;    /* which call of the sequence callRVA is */
+    size_t   calls;        /* how many calls the worker's body carries */
+} UsDriverLoadHook;
+
+/*
+ * Fields other than found are what was learned before the refusal, so a boot
+ * that could not be armed can say how far it got. Only a found answer may be
+ * used
+ */
+UsDriverLoadHook usLocateDriverLoadHook(UsImage *img);
+
 #endif
