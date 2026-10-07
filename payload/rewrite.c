@@ -78,21 +78,48 @@ typedef struct UsProbeBank_t {
 
 static UsProbeBank probeBankEnter(void) {
     UsProbeBank bank = { 0 };
+    UsPayloadConfig *cfg = usPayloadConfig();
+    int cpu = currentCPU();
     uint64_t spsel;
     uint64_t sp;
+    uint64_t top = 0;
+    uint64_t probe;
 
     __asm__ volatile("mrs %0, spsel" : "=r"(spsel));
     if (spsel != 0) {
         return bank;              /* already on the bank that answers faults */
     }
     __asm__ volatile("mov %0, sp" : "=r"(sp));
+    /*
+     * Where the probing stack goes: inside the payload's own stack window,
+     * which is `[stackTop - US_STACK_SIZE, stackTop)` for this processor and
+     * is exactly the range the entry tests a fault's stack pointer against
+     *
+     * Getting this wrong is not a slow path, it is a stopped machine. The
+     * entry routes a fault it believes came from somewhere else into a frame
+     * and reports it to the kernel's own handler for the slot - which for the
+     * exception stack's slot is KiKernelStackException, a bugcheck - and it
+     * decides by that range alone
+     *
+     * A handler is already on its own stack, so its frames are live above it
+     * and the probing stack goes below them. The driver load entry is not: the
+     * kernel calls it from its own stack, where no frame of ours is, so the
+     * top of the window is free and is used instead
+     */
+    probe = sp - US_PROBE_STACK_BYTES;
+    if (cpu >= 0 && cpu < (int)US_MAX_CPUS) {
+        top = cfg->stackTop[cpu];
+    }
+    if (top != 0 && (sp < top - US_STACK_SIZE || sp >= top)) {
+        probe = top - US_PROBE_STACK_BYTES;
+    }
     /* Both banks are read before either is written: the one just selected
      * holds the kernel's own exception stack, and it has to go back the way
      * it was found. Only reading happens in between, so nothing is pushed
      * onto a stack that may hold anything at all */
     __asm__ volatile("msr spsel, #1" ::: "memory");
     __asm__ volatile("mov %0, sp" : "=r"(bank.restoreSPEL1));
-    __asm__ volatile("mov sp, %0" ::"r"(sp - US_PROBE_STACK_BYTES));
+    __asm__ volatile("mov sp, %0" ::"r"(probe));
     bank.restoreSP = sp;
     return bank;
 }
@@ -140,6 +167,7 @@ static uint64_t descriptorBase(uint64_t *triedOut, uint64_t *valueOut) {
     uint64_t vbar = currentVBAR();
     uint64_t tablePA = 0;
     uint64_t count = cfg->stubCount;
+    bool any = false;
 
     *triedOut = 0;
     *valueOut = 0;
@@ -149,6 +177,23 @@ static uint64_t descriptorBase(uint64_t *triedOut, uint64_t *valueOut) {
     }
     if (count > US_PAYLOAD_MAX_STUBS) {
         count = US_PAYLOAD_MAX_STUBS;
+    }
+    /*
+     * Nothing to look up unless some stub names a base, and asking the
+     * hardware anyway is not free: on a machine whose tables do not answer
+     * the query, the translation faults, and a fault here is taken on a path
+     * with no interrupted context to report it to. The loop below would skip
+     * every stub without one and reach this same answer, so the query is
+     * asked only when there is something for it to select between
+     */
+    for (uint64_t i = 0; i < count; i++) {
+        if (cfg->stubs[i].descriptorBaseRVA != 0) {
+            any = true;
+            break;
+        }
+    }
+    if (!any) {
+        return 0;
     }
 
     /*

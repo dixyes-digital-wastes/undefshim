@@ -130,7 +130,6 @@ static uint64_t currentMPIDR(void) {
     __asm__ volatile("mrs %0, mpidr_el1" : "=r"(mpidr));
     return mpidr & US_MPIDR_AFFINITY_MASK;
 }
-
 /*
  * Which processor this is, as an index
  *
@@ -142,7 +141,7 @@ static uint64_t currentMPIDR(void) {
  * The list comes from the firmware, through the boot. A processor that is not
  * in it has no index, and the caller has to refuse rather than pick one
  */
-static int currentCPU(void) {
+int currentCPU(void) {
     UsPayloadConfig *cfg = usPayloadConfig();
     uint64_t mpidr = currentMPIDR();
 
@@ -733,6 +732,7 @@ UsFrame *usPayloadFault(void) {
     int cpu = currentCPU();
     UsFrame *outer;
     uint64_t vbar;
+    uint64_t far;
     /* The access may have cleared PAN; the handler that is about to run
      * would have been entered with it set */
     usPANOn();
@@ -740,28 +740,62 @@ UsFrame *usPayloadFault(void) {
     if (cpu < 0 || cpu >= (int)US_MAX_CPUS) {
         return NULL;
     }
-    outer = gActive[cpu].frame;
-    if (outer == NULL) {
-        return NULL;
-    }
-    vbar = currentVBAR();
-
-    outer->esr = currentESR();
-    outer->far = currentFAR();
+    far = currentFAR();
 
     /*
      * An access the handler asked to be told about. ELR still names the
      * instruction that faulted, so moving past it is the whole recovery: the
      * entry puts the handler's own registers back and returns to it. What was
      * refused is recorded, and the caller reads that rather than the fault
+     *
+     * Asked before the interrupted frame is looked for, because the answer is
+     * the same on the path where there is no frame at all, and it is the one
+     * answer that needs nothing else
      */
     if (gActive[cpu].probing
-        && usAccessCovers(outer->far, gActive[cpu].probeAt, gActive[cpu].probeBytes)) {
+        && usAccessCovers(far, gActive[cpu].probeAt, gActive[cpu].probeBytes)) {
         usSetELR(currentELR() + 4);
         gActive[cpu].probeRefused = true;
         gActive[cpu].probing = false;
         return US_PAYLOAD_RESUME;
     }
+
+    outer = gActive[cpu].frame;
+    if (outer == NULL) {
+        /*
+         * No interrupted context to answer for. This fault was taken while the
+         * payload was doing its own work, entered as a call rather than as an
+         * exception - a driver's image being rewritten as the loader loads it.
+         * There is no frame to hand to the kernel and no instruction of the
+         * kernel's to blame, so the access is refused and the work goes on
+         * without it. The accesses that can fault there are the translation
+         * queries and the probes: `AT` leaves PAR_EL1 naming the failure, so
+         * the query reads its own answer, and a probe reads its flag
+         *
+         * It is recorded all the same: a fault we took is worth knowing about
+         * whether or not it is survivable
+         */
+        UsPayloadConfig *cfg = usPayloadConfig();
+        UsPool *pool = cfg->poolBase != 0 ? (UsPool *)(uintptr_t)cfg->poolBase : NULL;
+
+        if (pool != NULL) {
+            pool->entry.nestedFaults++;
+            pool->entry.nestedESR = currentESR();
+            pool->entry.nestedFAR = far;
+            pool->entry.nestedELR = currentELR();
+            pool->entry.nestedSelfVA = cfg->selfVA;
+            pool->entry.nestedPoolBase = cfg->poolBase;
+            pool->entry.nestedStackTop = cfg->stackTop[cpu];
+            pool->entry.nestedCPU = (uint64_t)(int64_t)cpu;
+        }
+        gActive[cpu].loading = false;
+        usSetELR(currentELR() + 4);
+        return US_PAYLOAD_RESUME;
+    }
+    vbar = currentVBAR();
+
+    outer->esr = currentESR();
+    outer->far = far;
 
     if (gActive[cpu].loading
         && usAccessCovers(outer->far, gActive[cpu].address, gActive[cpu].loadBytes)) {

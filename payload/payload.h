@@ -177,6 +177,16 @@ bool usPayloadProbeWriteWord(uint64_t at, uint32_t value);
 void usPayloadSelfTest(void);
 
 /*
+ * Which processor this is, as the configuration names it, or -1 when it is not
+ * one of them
+ *
+ * Read from MPIDR_EL1 each time rather than kept anywhere: what needs it runs
+ * on whatever processor took the exception, and there is no register of ours
+ * to keep it in
+ */
+int currentCPU(void);
+
+/*
  * One processor, as the boot found it described
  *
  * The index is carried rather than worked out from the position, because the
