@@ -64,12 +64,23 @@ typedef struct UsRead_t {
  * So the accesses are made with the other bank selected. SP_EL1 is set below
  * the stack in use rather than at its top, because the frames of the handler
  * are live there and a second stack growing down from the same top would write
- * over them. Nothing else uses this bank, and interrupts are masked from the
- * entry onwards, so the switch is the only thing that has to be right
+ * over them. Nothing else uses this bank, and interrupts are masked for as long
+ * as it is selected, so the switch is the only thing that has to be right
+ *
+ * That masking is not an optimisation, and it is not optional. An exception
+ * arriving while this bank is selected is taken at EL1h, through the exception
+ * stack's slot, and it arrives with a stack pointer inside the window the
+ * entry uses to decide a fault is the payload's own - so it is answered as if
+ * it were a fault of ours, by moving the interrupted instruction on and
+ * returning. That is a kernel that continues at an address it never reached,
+ * and it continues that way for every interrupt it takes. A handler enters
+ * with interrupts already masked and never sees this; a call does not, which is
+ * why the masking is done here rather than assumed
  */
 typedef struct UsProbeBank_t {
     uint64_t restoreSP;    /* SP_EL0 to be put back; zero when no switch was made */
     uint64_t restoreSPEL1; /* SP_EL1 as it was found, which is the kernel's */
+    uint64_t restoreDAIF;  /* and the interrupt state, which is put back last */
 } UsProbeBank;
 
 /* How far below the stack in use the probing stack starts. Enough for the few
@@ -117,6 +128,8 @@ static UsProbeBank probeBankEnter(void) {
      * holds the kernel's own exception stack, and it has to go back the way
      * it was found. Only reading happens in between, so nothing is pushed
      * onto a stack that may hold anything at all */
+    __asm__ volatile("mrs %0, daif" : "=r"(bank.restoreDAIF));
+    __asm__ volatile("msr daifset, #0xF" ::: "memory");
     __asm__ volatile("msr spsel, #1" ::: "memory");
     __asm__ volatile("mov %0, sp" : "=r"(bank.restoreSPEL1));
     __asm__ volatile("mov sp, %0" ::"r"(probe));
@@ -135,6 +148,9 @@ static void probeBankLeave(const UsProbeBank *bank) {
     __asm__ volatile("mov sp, %0" ::"r"(bank->restoreSPEL1));
     __asm__ volatile("msr spsel, #0" ::: "memory");
     __asm__ volatile("mov sp, %0" ::"r"(bank->restoreSP));
+    /* And the interrupt state, last: nothing between the masking and here may
+     * be interrupted, or it is back in the case the mask exists to prevent */
+    __asm__ volatile("msr daif, %0" ::"r"(bank->restoreDAIF));
 }
 
 static uint64_t currentVBAR(void) {
