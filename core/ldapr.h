@@ -106,9 +106,10 @@ static inline bool usAccessCovers(uint64_t far, uint64_t at, uint64_t bytes) {
  * Identifies the instruction and pulls out its fields
  *
  * The encoding is fixed except for the two register fields and the size,
- * which is what the mask leaves free. A base of 31 means the zero register
- * rather than a general one, which is a different instruction; it is reported
- * so the caller does not read a register that is not there
+ * which is what the mask leaves free. 31 encodes the stack pointer rather than
+ * the zero register here: these are the register forms the architecture says
+ * mean SP, so a load whose base is 31 reads through the interrupted stack
+ * pointer and the caller has to supply the frame's own for it
  */
 UsLDAPRInsn usLDAPRDecode(uint32_t insn);
 
