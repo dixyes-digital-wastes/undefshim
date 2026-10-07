@@ -34,6 +34,7 @@ import os
 import re
 import shutil
 import socket
+import subprocess
 import sys
 import tempfile
 import time
@@ -42,9 +43,19 @@ SKIP = 2
 
 # ---------------------------------------------------------------- the monitor
 
+# Where the monitor is. Defaults to this machine; a machine being watched on
+# another one names its address, and then everything here works over the
+# network exactly as it does locally -- the monitor protocol does not care.
+QMP_HOST = "127.0.0.1"
+
+# Where a picture is asked for on a machine that is not this one. It has to be
+# a path that machine has; it is overwritten every reading.
+REMOTE_PPM = "/tmp/undefshim-screen.ppm"
+
+
 def grab(port, path):
     """Ask the machine's monitor for a picture of the screen."""
-    sock = socket.create_connection(("127.0.0.1", port), timeout=20)
+    sock = socket.create_connection((QMP_HOST, port), timeout=20)
     f = sock.makefile("rwb")
     f.readline()
     for request in ({"execute": "qmp_capabilities"},
@@ -62,6 +73,21 @@ def grab(port, path):
                 break
 
 
+def fetch(remote, path, local):
+    """Bring a picture back from the machine the monitor wrote it on.
+
+    screendump writes on the machine the monitor is running on, so watching a
+    machine somewhere else means the file has to come back before it can be
+    read. Named the way ssh names a host, because that is what carries it.
+    """
+    out = subprocess.run(
+        ["scp", "-F", os.path.expanduser("~/.ssh/config"),
+         "%s:%s" % (remote, path), local],
+        capture_output=True, text=True)
+    if out.returncode != 0:
+        raise OSError("could not fetch %s: %s" % (path, out.stderr.strip()))
+
+
 def poke(port, keys="ret", move=(80, 60)):
     """Knock on the guest's input, and say whether it could be sent.
 
@@ -75,7 +101,7 @@ def poke(port, keys="ret", move=(80, 60)):
     does not move, exactly like one that arrives at a machine that has
     stopped.
     """
-    sock = socket.create_connection(("127.0.0.1", port), timeout=20)
+    sock = socket.create_connection((QMP_HOST, port), timeout=20)
     f = sock.makefile("rwb")
     f.readline()
     f.write((json.dumps({"execute": "qmp_capabilities"}) + "\n").encode())
@@ -485,6 +511,11 @@ def main():
                + ", and what the text can add: "
                + ", ".join(name for name, _ in TEXT_STATES) + ".")
     ap.add_argument("--qmp-port", type=int, help="where the machine's monitor is")
+    ap.add_argument("--qmp-host", default=None,
+                    help="which machine's monitor that is (default this one)")
+    ap.add_argument("--fetch", default=None,
+                    help="an ssh host to bring the picture back from, when the "
+                         "monitor is on another machine")
     ap.add_argument("--ppm", help="read this picture every time instead of "
                                   "taking one")
     ap.add_argument("--out", help="write the picture here")
@@ -518,6 +549,10 @@ def main():
                                    "state was reached")
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args()
+
+    global QMP_HOST
+    if args.qmp_host:
+        QMP_HOST = args.qmp_host
 
     if args.ppm is None and args.qmp_port is None and not args.check_engine:
         ap.error("either --ppm or --qmp-port is needed")
@@ -564,7 +599,13 @@ def main():
             ppm = args.ppm or os.path.join(tmp, "screen.ppm")
             if args.ppm is None:
                 try:
-                    grab(args.qmp_port, ppm)
+                    # A machine somewhere else is asked for a path on itself,
+                    # and the file then comes back: the name has to exist
+                    # there, so it cannot be this side's temporary directory
+                    where = REMOTE_PPM if args.fetch else ppm
+                    grab(args.qmp_port, where)
+                    if args.fetch:
+                        fetch(args.fetch, where, ppm)
                 except (OSError, ValueError) as exc:
                     print("screen: %s" % exc, file=sys.stderr)
                     return 1

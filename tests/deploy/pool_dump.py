@@ -139,6 +139,8 @@ def poolFromSerial(path):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--qmp-port", type=int, default=4447)
+    ap.add_argument("--qmp-host", default="127.0.0.1",
+                    help="which machine's monitor that is (default this one)")
     ap.add_argument("--pool", type=lambda s: int(s, 16), default=None)
     ap.add_argument("--serial", default="/tmp/alive.serial")
     args = ap.parse_args()
@@ -150,7 +152,7 @@ def main():
         print("no pool address: not in the serial log, and none given")
         return 1
 
-    sock = socket.create_connection(("127.0.0.1", args.qmp_port), timeout=20)
+    sock = socket.create_connection((args.qmp_host, args.qmp_port), timeout=20)
     f = sock.makefile("rwb")
     f.readline()
     cmd(f, {"execute": "qmp_capabilities"})

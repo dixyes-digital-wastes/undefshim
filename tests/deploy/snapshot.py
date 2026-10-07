@@ -32,7 +32,7 @@ GDB = "gdb"
 BLOCK = 1024
 
 
-def gdbRegisters(port):
+def gdbRegisters(host, port):
     """Every CPU's registers, from the debug stub.
 
     The monitor's own register dump leaves out the banked system registers,
@@ -44,7 +44,7 @@ def gdbRegisters(port):
     out = subprocess.run(
         [GDB, "-q", "-batch",
          "-ex", "set confirm off", "-ex", "set pagination off",
-         "-ex", "target remote :%d" % port,
+         "-ex", "target remote %s:%d" % (host, port),
          "-ex", "thread apply all info all-registers",
          "-ex", "detach"],
         capture_output=True, text=True, timeout=300).stdout
@@ -127,6 +127,8 @@ def read(f, addr, size, physical):
 
 def main():
     ap = argparse.ArgumentParser()
+    ap.add_argument("--qmp-host", default="127.0.0.1")
+    ap.add_argument("--gdb-host", default="127.0.0.1")
     ap.add_argument("--qmp-port", type=int, default=4447)
     ap.add_argument("--gdb-port", type=int, default=1234)
     ap.add_argument("--serial", default=None)
@@ -139,14 +141,14 @@ def main():
 
     os.makedirs(args.out, exist_ok=True)
 
-    cpus = gdbRegisters(args.gdb_port)
+    cpus = gdbRegisters(args.gdb_host, args.gdb_port)
     sys.stderr.write("registers: %d cpus\n" % len(cpus))
 
     import socket
     con = None
     for attempt in range(10):
         try:
-            con = socket.create_connection(("127.0.0.1", args.qmp_port), timeout=30)
+            con = socket.create_connection((args.qmp_host, args.qmp_port), timeout=30)
             f = con.makefile("rwb")
             f.readline()
             break

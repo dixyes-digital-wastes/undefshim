@@ -65,6 +65,11 @@ GRACE="${GRACE:-0}"
 # so that a picture can be taken of it.
 KEEP="${KEEP:-}"
 QMP_PORT="${QMP_PORT:-4444}"
+# Where the monitor listens. The default keeps it to this machine, which is
+# what a run beside the one looking at it wants; a run on another machine is
+# read over the network instead, and names the address to bind there. The
+# display is on every interface either way, for the same reason.
+QMP_HOST="${QMP_HOST:-127.0.0.1}"
 BOOT_TIMEOUT="${BOOT_TIMEOUT:-90}"
 
 # A firmware exception ends the run: waiting out the timeout after the guest
@@ -187,7 +192,7 @@ usb_args=(
     -device ramfb \
     -vnc 0.0.0.0:0 \
     -gdb tcp::1234 \
-    -qmp tcp:127.0.0.1:$QMP_PORT,server=on,wait=off \
+    -qmp tcp:$QMP_HOST:$QMP_PORT,server=on,wait=off \
     "${win_args[@]}" \
     "${demo_args[@]}" \
     "${usb_args[@]}" \
