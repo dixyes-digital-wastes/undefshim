@@ -1,0 +1,61 @@
+# Configuration for the D920S10 (HiSilicon Hi1620), saying everything there is
+# to say.
+#
+# Copy this file to the volume the driver is loaded from, as us.toml. The name
+# is matched without regard to case.
+
+[uart]
+# UART0 of the Hi1620, at the address the firmware puts it. Named rather than
+# found: this firmware ships neither SPCR nor DBG2, so "acpi" would find
+# nothing and print nothing at all.
+type = "pl011"       # acpi | pl011 | uart8250 | off
+baseAddr = 0x94080000
+width = 32           # 8 | 32
+# Nothing in ACPI states a PL011's clock, so a port named here states it too.
+# The line rate is the one the firmware programmed it at
+clock = 200000000    # Hz
+baud = 115200
+color = true
+
+[log]
+# Everything, including the progress marks and the hashes the patch lists are
+# matched by.
+level = "debug"      # off | error | warn | info | verbose | debug
+# Absent is on
+showLicenses = false
+
+[ldapr]
+# Replace the RCpc loads in ntoskrnl and winload before either runs.
+imageInplaceRewrite = true
+# Replace them in user mode at the moment one traps. Turn it off to keep the
+# kernel from ever writing to a page it does not own.
+el0InplaceRewrite = true
+# Cover the drivers the kernel loads after it has started, by taking over the
+# call its own driver loader makes. Off means every RCpc load in a driver keeps
+# taking the exception, which is slower and always correct.
+driverInplaceRewrite = true
+
+[stats]
+# Count where traps are taken, in the pool. It costs a lookup per trap.
+enabled = true
+
+[kernel]
+# The RVA of the variable holding the kernel's page table base, for the build
+# this configuration is for: a 24H2 kernel. Optional: without it no
+# descriptor is rewritten.
+descriptorBaseRVA = 0xE07368
+
+[patch]
+# Directory of patch list files, relative to this volume. Empty turns the
+# feature off; the volume root itself is refused.
+dir = "usPatch"
+
+[debug]
+# Pieces of the mechanism taken out of the way, for investigating. Every one
+# is off by default; a name beginning "not" means the driver does that thing
+# unless the switch is set.
+notArmVectors = false        # do not take the exception vectors over
+notArmVectorsEl1t = false    # do not take the EL1t slot; false is known to bugcheck early
+notArmHandover = false       # do not take the winload-to-kernel branch over
+notVamap = false             # do not register the runtime VA notification
+spxStack = false             # do not let the stub push on the SPx vector too
