@@ -50,6 +50,7 @@ static uint64_t gEmulated;
 typedef struct UsActive_t {
     UsFrame *frame;    /* the exception the handler was given */
     uint64_t address;  /* what the emulated access is about to read */
+    uint64_t loadBytes;/* how wide that access is, so a fault can be placed */
     bool     loading;  /* whether one is in flight at all */
 
     /*
@@ -68,6 +69,7 @@ typedef struct UsActive_t {
      * refused comes back as one that happened
      */
     volatile uint64_t probeAt;
+    volatile uint64_t probeBytes;
     volatile bool     probing;
     volatile bool     probeRefused;
 } UsActive;
@@ -159,12 +161,18 @@ static int currentCPU(void) {
  * what a nested fault on this path already is. The flag is read by the
  * handler the entry reaches, so nothing here can be kept in a register across
  * the access: the store is volatile for that reason
+ *
+ * The width is recorded with the address because a fault reports the address
+ * that failed, which for an access that spans two pages is the second one -
+ * so the handler cannot tell "the access I armed" from "something of my own"
+ * by comparing addresses unless it knows which addresses the access covered
  */
-static bool probeArm(int cpu, uint64_t at) {
+static bool probeArm(int cpu, uint64_t at, uint64_t bytes) {
     if (cpu < 0 || cpu >= (int)US_MAX_CPUS) {
         return false;
     }
     gActive[cpu].probeAt = at;
+    gActive[cpu].probeBytes = bytes;
     gActive[cpu].probeRefused = false;
     gActive[cpu].probing = true;
     return true;
@@ -186,7 +194,7 @@ bool usPayloadProbeRead(uint64_t at, uint64_t *value) {
     int cpu = currentCPU();
     uint64_t got;
 
-    if (value == NULL || !probeArm(cpu, at)) {
+    if (value == NULL || !probeArm(cpu, at, sizeof(uint64_t))) {
         return false;
     }
     got = *(const volatile uint64_t *)(uintptr_t)at;
@@ -208,7 +216,7 @@ bool usPayloadProbeReadWord(uint64_t at, uint32_t *value) {
     int cpu = currentCPU();
     uint32_t got;
 
-    if (value == NULL || !probeArm(cpu, at)) {
+    if (value == NULL || !probeArm(cpu, at, sizeof(uint32_t))) {
         return false;
     }
     got = *(const volatile uint32_t *)(uintptr_t)at;
@@ -223,7 +231,7 @@ bool usPayloadProbeReadWord(uint64_t at, uint32_t *value) {
 bool usPayloadProbeWrite(uint64_t at, uint64_t value) {
     int cpu = currentCPU();
 
-    if (!probeArm(cpu, at)) {
+    if (!probeArm(cpu, at, sizeof(uint64_t))) {
         return false;
     }
     *(volatile uint64_t *)(uintptr_t)at = value;
@@ -235,7 +243,7 @@ bool usPayloadProbeWrite(uint64_t at, uint64_t value) {
 bool usPayloadProbeWriteWord(uint64_t at, uint32_t value) {
     int cpu = currentCPU();
 
-    if (!probeArm(cpu, at)) {
+    if (!probeArm(cpu, at, sizeof(uint32_t))) {
         return false;
     }
     *(volatile uint32_t *)(uintptr_t)at = value;
@@ -402,6 +410,7 @@ static bool emulateLDAPR(UsFrame *frame, int cpu) {
      */
     if (cpu >= 0 && cpu < (int)US_MAX_CPUS) {
         gActive[cpu].address = address;
+        gActive[cpu].loadBytes = usLDAPRKindBytes(decoded.kind);
         gActive[cpu].loading = true;
     }
 
@@ -724,7 +733,6 @@ UsFrame *usPayloadFault(void) {
     int cpu = currentCPU();
     UsFrame *outer;
     uint64_t vbar;
-
     /* The access may have cleared PAN; the handler that is about to run
      * would have been entered with it set */
     usPANOn();
@@ -747,14 +755,16 @@ UsFrame *usPayloadFault(void) {
      * entry puts the handler's own registers back and returns to it. What was
      * refused is recorded, and the caller reads that rather than the fault
      */
-    if (gActive[cpu].probing && outer->far == gActive[cpu].probeAt) {
+    if (gActive[cpu].probing
+        && usAccessCovers(outer->far, gActive[cpu].probeAt, gActive[cpu].probeBytes)) {
         usSetELR(currentELR() + 4);
         gActive[cpu].probeRefused = true;
         gActive[cpu].probing = false;
         return US_PAYLOAD_RESUME;
     }
 
-    if (gActive[cpu].loading && outer->far == gActive[cpu].address) {
+    if (gActive[cpu].loading
+        && usAccessCovers(outer->far, gActive[cpu].address, gActive[cpu].loadBytes)) {
         /* The emulated access: the kernel's handler for the slot the
          * exception was taken through is where its instruction's fault
          * belongs, in the context it was interrupted from */

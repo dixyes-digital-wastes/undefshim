@@ -283,6 +283,40 @@ static void testAlignment(void) {
            && !usLDAPRKindAligned(UsLDAPRWord, 0x1002));
 }
 
+/*
+ * Which addresses an access covers, which is what a fault has to be placed by
+ *
+ * The case worth its own line is the one that was a blue screen: an eight byte
+ * access four bytes below a page boundary, faulting on the next page. Asking
+ * whether the fault's address equals the access's says no, and the fault is
+ * then reported as one of ours - which the kernel treats as fatal.
+ */
+static void testAccessRange(void) {
+    const uint64_t page = 0x1000;
+
+    ok("a fault at the start of an access is its own",
+       usAccessCovers(0x800, 0x800, 8));
+    ok("a fault inside it is too", usAccessCovers(0x804, 0x800, 8));
+    ok("one past its end is not", !usAccessCovers(0x808, 0x800, 8));
+    ok("one before it is not", !usAccessCovers(0x7fc, 0x800, 8));
+
+    ok("an access that spans two pages owns the second one",
+       usAccessCovers(page, page - 4, 8));
+    ok("and the fault after it is not", !usAccessCovers(page + 4, page - 4, 8));
+
+    ok("a burst of no width covers nothing",
+       !usAccessCovers(0x800, 0x800, 0) && !usAccessCovers(0x800, 0x800, 0));
+
+    ok("nothing about the address is trusted",
+       !usAccessCovers(0x800, 0x1000, 8) && !usAccessCovers(0x7f8, 0x800, 8));
+    /* An address below the access must not wrap around into it */
+    ok("an address below one at zero is not covered",
+       !usAccessCovers(UINT64_MAX, 0, 8) && !usAccessCovers(UINT64_MAX - 3, 0, 8));
+    ok("the top of the address space has no room above it",
+       usAccessCovers(UINT64_MAX, UINT64_MAX - 3, 8)
+           && !usAccessCovers(0, UINT64_MAX - 3, 8));
+}
+
 int main(void) {
     testRewriteConversion();
     testWidths();
@@ -290,6 +324,7 @@ int main(void) {
     testRefusals();
     testSubstitution();
     testAlignment();
+    testAccessRange();
 
     return usCheckSummary(checks, failures);
 }

@@ -66,6 +66,43 @@ static inline bool usLDAPRKindAligned(UsLDAPRKind kind, uint64_t address) {
 }
 
 /*
+ * How many bytes one of these reads
+ *
+ * Wanted by anything that has to say which addresses an access covers rather
+ * than only where it starts: an access that spans two pages can fault on the
+ * second one, and the address a fault reports is then that page and not the
+ * address the access began at
+ */
+static inline uint64_t usLDAPRKindBytes(UsLDAPRKind kind) {
+    switch (kind) {
+    case UsLDAPRByte:
+        return 1;
+    case UsLDAPRHalf:
+        return 2;
+    case UsLDAPRWord:
+        return 4;
+    case UsLDAPRXword:
+        return 8;
+    default:
+        return 0;
+    }
+}
+
+/*
+ * Whether a fault's address is one an access covers
+ *
+ * The address a data abort reports is the one that failed, which is the start
+ * of the access only when the whole of it lands in one page. An access that
+ * spans two pages reports the second, and asking whether the two are equal
+ * then answers that the fault is not the access's - which is how a fault the
+ * mapping raised for the interrupted instruction ends up reported as one of
+ * our own, which the kernel treats as fatal
+ */
+static inline bool usAccessCovers(uint64_t far, uint64_t at, uint64_t bytes) {
+    return bytes != 0 && far >= at && far - at < bytes;
+}
+
+/*
  * Identifies the instruction and pulls out its fields
  *
  * The encoding is fixed except for the two register fields and the size,
