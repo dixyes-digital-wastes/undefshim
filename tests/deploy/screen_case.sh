@@ -8,9 +8,11 @@
 # screen is then the only channel it has. This boots such a machine, watches
 # the framebuffer for the line that is expected, and stops it again.
 #
-# The screen is read by screenread.py, whose text engine may not be installed.
+# The screen is read by screen.py, whose text engine may not be installed.
 # Without it the case is skipped, not failed: what a machine can check is not
-# the same as what this one can.
+# the same as what this one can. The engine lives in the tree's own
+# interpreter rather than being required of every machine, so a run that wants
+# the text runs this with that interpreter on PATH.
 #
 #   screen_case.sh <esp> <qmp-port> <expected-text> [timeout]
 #
@@ -35,8 +37,11 @@ log="$WORK/serial.log"
 out="$WORK/run.log"
 text="$WORK/screen.txt"
 
-if ! command -v tesseract >/dev/null; then
-    checkSkip "no tesseract, so the screen cannot be read"
+# Whether the text can be read at all is the reader's answer to give, not
+# this script's guess at what it needs: which engine it uses, and where that
+# engine is installed, is a thing that changes
+if ! tests/deploy/screen.py --check-engine >/dev/null 2>&1; then
+    checkSkip "no text engine, so the screen cannot be read"
 fi
 
 # The monitor has to outlive the boot, so the run is told not to stop on
@@ -53,7 +58,7 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-if tests/deploy/screenread.py --qmp-port "$QMP_PORT" \
+if tests/deploy/screen.py --qmp-port "$QMP_PORT" \
         --poll "$EXPECT" --timeout "$TIMEOUT" >"$text" 2>&1; then
     checkPass "the screen says \"$EXPECT\""
 fi

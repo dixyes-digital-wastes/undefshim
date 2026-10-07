@@ -467,9 +467,9 @@ tag = "spin probe"
         if not args.no_screen:
             log("waiting for the machine to paint a bugcheck")
             seen = subprocess.call(
-                [sys.executable, "-u", "tests/deploy/screenread.py",
+                [sys.executable, "-u", "tests/deploy/screen.py",
                  "--qmp-port", str(args.qmp_port),
-                 "--want", "bugcheck", "--wait",
+                 "--want", "bugcheck",
                  "--timeout", str(args.catch_timeout),
                  "--keep", os.path.join(work, "shots", "bluescreen.ppm")])
             if seen == 2:

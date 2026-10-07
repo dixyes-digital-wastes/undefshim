@@ -24,6 +24,12 @@ third_party/toml-c/tests/test_toml
 
 __pycache__/
 
+# The interpreter the screen reader's text engine is installed in. It is a
+# recogniser and an ONNX runtime, which is not something to require of every
+# machine that runs a check, so it lives here rather than in a requirement
+# file: the checks that only look at colours work without it.
+tests/deploy/venv/
+
 # Editor state, not project configuration.
 .vscode/
 
