@@ -308,6 +308,17 @@ typedef struct UsPayloadConfig_t {
      * with callRVA it is the whole of what the entry needs
      */
     uint64_t driverLoadTarget;
+    /*
+     * Whether the entry replaces the loads in the image it is given
+     *
+     * Off means the drivers keep taking the exception for every RCpc load
+     * they make, which is correct and slower. It is a separate key from the
+     * one that decides whether the hook is installed at all, because the two
+     * fail differently: a hook that is not installed costs nothing, and a
+     * hook that is installed and does nothing is a machine whose drivers are
+     * as slow as they were
+     */
+    uint64_t driverRewrite;
 } UsPayloadConfig;
 
 /*

@@ -290,6 +290,15 @@ typedef struct UsPoolEntry_t {
     uint64_t driverImage;   /* the image the last one was loading */
     uint64_t driverSize;    /* its SizeOfImage, from its own header */
     uint64_t driverEntry;   /* and its entry point, as an RVA */
+    /*
+     * What the replacement did to those images: how many RCpc loads were
+     * found in them, and how many now hold the substitute. Kept apart because
+     * the two failures look nothing alike - no sites at all means the image
+     * was not scanned, sites that were not written mean the pages would not
+     * take it
+     */
+    uint64_t driverSites;
+    uint64_t driverWritten;
 
 } UsPoolEntry;
 

@@ -64,4 +64,19 @@ typedef enum UsRewriteResult_e {
  */
 UsRewriteResult usRewriteSite(uint64_t site, UsLDAPRKind kind, uint64_t address);
 
+/*
+ * The same, for a site that has not run yet and whose address is therefore
+ * not known
+ *
+ * Alignment is the only thing the address is used for, and it is the one
+ * property of a site that cannot be decided from the instruction: the acquire
+ * load that stands in for an RCpc load has to be naturally aligned, and the
+ * instruction it replaces does not. So a site taken on before it runs is taken
+ * on faith - the same thing the boot's replacement of the kernel does, and the
+ * same risk, see ../todo.md 3.3
+ *
+ * A site this refuses keeps trapping, which the handler already answers
+ */
+UsRewriteResult usRewriteSiteAtLoad(uint64_t site, UsLDAPRKind kind);
+
 #endif

@@ -99,7 +99,7 @@ test_driver_hook: test_driver_hook.c $(ROOT)/core/pe.c $(ROOT)/core/scan.c \
 # The entry a diverted kernel call arrives at. It reads no register state, so
 # it runs on the host with a configuration of the test's own making and a stand
 # -in for the function it calls through to
-test_drvhook: test_drvhook.c $(ROOT)/payload/drvhook.c
+test_drvhook: test_drvhook.c $(ROOT)/payload/drvhook.c $(ROOT)/core/ldapr.c
 	$(CC) -std=gnu23 -O2 -Wall -Wextra -I$(ROOT) $^ -o $@
 
 test_rva_patch: test_rva_patch.c $(ROOT)/core/pe.c $(ROOT)/core/rva_patch.c

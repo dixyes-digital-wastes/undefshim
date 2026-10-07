@@ -270,7 +270,8 @@ static void record(uint64_t site, uint64_t insn, const UsLeaf *leaf, uint64_t re
     }
 }
 
-UsRewriteResult usRewriteSite(uint64_t site, UsLDAPRKind kind, uint64_t address) {
+static UsRewriteResult rewriteOne(uint64_t site, UsLDAPRKind kind,
+                                  uint64_t address, bool addressKnown) {
     UsRead state = { false };
     UsPayloadConfig *cfg = usPayloadConfig();
     UsLeaf leaf;
@@ -294,9 +295,11 @@ UsRewriteResult usRewriteSite(uint64_t site, UsLDAPRKind kind, uint64_t address)
      * has to be aligned; the load it stands in for is not, and may be read at
      * any alignment. Replacing one with the other at an address only the first
      * of them can reach turns a load that works into a fault, so this one is
-     * left where it is and keeps taking the exception
+     * left where it is and keeps taking the exception. Only when the address
+     * is known: a site being replaced before it has ever run has no address to
+     * check against, and that is what addressKnown says
      */
-    if (!usLDAPRKindAligned(kind, address)) {
+    if (addressKnown && !usLDAPRKindAligned(kind, address)) {
         record(site, 0, NULL, UsRewriteMisaligned);
         return UsRewriteMisaligned;
     }
@@ -468,4 +471,12 @@ UsRewriteResult usRewriteSite(uint64_t site, UsLDAPRKind kind, uint64_t address)
     }
     record(site, insn, &leaf, written ? UsRewriteWritten : UsRewriteRefused);
     return written ? UsRewriteWritten : UsRewriteRefused;
+}
+
+UsRewriteResult usRewriteSite(uint64_t site, UsLDAPRKind kind, uint64_t address) {
+    return rewriteOne(site, kind, address, true);
+}
+
+UsRewriteResult usRewriteSiteAtLoad(uint64_t site, UsLDAPRKind kind) {
+    return rewriteOne(site, kind, 0, false);
 }

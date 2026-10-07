@@ -25,8 +25,10 @@
  * its drivers exactly as it did before
  */
 
+#include "core/ldapr.h"
 #include "payload/drvhook.h"
 #include "payload/payload.h"
+#include "payload/rewrite.h"
 
 /* The header of an image the kernel has already mapped, read the way a loader
  * reads it. Everything past the DOS stub is checked against the image's own
@@ -55,6 +57,9 @@ static uint32_t rd32(const uint8_t *p) {
 typedef struct DriverImage_t {
     uint32_t sizeOfImage;
     uint32_t entryRVA;
+    /* Into the image: the section table, and how many entries it has */
+    uint32_t sectionTable;
+    uint16_t sectionCount;
 } DriverImage;
 
 static bool describeImage(const void *base, DriverImage *out) {
@@ -81,7 +86,74 @@ static bool describeImage(const void *base, DriverImage *out) {
     }
     out->entryRVA = rd32(coff + 24 + 16);
     out->sizeOfImage = rd32(coff + 24 + 56);
+    out->sectionCount = rd16(coff + 6);
+    out->sectionTable = lfanew + 24 + rd16(coff + 20);
     return out->sizeOfImage != 0;
+}
+
+/*
+ * Replacing the RCpc loads in an image that has been mapped and not yet run
+ *
+ * This is the whole reason the entry exists. Every load left unreplaced is one
+ * the machine has to trap on, and a trap is orders of magnitude more expensive
+ * than the load: a driver with a few hundred of them turns a boot into
+ * something that looks stopped. Doing it here is what the boot does for the
+ * kernel, at the same kind of moment - the image is complete and none of it
+ * has run - and it is the last such moment there is, because once it runs, its
+ * text is the kernel's and writing to it is what the integrity check reports
+ *
+ * Alignment is the one thing this cannot know. The acquire load that stands in
+ * for an RCpc load has to be naturally aligned and the instruction it replaces
+ * does not, and the address a load will read is only known when it runs. So a
+ * site is taken on unless the rewrite itself refuses it, and a site that is
+ * refused keeps trapping - see usRewriteSiteAtLoad
+ *
+ * Returns how many were found, and how many of those were written
+ */
+typedef struct RewriteTally_t {
+    uint64_t sites;
+    uint64_t written;
+} RewriteTally;
+
+#define US_SECTION_EXECUTABLE 0x20000000U
+#define US_SECTION_HEADER_BYTES 40U
+
+static void rewriteImage(const uint8_t *base, const DriverImage *image,
+                         RewriteTally *tally) {
+    const uint8_t *sh = base + image->sectionTable;
+
+    for (uint16_t i = 0; i < image->sectionCount; i++, sh += US_SECTION_HEADER_BYTES) {
+        uint32_t virtualSize = rd32(sh + 8);
+        uint32_t virtualAddress = rd32(sh + 12);
+        const uint8_t *code;
+
+        if ((rd32(sh + 36) & US_SECTION_EXECUTABLE) == 0 || virtualSize == 0) {
+            continue;
+        }
+        /*
+         * A section that is executable but has no contents is one the loader
+         * does not map; there is nothing there to read, let alone replace
+         */
+        if (rd32(sh + 16) == 0 || virtualAddress + 4U > image->sizeOfImage) {
+            continue;
+        }
+        code = base + virtualAddress;
+        for (uint32_t off = 0; off + 4U <= virtualSize
+                               && virtualAddress + off + 4U <= image->sizeOfImage;
+             off += 4U) {
+            uint32_t insn = rd32(code + off);
+            UsLDAPRInsn decoded = usLDAPRDecode(insn);
+
+            if (decoded.kind == UsLDAPRNone) {
+                continue;
+            }
+            tally->sites++;
+            if (usRewriteSiteAtLoad((uint64_t)(uintptr_t)(code + off),
+                                    decoded.kind) == UsRewriteWritten) {
+                tally->written++;
+            }
+        }
+    }
 }
 
 /*
@@ -93,17 +165,11 @@ static bool describeImage(const void *base, DriverImage *out) {
  * mapped and not yet started can have its RCpc loads replaced in place, which
  * is cheaper by orders of magnitude than carrying out each one as it traps
  *
- * What it does today is record what arrived and call through. That is the first
- * step rather than a placeholder for nothing: it puts the mechanism in place -
- * a thunk in the kernel's text, the kernel's own call diverted to it, an entry
- * reached and returned from - with the machine's behaviour unchanged, so the
- * part that changes behaviour can be added to something already known to be
- * sound
- *
- * The record is what says the mechanism was reached at all. Whether the hook is
- * written and whether anything comes through it are different questions, and a
- * thunk nothing reaches looks exactly like one that was never written from
- * every other angle
+ * What it does with the image is replace its RCpc loads, so that the machine
+ * never has to trap on one, and count what it found and what it wrote. The
+ * count is the only evidence there is that it did anything: the machine cannot
+ * print once the kernel is running, so it goes in the pool and the host reads
+ * it there
  */
 void *usDriverLoadEntry(void *imageBase) {
     UsPayloadConfig *cfg = usPayloadConfig();
@@ -123,6 +189,13 @@ void *usDriverLoadEntry(void *imageBase) {
         if (describeImage(imageBase, &image)) {
             entry->driverSize = image.sizeOfImage;
             entry->driverEntry = image.entryRVA;
+            if (cfg->driverRewrite != 0) {
+                RewriteTally tally = { 0 };
+
+                rewriteImage(imageBase, &image, &tally);
+                entry->driverSites += tally.sites;
+                entry->driverWritten += tally.written;
+            }
         }
     }
 

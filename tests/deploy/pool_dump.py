@@ -87,6 +87,8 @@ def entryOffsets():
         "driverImage": driver + 8,
         "driverSize": driver + 16,
         "driverEntry": driver + 24,
+        "driverSites": driver + 32,
+        "driverWritten": driver + 40,
     }
 
 

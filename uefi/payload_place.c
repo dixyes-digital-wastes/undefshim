@@ -120,6 +120,7 @@ static void writeConfig(const UsPayloadPlace *place, const UsSession *session) {
                       ? 1U
                       : 0U;
     cfg->statsEnabled = session->config != NULL && session->config->statsEnabled ? 1U : 0U;
+    cfg->driverRewrite = session->driverInplaceRewrite ? 1U : 0U;
 }
 
 bool usPayloadPlace(UsSession *session, UsPayloadPlace *out) {

@@ -18,8 +18,11 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "core/ldapr.h"
+#include "core/pe.h"
 #include "payload/drvhook.h"
 #include "payload/payload.h"
+#include "payload/rewrite.h"
 
 #define US_CHECK_NAME "test_drvhook"
 #include "check.h"
@@ -60,6 +63,23 @@ UsPayloadConfig *usPayloadConfig(void) {
     return &gCfg;
 }
 
+/*
+ * The replacement itself lives behind AArch64 instructions - system registers
+ * and the cache maintenance that has to follow a write to code - so it cannot
+ * be built for the host. What the scan does with it can be: this stands in,
+ * and records what it was asked to replace
+ */
+static uint64_t gRewriteAsked[64];
+static unsigned gRewriteCount;
+
+UsRewriteResult usRewriteSiteAtLoad(uint64_t site, UsLDAPRKind kind) {
+    if (gRewriteCount < sizeof(gRewriteAsked) / sizeof(gRewriteAsked[0])) {
+        gRewriteAsked[gRewriteCount++] = site;
+    }
+    (void)kind;
+    return UsRewriteWritten;
+}
+
 /* Standing in for the kernel's RtlImageNtHeader: what it is called with is
  * the whole of what the entry has to get right */
 static void *gCalledWith;
@@ -84,10 +104,21 @@ static void put32(uint8_t *at, uint32_t v) {
     at[3] = (uint8_t)(v >> 24);
 }
 
-/* A minimal 64 bit PE header, enough for the entry to describe it */
+/*
+ * A minimal 64 bit PE header with two sections, enough for the entry to
+ * describe it and for the scan to walk it: the first executable, the second
+ * not. The second is what says the scan reads the section table rather than
+ * walking the image from end to end
+ */
+#define TEXT_RVA 0x1000U
+#define TEXT_BYTES 0x40U
+#define DATA_RVA 0x2000U
+#define DATA_BYTES 0x40U
+
 static void buildImage(uint32_t sizeOfImage, uint32_t entryRVA) {
     const uint32_t peOff = 0x80;
     const uint32_t optOff = peOff + 24;
+    const uint32_t secOff = optOff + 0xF0;
 
     memset(gImage, 0, sizeof(gImage));
     gImage[0] = 'M';
@@ -101,13 +132,34 @@ static void buildImage(uint32_t sizeOfImage, uint32_t entryRVA) {
     put32(gImage + optOff + 16, entryRVA);
     put32(gImage + optOff + 56, sizeOfImage);
     put32(gImage + optOff + 60, 0x200);
+
+    memcpy(gImage + secOff, ".text", 5);
+    put32(gImage + secOff + 8, TEXT_BYTES);
+    put32(gImage + secOff + 12, TEXT_RVA);
+    put32(gImage + secOff + 16, TEXT_BYTES);
+    put32(gImage + secOff + 20, TEXT_RVA);
+    put32(gImage + secOff + 36, US_PE_SECTION_EXECUTABLE);
+
+    memcpy(gImage + secOff + 40, ".data", 5);
+    put32(gImage + secOff + 48, DATA_BYTES);
+    put32(gImage + secOff + 52, DATA_RVA);
+    put32(gImage + secOff + 56, DATA_BYTES);
+    put32(gImage + secOff + 60, DATA_RVA);
+    put32(gImage + secOff + 76, 0x40000040U);
+}
+
+static void putInsn(uint32_t rva, uint32_t word) {
+    put32(gImage + rva, word);
 }
 
 static void init(void) {
     memset(&gCfg, 0, sizeof(gCfg));
     memset(gPoolStorage, 0, sizeof(gPoolStorage));
+    memset(gRewriteAsked, 0, sizeof(gRewriteAsked));
+    gRewriteCount = 0;
     gCfg.poolBase = (uintptr_t)gPoolStorage;
     gCfg.driverLoadTarget = (uintptr_t)fakeTarget;
+    gCfg.driverRewrite = 1;
     gCalledWith = NULL;
     gAnswer = (void *)0x1234;
     gCalls = 0;
@@ -119,6 +171,55 @@ static void init(void) {
  * a second copy of the layout that nothing checks */
 #define POOL_ENTRY (&((UsPool *)(void *)gPoolStorage)->entry)
 
+/*
+ * The scan: which sites it finds, and which parts of the image it looks in
+ *
+ * The point of replacing the loads at load time is that the machine never has
+ * to trap on one, so what matters is that every site in the image is offered
+ * for replacement - and that the scan reads the section table rather than
+ * walking from the end of the headers to the end of the image, which is the
+ * mistake that would retire the wrong instruction in a section that is data
+ */
+static void testScan(void) {
+    /* ldapr w0, [x0] and its three siblings, which is what a site looks like */
+    static const uint32_t ldaprs[] = {
+        0xB8BFC000U, 0xF8BFC000U, 0x38BFC000U, 0x78BFC000U,
+    };
+
+    init();
+    /* Two of the four widths, spaced out, in the executable section */
+    putInsn(TEXT_RVA + 0, ldaprs[0]);
+    putInsn(TEXT_RVA + 8, ldaprs[1]);
+    /* Something that is not one, between them */
+    putInsn(TEXT_RVA + 4, 0xD503201FU);
+    /* A site in the section that is not executable, which is not a site */
+    putInsn(DATA_RVA + 0, ldaprs[2]);
+    usDriverLoadEntry(gImage);
+
+    eq64("both sites in the text are found", POOL_ENTRY->driverSites, 2);
+    eq64("and both are written", POOL_ENTRY->driverWritten, 2);
+    eq64("the scan asked for each of them", gRewriteCount, 2);
+    ok("at its own address",
+       gRewriteAsked[0] == (uint64_t)(uintptr_t)(gImage + TEXT_RVA + 0)
+       && gRewriteAsked[1] == (uint64_t)(uintptr_t)(gImage + TEXT_RVA + 8));
+    /* Nothing in the data section, and nothing in the padding after it */
+    for (unsigned i = 0; i < gRewriteCount; i++) {
+        ok("and never in a section that is not executable",
+           gRewriteAsked[i] < (uint64_t)(uintptr_t)(gImage + DATA_RVA));
+    }
+
+    /* The key that turns it off: the hook still runs and still reports, and
+     * the machine is left with every load trapping, which is correct */
+    init();
+    putInsn(TEXT_RVA + 0, ldaprs[0]);
+    gCfg.driverRewrite = 0;
+    usDriverLoadEntry(gImage);
+    eq64("with the replacement off nothing is asked for", gRewriteCount, 0);
+    eq64("and nothing is counted as found", POOL_ENTRY->driverSites, 0);
+    eq64("though the image is still recorded", POOL_ENTRY->driverImage,
+         (uint64_t)(uintptr_t)gImage);
+}
+
 int main(void) {
     /* The call goes through unchanged: to the kernel nothing happened */
     init();
@@ -129,6 +230,8 @@ int main(void) {
     eq64("the image was recorded", POOL_ENTRY->driverImage, (uint64_t)(uintptr_t)gImage);
     eq64("its size came from its own header", POOL_ENTRY->driverSize, 0x1b4000);
     eq64("and so did its entry point", POOL_ENTRY->driverEntry, 0x1234);
+    eq64("and none of it counted as replaced, since there are no sites",
+         POOL_ENTRY->driverSites, 0);
 
     /* A second one is counted as well: drivers arrive one at a time and each
      * arrival is the thing being counted */
@@ -169,6 +272,8 @@ int main(void) {
     init();
     gCfg.driverLoadTarget = 0;
     ok("with no target nothing is claimed", usDriverLoadEntry(gImage) == NULL);
+
+    testScan();
 
     return usCheckSummary(checks, failures);
 }
