@@ -25,6 +25,12 @@ STARTUP="${STARTUP:-tests/deploy/startup.nsh}"
 SHELL_EFI="${SHELL_EFI:-/usr/share/edk2-shell/aarch64/Shell.efi}"
 ESP="${ESP:-$BUILD_DIR/esp.img}"
 ESP_SIZE_MB="${ESP_SIZE_MB:-64}"
+# A directory holding the demo programs, when the run is for a person rather
+# than for a check: they go on the volume with a script that runs them, and
+# the operating system's own startnet.cmd is what finds and calls it. Empty
+# leaves them off, which is what every check wants -- a machine that boots
+# faster and prints less
+DEMO_DIR="${DEMO_DIR:-}"
 
 [ -f "$DRIVER" ] || { echo "missing driver: $DRIVER (run make first)" >&2; exit 1; }
 [ -f "$SHELL_EFI" ] || { echo "missing shell: $SHELL_EFI" >&2; exit 1; }
@@ -58,5 +64,16 @@ if [ -d "$PATCHLIST_DIR" ]; then
 fi
 fi
 mcopy -i "$ESP" "$STARTUP" ::/startup.nsh
+
+if [ -n "$DEMO_DIR" ]; then
+    for exe in lrcpc_demo udf_demo; do
+        [ -f "$DEMO_DIR/$exe.exe" ] || {
+            echo "missing demo: $DEMO_DIR/$exe.exe (run make -C tests/demo)" >&2
+            exit 1
+        }
+        mcopy -i "$ESP" "$DEMO_DIR/$exe.exe" ::/
+    done
+    mcopy -i "$ESP" tests/deploy/entrypoint.cmd ::/
+fi
 
 echo "esp: $ESP ($(du -h "$ESP" | cut -f1))"

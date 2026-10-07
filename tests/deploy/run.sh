@@ -49,6 +49,14 @@ FAULT_PATTERN="${FAULT_PATTERN-Synchronous Exception}"
 # the image is never written to.
 WIN_DISK="${WIN_DISK:-}"
 
+# A volume of programs for the guest to run, attached as a virtio disk. The
+# boot volume goes over USB, which the firmware brings up but a WinPE need not:
+# a USB stack the image does not load leaves the volume invisible to the
+# running guest, and the keyboard with it. A virtio disk needs no such thing.
+#
+# Read only, and with no boot index: it is a disk to read.
+DEMO_DISK="${DEMO_DISK:-}"
+
 [ -f "$ESP" ] || fail "no image at $ESP (run make esp first)"
 [ -f "$QEMU_FW" ] || fail "no firmware at $QEMU_FW"
 if [ -n "$WIN_DISK" ] && [ ! -f "$WIN_DISK" ]; then
@@ -68,6 +76,23 @@ if [ -n "$WIN_DISK" ]; then
     win_args+=(-drive "file=$WIN_DISK,if=none,format=qcow2,id=win,readonly=on")
 fi
 
+demo_args=()
+if [ -n "$DEMO_DISK" ]; then
+    demo_args+=(-device virtio-blk-pci,drive=demo)
+    demo_args+=(-drive "file=$DEMO_DISK,if=none,format=raw,id=demo,readonly=on")
+fi
+
+# One controller for everything on it. virt has none of its own -- -usb adds
+# nothing -- so every device needs a bus naming this one, and a second
+# controller would only be another thing for the guest to bring up.
+usb_args=(
+    -device qemu-xhci,id=xhci
+    -device usb-kbd,bus=xhci.0
+    -device usb-tablet,bus=xhci.0
+    -device usb-storage,bus=xhci.0,drive=esp,bootindex=1
+    -drive "file=$ESP,if=none,format=raw,id=esp"
+)
+
 "$QEMU" \
     -no-reboot \
     -accel tcg,thread=multi,tb-size=2048 \
@@ -81,10 +106,8 @@ fi
     -gdb tcp::1234 \
     -qmp tcp:127.0.0.1:$QMP_PORT,server=on,wait=off \
     "${win_args[@]}" \
-    -device qemu-xhci,id=xhci \
-    -device usb-kbd,bus=xhci.0 \
-    -device usb-storage,drive=esp,bootindex=1 \
-    -drive file="$ESP",if=none,format=raw,id=esp \
+    "${demo_args[@]}" \
+    "${usb_args[@]}" \
     -serial "unix:$SERIAL_SOCK,server=on,wait=off" \
     -display none &
 QEMU_PID=$!
