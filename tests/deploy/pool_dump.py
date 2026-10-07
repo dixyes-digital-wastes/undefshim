@@ -89,6 +89,7 @@ def entryOffsets():
         "driverEntry": driver + 24,
         "driverSites": driver + 32,
         "driverWritten": driver + 40,
+        "driverSkipped": driver + 48,
     }
 
 

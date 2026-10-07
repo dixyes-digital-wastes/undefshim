@@ -113,10 +113,31 @@ static bool describeImage(const void *base, DriverImage *out) {
 typedef struct RewriteTally_t {
     uint64_t sites;
     uint64_t written;
+    uint64_t skipped;   /* pages that could not be read, and so were left alone */
 } RewriteTally;
 
 #define US_SECTION_EXECUTABLE 0x20000000U
 #define US_SECTION_HEADER_BYTES 40U
+
+/*
+ * Whether a page of the image can be read at all, which is not the same
+ * question as whether it is mapped
+ *
+ * The image has been mapped and not yet run, and its pages are brought in as
+ * they are touched - so some of what this walk reaches is not there yet, and
+ * the kernel is the only thing that can bring it in. Reading such a page
+ * anyway is what a fault is, and faults here are expensive in the one way that
+ * matters: the walk would take one per word and never finish.
+ *
+ * So one word per page is read through the probe, and the page is skipped when
+ * it could not be read. What is skipped keeps trapping, which is slower and
+ * correct - the same answer the machine gives when this whole pass is off.
+ */
+static bool pageReadable(const uint8_t *page) {
+    uint32_t word = 0;
+
+    return usPayloadProbeReadWord((uint64_t)(uintptr_t)page, &word);
+}
 
 static void rewriteImage(const uint8_t *base, const DriverImage *image,
                          RewriteTally *tally) {
@@ -138,19 +159,32 @@ static void rewriteImage(const uint8_t *base, const DriverImage *image,
             continue;
         }
         code = base + virtualAddress;
-        for (uint32_t off = 0; off + 4U <= virtualSize
-                               && virtualAddress + off + 4U <= image->sizeOfImage;
-             off += 4U) {
-            uint32_t insn = rd32(code + off);
-            UsLDAPRInsn decoded = usLDAPRDecode(insn);
+        for (uint32_t page = 0; page < virtualSize; page += US_PAGE_SIZE) {
+            uint32_t end = virtualSize - page;
 
-            if (decoded.kind == UsLDAPRNone) {
+            if (!pageReadable(code + page)) {
+                tally->skipped++;
                 continue;
             }
-            tally->sites++;
-            if (usRewriteSiteAtLoad((uint64_t)(uintptr_t)(code + off),
-                                    decoded.kind) == UsRewriteWritten) {
-                tally->written++;
+            if (end > US_PAGE_SIZE) {
+                end = US_PAGE_SIZE;
+            }
+            for (uint32_t off = 0; off + 4U <= end
+                                   && virtualAddress + page + off + 4U <= image->sizeOfImage;
+                 off += 4U) {
+                const uint8_t *at = code + page + off;
+                uint32_t insn = (uint32_t)at[0] | ((uint32_t)at[1] << 8)
+                                | ((uint32_t)at[2] << 16) | ((uint32_t)at[3] << 24);
+                UsLDAPRInsn decoded = usLDAPRDecode(insn);
+
+                if (decoded.kind == UsLDAPRNone) {
+                    continue;
+                }
+                tally->sites++;
+                if (usRewriteSiteAtLoad((uint64_t)(uintptr_t)at,
+                                        decoded.kind) == UsRewriteWritten) {
+                    tally->written++;
+                }
             }
         }
     }
@@ -195,6 +229,7 @@ void *usDriverLoadEntry(void *imageBase) {
                 rewriteImage(imageBase, &image, &tally);
                 entry->driverSites += tally.sites;
                 entry->driverWritten += tally.written;
+                entry->driverSkipped += tally.skipped;
             }
         }
     }

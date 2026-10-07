@@ -55,7 +55,13 @@ static UsPayloadConfig gCfg;
  * reads as a counter that does not count
  */
 static _Alignas(US_PAGE_SIZE) uint8_t gPoolStorage[US_POOL_HEADER_SIZE];
-static _Alignas(8) uint8_t gImage[0x1000];
+/*
+ * Big enough for both sections the test builds, which is more than one page:
+ * the scan walks an image a page at a time, and a test whose image ends before
+ * its first section starts would be reading past the buffer and passing by
+ * luck
+ */
+static _Alignas(US_PAGE_SIZE) uint8_t gImage[0x4000];
 
 /* The payload's own way of reaching its configuration block, which on the
  * target is a symbol in the blob and here is the test's own */
@@ -71,6 +77,26 @@ UsPayloadConfig *usPayloadConfig(void) {
  */
 static uint64_t gRewriteAsked[64];
 static unsigned gRewriteCount;
+
+/*
+ * The probe reads through the payload's own machinery on the target, where a
+ * page that is not there yet faults and is answered there. Here it is the
+ * memory, plus a range the test can declare unreadable - which is what the
+ * pages of an image that has not been paged in look like
+ */
+static const uint8_t *gUnreadableFrom;
+static const uint8_t *gUnreadableTo;
+
+bool usPayloadProbeReadWord(uint64_t at, uint32_t *value) {
+    const uint8_t *p = (const uint8_t *)(uintptr_t)at;
+
+    if (gUnreadableFrom != NULL && p >= gUnreadableFrom && p < gUnreadableTo) {
+        return false;
+    }
+    *value = (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16)
+             | ((uint32_t)p[3] << 24);
+    return true;
+}
 
 UsRewriteResult usRewriteSiteAtLoad(uint64_t site, UsLDAPRKind kind) {
     if (gRewriteCount < sizeof(gRewriteAsked) / sizeof(gRewriteAsked[0])) {
@@ -115,7 +141,7 @@ static void put32(uint8_t *at, uint32_t v) {
 #define DATA_RVA 0x2000U
 #define DATA_BYTES 0x40U
 
-static void buildImage(uint32_t sizeOfImage, uint32_t entryRVA) {
+static void buildImage(uint32_t sizeOfImage, uint32_t entryRVA, uint32_t textBytes) {
     const uint32_t peOff = 0x80;
     const uint32_t optOff = peOff + 24;
     const uint32_t secOff = optOff + 0xF0;
@@ -134,9 +160,9 @@ static void buildImage(uint32_t sizeOfImage, uint32_t entryRVA) {
     put32(gImage + optOff + 60, 0x200);
 
     memcpy(gImage + secOff, ".text", 5);
-    put32(gImage + secOff + 8, TEXT_BYTES);
+    put32(gImage + secOff + 8, textBytes);
     put32(gImage + secOff + 12, TEXT_RVA);
-    put32(gImage + secOff + 16, TEXT_BYTES);
+    put32(gImage + secOff + 16, textBytes);
     put32(gImage + secOff + 20, TEXT_RVA);
     put32(gImage + secOff + 36, US_PE_SECTION_EXECUTABLE);
 
@@ -163,7 +189,9 @@ static void init(void) {
     gCalledWith = NULL;
     gAnswer = (void *)0x1234;
     gCalls = 0;
-    buildImage(0x1b4000, 0x1234);
+    gUnreadableFrom = NULL;
+    gUnreadableTo = NULL;
+    buildImage(0x1b4000, 0x1234, TEXT_BYTES);
 }
 
 /* The record itself, reached the way the entry reaches it rather than by an
@@ -220,6 +248,46 @@ static void testScan(void) {
          (uint64_t)(uintptr_t)gImage);
 }
 
+/*
+ * A page of the image that cannot be read
+ *
+ * The image has been mapped and not yet run, so its pages are brought in as
+ * they are touched and some of what the walk reaches is not there yet. Reading
+ * past that is what a fault is, and one fault per word is a walk that never
+ * finishes - which is what this defect was. The page is skipped instead, and
+ * what is skipped keeps trapping, which is slower and correct
+ */
+static void testUnreadablePage(void) {
+    static const uint32_t ldapr = 0xB8BFC000U;
+    const uintptr_t second = (uintptr_t)(gImage + TEXT_RVA) + US_PAGE_SIZE;
+
+    init();
+    buildImage(0x1b4000, 0x1234, 2U * US_PAGE_SIZE);
+    putInsn(TEXT_RVA + 0, ldapr);
+    putInsn(TEXT_RVA + US_PAGE_SIZE, ldapr);
+
+    /* Both pages readable: both sites are found and replaced */
+    usDriverLoadEntry(gImage);
+    eq64("both pages readable: both sites found", POOL_ENTRY->driverSites, 2);
+    eq64("and both written", POOL_ENTRY->driverWritten, 2);
+    eq64("and none skipped", POOL_ENTRY->driverSkipped, 0);
+
+    /* The second page not there yet: its site is left alone, the first one is
+     * not, and the walk ends rather than faulting through the rest */
+    init();
+    buildImage(0x1b4000, 0x1234, 2U * US_PAGE_SIZE);
+    putInsn(TEXT_RVA + 0, ldapr);
+    putInsn(TEXT_RVA + US_PAGE_SIZE, ldapr);
+    gUnreadableFrom = (const uint8_t *)second;
+    gUnreadableTo = (const uint8_t *)second + US_PAGE_SIZE;
+    usDriverLoadEntry(gImage);
+    eq64("one page unreadable: the other's site is still found",
+         POOL_ENTRY->driverSites, 1);
+    eq64("and written", POOL_ENTRY->driverWritten, 1);
+    eq64("and the page that could not be read is counted", POOL_ENTRY->driverSkipped, 1);
+    eq64("nothing was asked for on it", POOL_ENTRY->driverWritten, gRewriteCount);
+}
+
 int main(void) {
     /* The call goes through unchanged: to the kernel nothing happened */
     init();
@@ -274,6 +342,7 @@ int main(void) {
     ok("with no target nothing is claimed", usDriverLoadEntry(gImage) == NULL);
 
     testScan();
+    testUnreadablePage();
 
     return usCheckSummary(checks, failures);
 }

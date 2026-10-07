@@ -299,6 +299,13 @@ typedef struct UsPoolEntry_t {
      */
     uint64_t driverSites;
     uint64_t driverWritten;
+    /*
+     * Pages of those images that could not be read and were left as they
+     * were, which is what a walk over an image whose pages are not all
+     * resident has to do: those pages keep trapping, which is slower and
+     * correct
+     */
+    uint64_t driverSkipped;
 
 } UsPoolEntry;
 
