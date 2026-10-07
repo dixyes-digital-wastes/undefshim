@@ -40,6 +40,7 @@ See [`docs/`](docs/).
 - docs
 - (maybe) Support LSE for a72
 - Heterogeneous clusters (big.LITTLE)
+- (unlikely) Hackintosh?
 
 ## Acknowledgements
 
