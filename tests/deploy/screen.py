@@ -20,8 +20,8 @@ Four things are asked of it, and they cost very different amounts:
 
 Exits 0 when what was asked for was reached, 1 when it was not, 2 when the
 engine that reads text is not installed, 3 when the machine was called stuck
-(a still screen that stayed still after being poked). Run the text cases
-under the interpreter that has it:
+(a still screen that stayed still after being poked), 4 when it blue-screened.
+Run the text cases under the interpreter that has it:
 
     . tests/deploy/venv/bin/activate
     screen.py --qmp-port 4448 --text
@@ -445,6 +445,36 @@ def readText(args, ppm):
     return engine.read(ppm, args)
 
 
+# The line a bugcheck puts its reason on, and the reason. Worth reading even
+# when the caller did not ask for text: a blue screen is the end of a run, and
+# this is the only thing on it that says why.
+STOP_CODE = re.compile(r"stop\s*code\s*:?\s*(.+)", re.I)
+
+
+def stopCode(text):
+    """The stop code off a bugcheck screen, or None when it is not there."""
+    for line in (text or "").splitlines():
+        match = STOP_CODE.search(line)
+        if match:
+            return match.group(1).strip()
+    return None
+
+
+def tryText(args, ppm):
+    """The screen's text, for a caller that did not ask for it.
+
+    Empty when it cannot be read, and quiet about it: this is a bonus, and a
+    run that cannot read text should still report the bugcheck it saw
+    """
+    engine = ENGINES.get(args.engine)
+    if engine is None or not engine.available():
+        return ""
+    try:
+        return engine.read(ppm, args) or ""
+    except Exception:
+        return ""
+
+
 # ---------------------------------------------------------------- the waiting
 
 def main():
@@ -593,6 +623,24 @@ def main():
                                 exist_ok=True)
                     shutil.copyfile(ppm, args.keep)
                 return 0
+
+            # A bugcheck ends the question whatever was being waited for: the
+            # machine is not going to reach anything else, and a caller that
+            # waited out its whole timeout for a state this machine can no
+            # longer produce would have learned nothing. It is also the one
+            # screen whose text is worth reading unasked - the stop code is
+            # the only thing on it that says what happened.
+            if base == BUGCHECK:
+                code = stopCode(text) if text else None
+                if code is None:
+                    code = stopCode(tryText(args, ppm))
+                print("screen: bugcheck%s" % (": " + code if code
+                                              else " (stop code unread)"))
+                if args.keep:
+                    os.makedirs(os.path.dirname(os.path.abspath(args.keep)),
+                                exist_ok=True)
+                    shutil.copyfile(ppm, args.keep)
+                return 4
 
             # A screen that has stopped changing is poked before it is judged:
             # a machine that answers to a pointer or a key was drawing nothing,
