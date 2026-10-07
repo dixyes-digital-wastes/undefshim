@@ -246,6 +246,16 @@ static void fillArena(void) {
  * past it. That is not the question being asked - the question is whether the
  * machine is still here to report it
  */
+/* What the exception handler saw. The filter is the only place the exception's
+ * own code is reachable -- __exception_code is not allowed outside it -- so
+ * the filter is what writes it down */
+static volatile u32 edgeCode;
+
+static u32 edgeRecord(u32 code) {
+    edgeCode = code;
+    return 1;                   /* EXCEPTION_EXECUTE_HANDLER */
+}
+
 static u32 __stdcall edgeThread(void *parameter) {
     u8 *pages = VirtualAlloc(NULL, 2 * PAGE_BYTES, MEM_COMMIT | MEM_RESERVE,
                              PAGE_EXECUTE_READWRITE);
@@ -254,7 +264,7 @@ static u32 __stdcall edgeThread(void *parameter) {
 
     (void)parameter;
     if (pages == NULL) {
-        return 0;
+        return 2;
     }
     /* Written through the data mapping and flushed, because nothing makes the
      * fetch see it otherwise */
@@ -266,27 +276,44 @@ static u32 __stdcall edgeThread(void *parameter) {
     VirtualFree(pages + PAGE_BYTES, PAGE_BYTES, MEM_DECOMMIT);
 
     fn = (u32(*)(const volatile u32 *))(void *)(pages + PAGE_BYTES - 4);
-    (void)fn(&word);
-    return 0;
+    edgeCode = 0;
+
+    __try {
+        (void)fn(&word);
+        /* Returned: the page was still there, or the read was carried out
+         * some other way. Either way there was no fault to report */
+        return 1;
+    } __except (edgeRecord(__exception_code())) {
+        return 0;
+    }
 }
 
 /* The one group that cannot be reported like the others, because the way it
  * would end in a wrong result is the machine going away rather than a number
  * coming back wrong. Reaching the line after the wait is the whole test */
 static void reportEdge(void) {
-    HANDLE thread = CreateThread(NULL, 0, edgeThread, NULL, 0, NULL);
+    HANDLE thread;
     DWORD code = 0;
 
+    thread = CreateThread(NULL, 0, edgeThread, NULL, 0, NULL);
     if (thread == NULL) {
         conWriteZ("  FAIL page edge: no thread\n");
         failures++;
         return;
     }
     WaitForSingleObject(thread, INFINITE);
-    if (!GetExitCodeThread(thread, &code)
-        || code != EXCEPTION_ACCESS_VIOLATION) {
+    if (!GetExitCodeThread(thread, &code) || code != 0) {
         conWriteZ("  FAIL page edge: the thread ended with ");
         conHex32(code);
+        conWriteZ("\n");
+        failures++;
+        return;
+    }
+    /* The only thing inside the guarded block is the call, so a fault taken
+     * there is this instruction's */
+    if (edgeCode != EXCEPTION_ACCESS_VIOLATION) {
+        conWriteZ("  FAIL page edge: the handler saw ");
+        conHex32(edgeCode);
         conWriteZ(" rather than an access violation\n");
         failures++;
         return;

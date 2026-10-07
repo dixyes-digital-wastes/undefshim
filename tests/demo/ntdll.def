@@ -1,0 +1,6 @@
+; What __try/__except needs beyond kernel32: clang turns the block into a scope
+; table in .xdata and a call to a personality routine, and this is it. ntdll
+; exports it; vcruntime140 does too and is not in a Windows PE image.
+LIBRARY ntdll.dll
+EXPORTS
+__C_specific_handler

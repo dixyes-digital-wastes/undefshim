@@ -35,11 +35,14 @@ all: $(addsuffix .exe,$(DEMOS))
 kernel32.lib: kernel32.def
 	$(LLVM_LIB) /machine:arm64 /def:kernel32.def /out:$@
 
+ntdll.lib: ntdll.def
+	$(LLVM_LIB) /machine:arm64 /def:ntdll.def /out:$@
+
 %.o: %.c win_common.h
 	$(CC) $(CFLAGS) -c $< -o $@
 
-%.exe: %.o win_console.o kernel32.lib
+%.exe: %.o win_console.o kernel32.lib ntdll.lib
 	$(CC) $(LDFLAGS) $^ -o $@
 
 clean:
-	rm -f $(OBJS) $(DEMOS:=.exe) kernel32.lib
+	rm -f $(OBJS) $(DEMOS:=.exe) kernel32.lib ntdll.lib
