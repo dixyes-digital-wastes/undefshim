@@ -536,6 +536,13 @@ def main():
         return 0
 
     want = set(s.strip() for s in args.want.split(",")) if args.want else set()
+    # A state the colours cannot tell apart is one only the text can, so asking
+    # for one of those reads the text too. Without this the wait is for a state
+    # that is never produced - the reader only ever answers with the colours -
+    # and it runs out its whole timeout on a screen that has been saying what
+    # was wanted all along
+    if want & {name for name, _ in TEXT_STATES}:
+        args.text = True
     looping = bool(want) or bool(args.poll) or args.stable > 0 or args.stuck > 0
 
     with tempfile.TemporaryDirectory() as tmp:
