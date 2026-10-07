@@ -214,10 +214,19 @@ UsVBARTables usFindVBARTables(UsImage *img);
  * The offsets are the ones a running exception selects between: a synchronous
  * exception taken at EL1 with SP_EL1 uses the second group, and that is the
  * shape of every exception this project exists to handle
+ *
+ * The asynchronous three of the second group are taken over as well. They are
+ * not the exceptions that carry an RCpc load, but they are the ones that reach
+ * the kernel's own "an exception on the exception stack" handler, which is a
+ * bugcheck with no way to see afterwards what arrived; taking them over is
+ * what makes that answerable
  */
 typedef enum UsVectorSlot_e {
     UsVectorSlotEL1tSync = 0,  /* +0x000 */
     UsVectorSlotEL1hSync = 4,  /* +0x200 */
+    UsVectorSlotEL1hIrq = 5,   /* +0x280 */
+    UsVectorSlotEL1hFiq = 6,   /* +0x300 */
+    UsVectorSlotEL1hSError = 7, /* +0x380 */
     UsVectorSlotEL0Sync32 = 8, /* +0x400, the kernel's lower EL entry */
 } UsVectorSlot;
 

@@ -101,8 +101,15 @@ bool usArmTransfer(UsSession *s) {
  * be in the same image as the slots they are reached from, because the branch
  * that reaches them is relative and the image moves when the address space is
  * rebuilt
+ *
+ * Six slots: the three synchronous entries, and the three asynchronous ones
+ * of the same group. The asynchronous three are taken over as well. They are
+ * not the slots an RCpc load arrives at, but they are the three that reach the
+ * kernel's own "an exception on the exception stack" handler, which is a
+ * bugcheck whose cause nothing else records; diverting them is what makes that
+ * answerable, and nothing else uses them
  */
-#define US_STUB_SLOTS 3U
+#define US_STUB_SLOTS 6U
 
 
 typedef struct UsArmTarget_t {
@@ -118,10 +125,17 @@ typedef struct UsArmTarget_t {
  * Which stub shape a vector slot needs. The three synchronous entries differ in
  * what they may use to keep x18 and in whether a data abort has to reach the
  * payload; see core/thunk.h
+ *
+ * The asynchronous three have the exception stack in use, so they take the
+ * EL1h shape: x18 is rebuilt from TPIDR_EL1 rather than saved, which is what
+ * makes an entry with a stale SP_EL1 harmless
  */
 static UsStubSlot stubSlotOf(UsVectorSlot slot) {
     switch (slot) {
     case UsVectorSlotEL1hSync:
+    case UsVectorSlotEL1hIrq:
+    case UsVectorSlotEL1hFiq:
+    case UsVectorSlotEL1hSError:
         return UsStubSlotEL1h;
     case UsVectorSlotEL0Sync32:
         return UsStubSlotEL0;
@@ -257,14 +271,21 @@ static bool armSlot(UsSession *s, const UsArmTarget *target) {
 
 static bool armImage(UsSession *s, UsImageKind kind, size_t *armed) {
     /*
-     * The SPx slot always, the others when asked for. All three are synchronous
-     * entries: EL1t and EL1h for the kernel's own code, EL0 for the user's, and
-     * an LDAPR in any of them is an undefined instruction on this hardware.
-     * Leaving one out means that one's loads are not carried out at all
+     * The SPx slot always, the others when asked for. All six are entries the
+     * kernel's own code can reach: the synchronous three carry the RCpc loads,
+     * and the asynchronous three are the ones that would otherwise reach the
+     * kernel's own stack exception handler
+     *
+     * The order matters: the lower EL entry is last, so a table that gets
+     * every slot but that one - which is what the loader's table wants, since
+     * nothing runs at EL0 while the loader has it - is the first five
      */
     const UsVectorSlot slots[US_STUB_SLOTS] = {
         UsVectorSlotEL1tSync,
         UsVectorSlotEL1hSync,
+        UsVectorSlotEL1hIrq,
+        UsVectorSlotEL1hFiq,
+        UsVectorSlotEL1hSError,
         UsVectorSlotEL0Sync32,
     };
     /*
