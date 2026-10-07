@@ -144,6 +144,29 @@ def cmd(sock_file, obj):
             return r
 
 
+def monitorAnswers(port, attempts=5):
+    """Whether the monitor is there at all.
+
+    Asked separately from whoever reported it missing, because the monitor
+    takes one conversation at a time: a reader that has just let go of it can
+    refuse the next one for a moment, and that looks exactly like a machine
+    that is no longer running.
+    """
+    for attempt in range(attempts):
+        try:
+            sock = socket.create_connection(("127.0.0.1", port), timeout=20)
+            sock.settimeout(20)
+            f = sock.makefile("rwb")
+            f.readline()
+            cmd(f, {"execute": "qmp_capabilities"})
+            sock.close()
+            return True
+        except (OSError, SystemExit, TimeoutError):
+            if attempt + 1 < attempts:
+                time.sleep(0.5)
+    return False
+
+
 def findKernelBase(qmp_file, pc):
     """The kernel's base, from the shape of its vector table.
 
@@ -285,14 +308,25 @@ def main():
     # generous rather than tight, but it is not the whole twenty minutes a
     # slow boot would need -- this answers "did it crash", not "did it boot".
     ap.add_argument("--catch-timeout", type=float, default=180)
-    ap.add_argument("--arm", default="true",
-                    help="whether to take the synchronous slots over")
-    ap.add_argument("--arm-slot0", default="true",
-                    help="whether to take over the SP0 synchronous slot too")
-    ap.add_argument("--rewrite", default="true",
+    ap.add_argument("--image-rewrite", default="true",
                     help="whether to replace the RCpc loads in the images")
+    ap.add_argument("--el0-rewrite", default="true",
+                    help="whether to replace them in user-mode pages as they "
+                         "trap")
+    ap.add_argument("--driver-rewrite", default="true",
+                    help="whether to replace them in a driver as it is loaded")
+    ap.add_argument("--arm", default="true",
+                    help="whether to take the vector slots over: the three "
+                         "synchronous entries and the three asynchronous ones "
+                         "of the same group")
+    ap.add_argument("--arm-slot0", default="true",
+                    help="whether to take over the EL1t synchronous slot too, "
+                         "as well as the group the kernel runs under")
     ap.add_argument("--vamap", default="true",
                     help="whether to register the runtime VA notification")
+    ap.add_argument("--handover", default="true",
+                    help="whether to take over the branch the loader enters "
+                         "the kernel with")
     ap.add_argument("--spx-stack", default="false",
                     help="whether the stub may push on the SPx vector too")
     ap.add_argument("--descriptor-base-rva", default="",
@@ -332,18 +366,28 @@ width = 32
 [log]
 level = "info"
 
-[scan]
-ldaprRewrite = %s
+[ldapr]
+imageInplaceRewrite = %s
+el0InplaceRewrite = %s
+driverInplaceRewrite = %s
 
 [debug]
-enabled = true
-arm = %s
-armSlot0 = %s
+notArmVectors = %s
+notArmVectorsEl1t = %s
+notArmHandover = %s
+notVamap = %s
 spxStack = %s
-vamap = %s
-""" % (args.rewrite, args.arm, args.arm_slot0, args.spx_stack, args.vamap))
+""" % (args.image_rewrite, args.el0_rewrite, args.driver_rewrite,
+       str(args.arm == "false").lower(),
+       str(args.arm_slot0 == "false").lower(),
+       str(args.handover == "false").lower(),
+       str(args.vamap == "false").lower(), args.spx_stack))
+        # The key names are the ones core/cfg.c reads, spelled the way it
+        # spells them. This is not pedantry: an unknown key is not an error,
+        # so a name that does not match is a setting that silently does
+        # nothing, and this file shipped with three of those.
         if args.descriptor_base_rva:
-            f.write('\n[kernel]\ndescriptorBaseRva = %s\n' % args.descriptor_base_rva)
+            f.write('\n[kernel]\ndescriptorBaseRVA = %s\n' % args.descriptor_base_rva)
         if args.spin_rva is not None:
             f.write("""
 [[debug.patch]]
@@ -484,17 +528,23 @@ tag = "spin probe"
                 [sys.executable, "-u", "tests/deploy/watch.py",
                  "--qmp-port", str(args.qmp_port),
                  "--timeout", str(args.catch_timeout)])
-        if verdict == 1:
+        if verdict == 2:
+            # Two readings are possible: the machine really is gone, which is
+            # what a reset with no reboot looks like - a triple fault ends
+            # QEMU - or the monitor refused the connection for a moment while
+            # the reader before this one was still letting go of it. Asking
+            # once more tells them apart, and reading it as a reset invents an
+            # outcome out of a race
+            if not monitorAnswers(args.qmp_port):
+                log("the machine went away: it reset, and QEMU exited")
+                tail = open(serialLog, "rb").read().decode("latin1")[-1200:]
+                log("last serial output:\n%s" % tail)
+                return 2
+            log("the watch lost the monitor for a moment; the machine is "
+                "still there")
+        elif verdict == 1:
             log("the machine was still working when the watch ran out")
             return 1
-        if verdict == 2:
-            # The monitor is gone, which is what a machine that reset looks
-            # like from outside -- a triple fault with no reboot ends QEMU.
-            # That is a result, not a failure of the watch.
-            log("the machine went away: it reset, and QEMU exited")
-            tail = open(serialLog, "rb").read().decode("latin1")[-1200:]
-            log("last serial output:\n%s" % tail)
-            return 2
 
         # The colour is necessary and not sufficient: it says a bugcheck was
         # drawn, not which one. The code and its arguments come from memory.

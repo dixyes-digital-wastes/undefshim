@@ -220,7 +220,7 @@ int main(int argc, char **argv) {
     /* Handed over rather than freed: the patch table names stages that are
      * loaded long after this function has returned */
     gSession.config = cfg;
-    usLogV("pool", "pa=" US_VALUE("%#llx") " va=" US_VALUE("%#llx")
+    usLogI("pool", "pa=" US_VALUE("%#llx") " va=" US_VALUE("%#llx")
            " bytes=" US_VALUE("%#llx") " slots=" US_VALUE("%u") "\n",
            (unsigned long long)gSession.poolAlloc.basePA,
            (unsigned long long)gSession.poolAlloc.baseVA,

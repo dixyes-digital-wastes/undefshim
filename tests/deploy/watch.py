@@ -66,22 +66,31 @@ def processors(f):
                  for m in re.finditer(r"CPU#(\d+)\s*\n\s*PC=([0-9a-f]+)", out))
 
 
-def connect(port, timeout):
+def connect(port, timeout, attempts=10):
     """The monitor, or None when there is nothing to talk to.
 
     A machine that has reset is a machine whose monitor socket is gone, and
     that is an answer rather than a failure: it is what a triple fault looks
     like from outside.
+
+    One refusal is not that answer. The monitor takes one conversation at a
+    time and the callers hand it from one to the next, so a connection that
+    arrives while the last reader is still letting go is refused for a moment
+    and accepted after. Asking again is what tells those two apart - a single
+    refusal read as a reset is a result invented out of a race
     """
-    try:
-        sock = socket.create_connection(("127.0.0.1", port), timeout=timeout)
-        sock.settimeout(timeout)
-        f = sock.makefile("rwb")
-        f.readline()
-        cmd(f, {"execute": "qmp_capabilities"})
-        return sock, f
-    except (OSError, SystemExit, TimeoutError):
-        return None, None
+    for attempt in range(attempts):
+        try:
+            sock = socket.create_connection(("127.0.0.1", port), timeout=timeout)
+            sock.settimeout(timeout)
+            f = sock.makefile("rwb")
+            f.readline()
+            cmd(f, {"execute": "qmp_capabilities"})
+            return sock, f
+        except (OSError, SystemExit, TimeoutError):
+            if attempt + 1 < attempts:
+                time.sleep(0.5)
+    return None, None
 
 
 def poolCounters(f, pool):
