@@ -96,6 +96,36 @@ typedef struct UsSession_t {
     bool           imageInplaceRewrite;
 
     /*
+     * Whether to cover the drivers the kernel loads after it has started
+     *
+     * The boot cannot replace anything in them: they do not exist yet, and by
+     * the time they do the kernel's own integrity check is watching. What it
+     * can do is take over the call the kernel makes inside its own driver
+     * loader, which is a call site that exists in every build and runs exactly
+     * once per driver, between the image being mapped and any of its code
+     * running
+     *
+     * Off means drivers are covered only by the exception path, which is slow
+     * and correct. That is the whole of the difference: whether this is on is
+     * a question of speed
+     */
+    bool           driverInplaceRewrite;
+
+    /*
+     * What is left of the run of zero words in the kernel's own text, once the
+     * vector stubs have taken their share
+     *
+     * One run has one owner. The locator answers with the longest run in the
+     * image wherever it is asked from, so a second call to it would hand out
+     * the same bytes again and the two writes would land on each other - which
+     * on a machine is a trap taken through a stub that a thunk has since been
+     * written over. What is recorded here is the remainder, and the request
+     * size is what makes the run chosen large enough for both
+     */
+    uint32_t       kernelSpareRVA;
+    uint32_t       kernelSpareBytes;
+
+    /*
      * The parsed configuration, owned here. Its patch table names stages that
      * are not loaded yet when the driver starts, so it has to outlive the
      * function that read it

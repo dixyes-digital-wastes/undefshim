@@ -37,6 +37,10 @@ imageInplaceRewrite = true
 # Replace them in user mode at the moment one traps. Turn it off to keep the
 # kernel from ever writing to a page it does not own.
 el0InplaceRewrite = true
+# Cover the drivers the kernel loads after it has started, by taking over the
+# call its own driver loader makes. Off means every RCpc load in a driver keeps
+# taking the exception, which is slower and always correct.
+driverInplaceRewrite = true
 
 [stats]
 # Count where traps are taken, in the pool. It costs a lookup per trap.

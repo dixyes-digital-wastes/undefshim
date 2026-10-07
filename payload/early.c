@@ -96,6 +96,84 @@ static bool publishStub(UsPayloadStub *stub, uint64_t address, uint64_t target) 
 }
 
 /*
+ * Diverting the kernel's driver load call, at the same moment and with the
+ * same reasoning as the stubs above
+ *
+ * A driver is loaded long after this, so nothing here has to be in place
+ * before anything else is, and that is what makes the order the safe one: the
+ * thunk is written and read back first, and only then is the call pointed at
+ * it. A thunk nothing reaches is twenty bytes of a run of zeros that was not
+ * being used, while a call pointed at half a thunk is a machine that does not
+ * boot. So a refusal anywhere leaves the kernel loading drivers exactly as it
+ * did before, which is the slow path and not a broken one
+ *
+ * Both writes go through the probe, which is the only honest way to ask a
+ * mapping whether it permits a store: a refused store answers instead of
+ * faulting, and a fault here would be inside the handover, with the kernel not
+ * yet running and nothing to recover with
+ *
+ * The instruction cache has to be told, and the order of the two halves is the
+ * reason: a diverted call is fetched and executed, and on this architecture
+ * those are different caches
+ */
+static void publishDriverLoad(UsPayloadConfig *cfg, uint64_t kernelBase,
+                              uint64_t target) {
+    uint32_t words[US_SLOT_TARGET_WORDS];
+    uint32_t divert;
+    uint64_t thunk;
+    uint64_t call;
+
+    if (kernelBase == 0 || cfg->driverLoadCallRVA == 0
+        || cfg->driverLoadThunkRVA == 0) {
+        return;
+    }
+    thunk = kernelBase + cfg->driverLoadThunkRVA;
+    call = kernelBase + cfg->driverLoadCallRVA;
+
+    usEncodeThunkTarget(words, target);
+    for (uint32_t i = 0; i < US_SLOT_TARGET_WORDS; i++) {
+        uint32_t readback = 0;
+
+        if (!usPayloadProbeWriteWord(thunk + i * 4U, words[i])) {
+            return;
+        }
+        /* A store that landed somewhere else is not something the mapping
+         * refuses, and the call is about to be pointed at these words */
+        if (!usPayloadProbeReadWord(thunk + i * 4U, &readback)
+            || readback != words[i]) {
+            return;
+        }
+    }
+    usCacheFlushRange((const void *)(uintptr_t)thunk, US_SLOT_TARGET_BYTES);
+
+    /*
+     * The displacement is between two RVAs of the same image, so it does not
+     * depend on where either of them ended up
+     *
+     * A call and not a branch, and that is not a detail: `b` leaves x30 alone,
+     * so the entry would return past the whole of the function whose call it
+     * took over, leaving that function's frame on the stack. `bl` is what puts
+     * the return address where the code after the call expects to find it, and
+     * the thunk's `br` then leaves that alone for the entry to hand back
+     */
+    if (!usEncodeBranchLink((uint32_t)cfg->driverLoadCallRVA,
+                            (uint32_t)cfg->driverLoadThunkRVA, &divert)) {
+        return;
+    }
+    if (!usPayloadProbeWriteWord(call, divert)) {
+        return;
+    }
+    usCacheFlushRange((const void *)(uintptr_t)call, sizeof(divert));
+
+    /*
+     * Last, and only now: the entry reads this to know where the call it
+     * interrupted was going. Until the call points at the thunk nothing can
+     * reach the entry, so a value left unset is a value nothing reads
+     */
+    cfg->driverLoadTarget = kernelBase + cfg->driverLoadTargetRVA;
+}
+
+/*
  * Points every stub at the payload's runtime address, at the handover
  *
  * The runtime address is known here: the address change ran before the
@@ -145,6 +223,7 @@ void usPayloadPublishAll(uint64_t kernelBase) {
          * on an exception comes back to */
         (void)publishStub(stub, address, target);
     }
+    publishDriverLoad(cfg, kernelBase, highVA + cfg->driverLoadEntryOffset);
 }
 
 /* What the last successful lookup produced, per slot */

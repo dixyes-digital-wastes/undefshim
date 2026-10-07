@@ -281,6 +281,7 @@ static bool armImage(UsSession *s, UsImageKind kind, size_t *armed) {
     UsImage *img = usRegistryGet(&s->registry, kind);
     UsVBARTables tables;
     UsSpareSlot hole;
+    uint32_t stubs;
 
     if (img == NULL) {
         return false;
@@ -289,15 +290,28 @@ static bool armImage(UsSession *s, UsImageKind kind, size_t *armed) {
     if (tables.count == 0) {
         return false;
     }
+    stubs = US_SLOT_RUNTIME_BYTES * US_STUB_SLOTS * (uint32_t)tables.count;
     /*
      * Where the stubs go. The hole has to be in the same image as the slots,
      * for the branch that reaches it
+     *
+     * The driver hook's thunk goes in the same run, so it is asked for in the
+     * same request: the locator answers with the longest run wherever it is
+     * asked from, and a second trip to it for the thunk would be answered with
+     * the same bytes the stubs are in
      */
-    hole = usLocateSpareSlot(img, US_SLOT_RUNTIME_BYTES * US_STUB_SLOTS
-                                 * (uint32_t)tables.count);
+    hole = usLocateSpareSlot(img, stubs
+                                 + (kind == UsImageNtoskrnl
+                                            && s->driverInplaceRewrite
+                                        ? US_SLOT_TARGET_BYTES
+                                        : 0U));
     if (!hole.found) {
         usLogE("arm", "no room in %s for a stub\n", usImageKindName(kind));
         return false;
+    }
+    if (kind == UsImageNtoskrnl) {
+        s->kernelSpareRVA = hole.rva + stubs;
+        s->kernelSpareBytes = hole.bytes > stubs ? hole.bytes - stubs : 0U;
     }
 
     usLogV("arm", "%s tables=" US_VALUE("%u") " stubs at +" US_VALUE("%#x")
@@ -363,5 +377,68 @@ bool usArmVectorTable(UsSession *s) {
         usLogE("arm", "nothing taken over\n");
         return false;
     }
+    return true;
+}
+
+/*
+ * Recording the kernel's driver load call, and where its thunk will go
+ *
+ * Nothing is written here. That is the design and not an omission: at the boot
+ * the kernel has no address and the payload has none that will survive, so
+ * there is nothing either of the two things being joined could be written with.
+ * Both exist at once at the handover - the same moment every vector stub is
+ * pointed at the payload - and that is where this is written, by the payload
+ * itself (see payload/early.c)
+ *
+ * What the boot does know is where each of them will be, in the one form that
+ * survives the switch: an RVA into the kernel image. So what it leaves behind is
+ * three of those and the entry's offset into the blob
+ *
+ * A refusal here is a machine that still works. The kernel loads its drivers
+ * through its own call, and the only thing lost is the speed of replacing their
+ * loads rather than carrying each one out as it traps
+ */
+bool usArmDriverLoadHook(UsSession *s) {
+    UsPayloadConfig *cfg;
+    UsDriverLoadHook hook;
+
+    if (!s->driverInplaceRewrite) {
+        return true;
+    }
+    if (!s->payloadPlaced) {
+        usLogE("arm", "no payload to divert a driver load into\n");
+        return false;
+    }
+    /*
+     * The thunk goes in the run the vector stubs are in, and that run is only
+     * recorded by arming them. So this depends on the vectors having been taken
+     * over - which is honest, because it also depends on them at run time: the
+     * replacement this entry will do faults on purpose, and the stub is what
+     * answers a fault of ours rather than the kernel's
+     */
+    if (s->kernelSpareBytes < US_SLOT_TARGET_BYTES) {
+        usLogE("arm", "no room beside the vector stubs for a thunk\n");
+        return false;
+    }
+    hook = usLocateDriverLoadHook(usRegistryGet(&s->registry, UsImageNtoskrnl));
+    if (!hook.found) {
+        usLogE("arm", "no driver load call to take over\n");
+        return false;
+    }
+    cfg = (UsPayloadConfig *)(uintptr_t)s->payloadPlace.configVA;
+    cfg->driverLoadThunkRVA = s->kernelSpareRVA;
+    cfg->driverLoadCallRVA = hook.callRVA;
+    cfg->driverLoadTargetRVA = hook.witnessRVA;
+    cfg->driverLoadEntryOffset = US_PAYLOAD_DRIVERHOOK_OFFSET;
+    /*
+     * Printed at the boot, because it is the last moment anything can be said:
+     * by the time the hook is written the console's page is not in the kernel's
+     * tables and the report has to go to a pool instead. It names both halves,
+     * so a call that was recorded and a call that was not can be told apart
+     */
+    usLogI("arm", "driver load +" US_VALUE("%#x") " -> thunk +" US_VALUE("%#x")
+           " -> payload +" US_VALUE("%#x") ", call's target +" US_VALUE("%#x") "\n",
+           hook.callRVA, s->kernelSpareRVA, US_PAYLOAD_DRIVERHOOK_OFFSET,
+           hook.witnessRVA);
     return true;
 }

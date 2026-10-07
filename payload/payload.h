@@ -277,6 +277,37 @@ typedef struct UsPayloadConfig_t {
     uint64_t highPoolVA;
     uint64_t stubCount;
     UsPayloadStub stubs[US_PAYLOAD_MAX_STUBS];
+
+    /*
+     * The kernel's driver load call, and the thunk that diverts it
+     *
+     * All four are RVAs into the kernel image, which is what makes them
+     * survive the switch: the image moves when the address space is rebuilt
+     * and its RVAs do not. None of them is written at the boot, because the
+     * kernel has no address there and the payload's is not settled either.
+     * The handover is where both exist at once, and it is the same moment and
+     * the same mechanism every vector stub is pointed at the payload by
+     *
+     * thunkRVA is where the thunk goes, callRVA is the call to divert,
+     * targetRVA is where that call went before it was diverted - the kernel
+     * function the hook has to reach once it has done its work.
+     *
+     * A callRVA of zero means the boot found no hook to take, and the kernel
+     * loads its drivers exactly as it did before: whatever this costs, it does
+     * not cost correctness, because a call that was never diverted is a call
+     * that still goes where it always went
+     */
+    uint64_t driverLoadThunkRVA;
+    uint64_t driverLoadCallRVA;
+    uint64_t driverLoadTargetRVA;
+    /* Into the blob: what the thunk branches to when it runs */
+    uint64_t driverLoadEntryOffset;
+    /*
+     * The same target as an address, and only known once the kernel has one.
+     * Written at the handover, and only when the hook is in place: together
+     * with callRVA it is the whole of what the entry needs
+     */
+    uint64_t driverLoadTarget;
 } UsPayloadConfig;
 
 /*

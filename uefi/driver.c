@@ -77,8 +77,10 @@ static void printConfig(const UsConfig *cfg) {
            boolWord(cfg->uartColour));
 
     usLogV("config", "[ldapr] imageInplaceRewrite=" US_VALUE("%s")
-           " el0InplaceRewrite=" US_VALUE("%s") "\n",
-           boolWord(cfg->imageInplaceRewrite), boolWord(cfg->el0InplaceRewrite));
+           " el0InplaceRewrite=" US_VALUE("%s")
+           " driverInplaceRewrite=" US_VALUE("%s") "\n",
+           boolWord(cfg->imageInplaceRewrite), boolWord(cfg->el0InplaceRewrite),
+           boolWord(cfg->driverInplaceRewrite));
 
     usLogV("config", "[stats] enabled=" US_VALUE("%s") "\n",
            boolWord(cfg->statsEnabled));
@@ -213,6 +215,7 @@ int main(int argc, char **argv) {
     gSession.spxStack = cfg->spxStack;
     gSession.armOnLoad = cfg->armOnLoad;
     gSession.imageInplaceRewrite = cfg->imageInplaceRewrite;
+    gSession.driverInplaceRewrite = cfg->driverInplaceRewrite && !cfg->notArmVectors;
 
     /* Handed over rather than freed: the patch table names stages that are
      * loaded long after this function has returned */

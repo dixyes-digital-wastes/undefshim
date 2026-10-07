@@ -47,7 +47,7 @@ PAYLOAD_CFLAGS := --target=aarch64-none-elf -std=gnu23 -ffreestanding \
 
 PAYLOAD_SRCS := $(PAYLOAD_DIR)/payload.c $(PAYLOAD_DIR)/uart.c $(PAYLOAD_DIR)/us_mem.c \
                 $(PAYLOAD_DIR)/selfmap.c $(PAYLOAD_DIR)/transfer.c $(PAYLOAD_DIR)/vamap.c \
-                $(PAYLOAD_DIR)/early.c $(PAYLOAD_DIR)/rewrite.c \
+                $(PAYLOAD_DIR)/early.c $(PAYLOAD_DIR)/rewrite.c $(PAYLOAD_DIR)/drvhook.c \
                 core/cache.c core/thunk.c \
                 core/pgtable.c core/par.c core/ldapr.c core/ldr.c core/stackgen.c core/translate.c
 PAYLOAD_ASM := $(PAYLOAD_DIR)/entry.S $(PAYLOAD_DIR)/end.S
@@ -187,7 +187,8 @@ $(PAYLOAD_BUILD)/%.o: $(PAYLOAD_DIR)/%.S $(US_HEADERS) | $(PAYLOAD_BUILD)
 # plausible looking answer rather than an obvious failure, so the header rule
 # refuses zero as well.
 PAYLOAD_KEEP := -Wl,--undefined=usTransferEntry -Wl,--undefined=usVAMapRecord \
-                -Wl,--undefined=usVAMapHook -Wl,--undefined=usVAMapNotify
+                -Wl,--undefined=usVAMapHook -Wl,--undefined=usVAMapNotify \
+                -Wl,--undefined=usDriverLoadEntry
 
 $(PAYLOAD_ELF): $(PAYLOAD_OBJS) $(PAYLOAD_DIR)/payload.lds
 	$(CC) --target=aarch64-none-elf -nostdlib -fuse-ld=lld \
@@ -226,7 +227,8 @@ $(PAYLOAD_HDR): $(PAYLOAD_BIN)
 	@for sym in usSyncEntry:ENTRY usSyncEntrySP0:ENTRYSP0 usPayloadConfigBlock:CONFIG usPayloadSelfTest:SELFTEST \
 	           usPayloadHandle:HANDLE usTransferEntry:TRANSFER usVAMapRecord:VAMAP \
 	           usVAMapHook:VAMAPHOOK usVAMapNotify:VAMAPNOTIFY \
-	           usStackLookup:STACKLOOKUP usSyncStackReady:READY usSyncNoStack:NOSTACK; do \
+               usStackLookup:STACKLOOKUP usSyncStackReady:READY usSyncNoStack:NOSTACK \
+               usDriverLoadEntry:DRIVERHOOK; do \
 	    name=$${sym%%:*}; tag=$${sym##*:}; \
 	    off=$$(llvm-nm $(PAYLOAD_ELF) | awk -v w="$$name" \
 	        '$$3==w {v=strtonum("0x"$$1)} $$3=="usPayloadStart" {s=strtonum("0x"$$1)} END{print v-s}'); \

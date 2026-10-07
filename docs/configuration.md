@@ -66,10 +66,13 @@ What is done to RCpc loads (`ldapr`, `ldaprb`, `ldaprh`) that the hardware canno
 |---|---|---|
 | `imageInplaceRewrite` | `true` | Replace each one in ntoskrnl and winload with an ordinary acquire load before either runs. This is what makes the kernel usable: without it every RCpc load takes an exception. |
 | `el0InplaceRewrite` | `true` | Also replace them in user-mode pages, at the moment one traps. Off means every user-mode RCpc load keeps taking the exception, which is slower and always correct. |
+| `driverInplaceRewrite` | `true` | Replace them in the drivers the kernel loads once it is running, at the moment each one is loaded. Off means every driver RCpc load keeps taking the exception, which is slower and always correct. |
 
-`imageInplaceRewrite` covers the images the boot loads. It does not cover anything loaded later, which is what `el0InplaceRewrite` and the trap path are for. Neither key can make the machine wrong by being off: what an unreplaced load costs is an exception, and the exception path is there to answer it.
+`imageInplaceRewrite` covers the images the boot loads. It does not cover anything loaded later, which is what `driverInplaceRewrite`, `el0InplaceRewrite` and the trap path are for. None of them can make the machine wrong by being off: what an unreplaced load costs is an exception, and the exception path is there to answer it.
 
-The kernel's own text is never written at run time whatever these say: a modified function or `.pdata` is what its integrity check reports.
+`driverInplaceRewrite` takes over the call the kernel makes inside its own driver loader, so the replacement happens between an image being mapped and any of its code running. That is the same moment the kernel's own text was rewritten in, and it is the last one available: a driver does not exist at the boot, and by the time it does run the kernel's integrity check is watching its text.
+
+Neither of the replacement keys can make the machine wrong by being off. The kernel's own text is never written at run time whatever they say: a modified function or `.pdata` is what its integrity check reports, which is why the replacement is made during the window the kernel's own loader holds an image in rather than while it runs.
 
 ## `[stats]`
 

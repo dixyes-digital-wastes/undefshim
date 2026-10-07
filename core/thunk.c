@@ -12,6 +12,8 @@
 #define US_MOVK_OPCODE 0xF2800000U
 #define US_BR_OPCODE 0xD61F0000U
 #define US_STUB_REG 18U
+/* x17: the second of the two registers the ABI leaves dead at a call */
+#define US_THUNK_REG 17U
 
 static uint32_t movz(uint32_t value, unsigned shift, unsigned reg) {
     return US_MOVZ_OPCODE | (((shift / 16U) & 3U) << 21)
@@ -34,12 +36,33 @@ bool usEncodeBranch(uint32_t from, uint32_t to, uint32_t *out) {
     return true;
 }
 
+bool usEncodeBranchLink(uint32_t from, uint32_t to, uint32_t *out) {
+    int64_t delta = (int64_t)(int32_t)to - (int64_t)(int32_t)from;
+
+    if (delta < -(int64_t)US_BRANCH_RANGE || delta > (int64_t)(US_BRANCH_RANGE - 4)
+        || (delta & 3) != 0) {
+        return false;
+    }
+    *out = US_BRANCH_LINK_WORD | (((uint32_t)(delta >> 2)) & 0x03FFFFFFU);
+    return true;
+}
+
 void usEncodeSlotTarget(uint32_t out[US_SLOT_TARGET_WORDS], uint64_t target) {
     out[0] = movz((uint32_t)target, 0, US_STUB_REG);
     out[1] = movk((uint32_t)(target >> 16), 16, US_STUB_REG);
     out[2] = movk((uint32_t)(target >> 32), 32, US_STUB_REG);
     out[3] = movk((uint32_t)(target >> 48), 48, US_STUB_REG);
     out[4] = US_BR_OPCODE | (US_STUB_REG << 5);
+}
+
+void usEncodeThunkTarget(uint32_t out[US_SLOT_TARGET_WORDS], uint64_t target) {
+    const uint32_t reg = US_THUNK_REG;
+
+    out[0] = movz((uint32_t)target, 0, reg);
+    out[1] = movk((uint32_t)(target >> 16), 16, reg);
+    out[2] = movk((uint32_t)(target >> 32), 32, reg);
+    out[3] = movk((uint32_t)(target >> 48), 48, reg);
+    out[4] = US_BR_OPCODE | (reg << 5);
 }
 
 /*

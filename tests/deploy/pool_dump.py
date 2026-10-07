@@ -77,7 +77,17 @@ def entryOffsets():
     at += 8                                  # emuCount
     at += EMU_SLOTS * EMU_WORDS * 8          # emu
     at += TRACE_SLOTS * TRACE_WORDS * 8      # handback
-    return {"rewriteCount": at, "rewriteWritten": at + 8, "rewrite": at + 16}
+    rewrite = at + 16
+    driver = rewrite + REWRITE_SLOTS * REWRITE_WORDS * 8
+    return {
+        "rewriteCount": at,
+        "rewriteWritten": at + 8,
+        "rewrite": rewrite,
+        "driverLoads": driver,
+        "driverImage": driver + 8,
+        "driverSize": driver + 16,
+        "driverEntry": driver + 24,
+    }
 
 
 def cmd(f, obj):

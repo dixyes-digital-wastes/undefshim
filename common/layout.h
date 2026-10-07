@@ -276,6 +276,21 @@ typedef struct UsPoolEntry_t {
     uint64_t rewriteWritten;  /* sites that now hold the substitute */
     UsPoolRewrite rewrite[US_POOL_REWRITE_SLOTS];
 
+    /*
+     * The kernel's driver load call, as it arrived at the payload
+     *
+     * Whether the hook is in place at all is one question and whether anything
+     * comes through it is another, and only the second one says the mechanism
+     * works: a thunk nothing reaches and a thunk that was never written look
+     * the same from every other angle. The count answers the first, and the
+     * image answers the second - an address that names a PE with a sensible
+     * size is a driver that was really being loaded
+     */
+    uint64_t driverLoads;   /* how many calls were diverted to us */
+    uint64_t driverImage;   /* the image the last one was loading */
+    uint64_t driverSize;    /* its SizeOfImage, from its own header */
+    uint64_t driverEntry;   /* and its entry point, as an RVA */
+
 } UsPoolEntry;
 
 typedef struct UsPool_t {

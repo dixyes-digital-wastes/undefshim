@@ -74,6 +74,15 @@ imageInplaceRewrite = true
 # check reports.
 el0InplaceRewrite = true
 
+# Cover the drivers the kernel loads once it is running. They do not exist at
+# the boot, so they cannot be rewritten before they run, and by the time they do
+# the kernel's own integrity check is watching its text. What is taken over
+# instead is the call the kernel makes inside its own driver loader, which runs
+# between an image being mapped and any of its code executing - the same window
+# the kernel itself was rewritten in. Off means drivers are covered only by the
+# exception path: slower, and just as correct.
+driverInplaceRewrite = true
+
 [stats]
 # Keep a count, in the pool, of the addresses traps are taken at. It costs a
 # lookup on every exception, so it is off unless asked for; the count is read

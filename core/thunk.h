@@ -70,6 +70,20 @@ typedef enum UsStubSlot_e {
 /* Stage this sequence after the stub before publishing a branch to it */
 void usEncodeSlotTarget(uint32_t out[US_SLOT_TARGET_WORDS], uint64_t target);
 
+/*
+ * The same sequence, for a thunk a diverted call reaches instead of an
+ * exception
+ *
+ * x17 rather than x18, and that is the whole of the difference. A stub is
+ * entered from a vector slot, where there is no register the interrupted code
+ * is not using and x18 has to be spent and given back; a diverted call is
+ * entered as a call, where x16 and x17 are dead by the calling convention.
+ * Nothing has to be saved, and the per-processor block the kernel keeps in x18
+ * is left alone - which is not a refinement here, because the kernel code being
+ * returned into reads it
+ */
+void usEncodeThunkTarget(uint32_t out[US_SLOT_TARGET_WORDS], uint64_t target);
+
 /* Which word of a stub carries the branch to the payload's entry, and so the
  * one that is replaced once the rest of the stub is in place */
 uint32_t usSlotStubTargetIndex(UsStubSlot slot);
@@ -129,6 +143,19 @@ static inline uint64_t usStubSlotOffset(UsStubSlot slot) {
 #define US_BRANCH_CLASS_MASK 0xFC000000U
 
 bool usEncodeBranch(uint32_t from, uint32_t to, uint32_t *out);
+
+/*
+ * The same branch, but one that leaves its caller something to come back to
+ *
+ * This is not interchangeable with the one above and the difference is the
+ * whole reason a call cannot simply be replaced by a branch: `b` leaves x30
+ * alone, so an entry reached through it returns to whoever called the function
+ * being diverted rather than to the instruction after the call - which skips
+ * the rest of that function with its frame still on the stack. `bl` writes the
+ * address of the next instruction into x30 first, which is what the code after
+ * the call needs
+ */
+bool usEncodeBranchLink(uint32_t from, uint32_t to, uint32_t *out);
 
 /*
  * Reads a branch back: where it goes, in bytes from its own address

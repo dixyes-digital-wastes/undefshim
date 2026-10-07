@@ -92,6 +92,17 @@ void usWorkCollect(UsSession *session) {
         usConsoleMilestone("M6.5 armed");
     }
     /*
+     * The driver hook: recorded here, written by the payload at the handover.
+     * It is not a second arming - there is nothing to write now - and it is
+     * here rather than beside the stubs because the run its thunk goes in is
+     * the one the stubs took their share of, which the arming above is what
+     * worked out
+     */
+    if (req.complete && session->driverInplaceRewrite
+        && usArmDriverLoadHook(session)) {
+        usConsoleMilestone("M6.5 driver hook");
+    }
+    /*
      * Replacing the instructions happens after the arming, not before.
      * The arming scans the image's own code to find its vector table and
      * its free space, and scanning a rewritten image gives it different

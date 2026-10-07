@@ -464,6 +464,79 @@ static void testSlotTargetEncoding(void) {
     }
 }
 
+/*
+ * The same sequence for a diverted call, and the one difference is the whole
+ * of what this checks
+ *
+ * A stub is entered from a vector slot, where x18 has to be spent and given
+ * back. A diverted call is entered as a call, and the kernel keeps its
+ * per-processor block in x18 and reads it as soon as it gets control back - so
+ * a thunk that put its address there would be handing the kernel a corrupted
+ * block. It uses x17 instead, which the calling convention leaves dead at a
+ * call, and nothing has to be saved
+ *
+ * The register field is the check, and it is the same kind of check as the one
+ * above for x18: the encoder is the only thing that decides it, and a wrong
+ * answer here would be a fault in the kernel's own loader rather than anything
+ * this code could report
+ */
+static void testThunkTargetEncoding(void) {
+    static const uint64_t targets[] = {
+        0, 1, 0x13bc00bb0ULL, 0xfffff8027ae81000ULL,
+        0x0123456789ABCDEFULL, 0xFFFFFFFFFFFFFFFFULL,
+    };
+
+    for (size_t t = 0; t < sizeof(targets) / sizeof(targets[0]); t++) {
+        uint32_t thunk[US_SLOT_TARGET_WORDS + 1U];
+
+        thunk[US_SLOT_TARGET_WORDS] = 0xA5A5A5A5U;
+        usEncodeThunkTarget(thunk, targets[t]);
+        eq64("a thunk is the same length", thunk[US_SLOT_TARGET_WORDS], 0xA5A5A5A5U);
+        for (unsigned i = 0; i < 4U; i++) {
+            eq64("a thunk builds the address in x17", thunk[i],
+                 (i == 0 ? OP_MOVZ : OP_MOVK) | (i << 21)
+                 | ((uint32_t)((targets[t] >> (16U * i)) & 0xFFFFU) << 5)
+                 | 17U);
+        }
+        eq64("and branches through x17", thunk[4], OP_BR | (17U << 5));
+    }
+
+    /*
+     * The two branch forms, and the difference between them is the reason the
+     * diverted call needs the second one
+     *
+     * `b` leaves x30 alone, so an entry reached through one returns wherever
+     * the caller of the function being diverted was going to return - past the
+     * rest of that function, with its frame still on the stack. `bl` writes the
+     * address after itself into x30 first, which is what the code after a
+     * diverted call reads. Getting this wrong does not fail here: it corrupts
+     * the stack of the function whose call was taken over, and the machine then
+     * misbehaves somewhere with no visible connection to this code
+     */
+    {
+        uint32_t word = 0;
+
+        ok("a branch encodes", usEncodeBranch(0x1000, 0x2000, &word));
+        eq64("a branch is a b", word >> 26, US_BRANCH_OPCODE >> 26);
+        ok("a link branch encodes", usEncodeBranchLink(0x1000, 0x2000, &word));
+        eq64("a link branch is a bl", word >> 26, US_BRANCH_LINK_WORD >> 26);
+        /* And the two agree about the displacement, so the same distance is
+         * in reach of both */
+        {
+            uint32_t a = 0, b2 = 0;
+
+            ok("both encode", usEncodeBranch(0x1000, 0x2000, &a)
+                             && usEncodeBranchLink(0x1000, 0x2000, &b2));
+            eq64("only the opcode differs", a ^ b2,
+                 US_BRANCH_OPCODE ^ US_BRANCH_LINK_WORD);
+        }
+        /* Out of reach is refused the same way, rather than wrapping around */
+        ok("a link branch refuses a target out of reach",
+           !usEncodeBranchLink(0, US_BRANCH_RANGE, &word));
+        ok("and one that is not on a word", !usEncodeBranchLink(0, 2, &word));
+    }
+}
+
 /* Host model only: runtime cache maintenance is outside the encoder */
 static void runPublishedStub(const _Atomic uint32_t *runtime, uint64_t esr,
                              uint32_t insn, StubRun *run) {
@@ -559,6 +632,7 @@ int main(void) {
     testSlotStubKeepingRegisters();
     testSlotStubUserMode();
     testSlotTargetEncoding();
+    testThunkTargetEncoding();
     testSlotTargetPublication();
 
     return usCheckSummary(checks, failures);

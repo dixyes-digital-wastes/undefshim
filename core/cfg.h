@@ -82,6 +82,12 @@ typedef struct UsConfig_t {
      */
     bool          imageInplaceRewrite;
     bool          el0InplaceRewrite;
+    /*
+     * Whether to cover the images that are loaded after the kernel is running,
+     * by taking over the call the kernel makes inside its own driver loader.
+     * On unless turned off, and off costs exceptions rather than correctness
+     */
+    bool          driverInplaceRewrite;
 
     /*
      * Whether the handler keeps a count of where traps are taken. It costs a

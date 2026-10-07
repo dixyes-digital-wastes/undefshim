@@ -50,6 +50,17 @@ static int denyWrite;
 static bool wrongPhysical;
 static bool denyLast;
 
+/*
+ * The kernel image the driver hook works in: the thunk and the call that is
+ * diverted to it are both here, at RVAs the test chooses. One array stands in
+ * for the image, and kernelBase is set so that an RVA is an offset into it
+ */
+static uint8_t kernelImage[0x4000];
+static unsigned driverFlushes;
+/* The one address the probe refuses, so that "a refusal leaves the call alone"
+ * can be checked rather than argued */
+static uint64_t denyAt;
+
 UsPayloadConfig *usPayloadConfig(void) {
     return &cfg;
 }
@@ -109,6 +120,16 @@ static uint64_t convertMock(uint64_t flags, void **address) {
 }
 
 void usCacheFlushRange(const void *address, size_t bytes) {
+    /*
+     * The kernel image fixture, which the driver hook writes into. Two ranges
+     * matter there and both are flushed: the thunk once it has been written,
+     * and the call once it has been diverted
+     */
+    if (address >= (const void *)kernelImage
+        && address < (const void *)(kernelImage + sizeof(kernelImage))) {
+        driverFlushes++;
+        return;
+    }
     unsigned index = 4;
     for (unsigned i = 0; i < 4; i++) {
         if (address == stubs[i] + US_SLOT_STUB_WORDS
@@ -141,6 +162,9 @@ static void init(void) {
     memset(&cfg, 0, sizeof(cfg));
     memset(poolStorage, 0, sizeof(poolStorage));
     memset(writeChecks, 0, sizeof(writeChecks));
+    memset(kernelImage, 0, sizeof(kernelImage));
+    driverFlushes = 0;
+    denyAt = 0;
     cfg.selfPA = cfg.selfVA = PAYLOAD_PA;
     cfg.selfBytes = 0x4000;
     cfg.entryOffset = 0x1240;
@@ -212,8 +236,113 @@ static void unchanged(const UsPayloadConfig *before) {
  * keyed by the table, so a different table is not served by another one's
  * answer
  */
-static void testLandingCache(void) {
-    uint64_t tail = 0;
+/*
+ * The probe bank, which on the target is what makes a store the mapping refuses
+ * come back as an answer instead of a fault. Here the mapping is an array and
+ * one address is refused on request, so both halves of that can be checked
+ */
+bool usPayloadProbeWriteWord(uint64_t at, uint32_t value) {
+    if (at == denyAt) {
+        return false;
+    }
+    *(volatile uint32_t *)(uintptr_t)at = value;
+    return true;
+}
+
+bool usPayloadProbeReadWord(uint64_t at, uint32_t *value) {
+    if (at == denyAt || value == NULL) {
+        return false;
+    }
+    *value = *(const volatile uint32_t *)(uintptr_t)at;
+    return true;
+}
+
+/*
+ * The kernel's driver load call, diverted at the handover
+ *
+ * What is checked is the order rather than the writes. A thunk nothing reaches
+ * is twenty bytes of a run of zeros that was not being used, while a call
+ * pointed at half a thunk is a machine that does not boot - so a refusal has to
+ * leave the call exactly as it was, and the address the entry will return into
+ * has to be left unset until both halves are in place
+ */
+static void testDriverLoad(void) {
+    const uint64_t entryVA = PAYLOAD_VA + 0x1240;
+    /* The RVA fields are offsets into the fixture, so the base is its own
+     * address and every RVA is where the test wants it */
+    const uint64_t kernelBase = (uintptr_t)kernelImage;
+    uint32_t originalCall;
+    uint32_t expected[US_SLOT_TARGET_WORDS];
+    uint32_t divert;
+    uint32_t *callSite = &((uint32_t *)kernelImage)[0x2000U / 4U];
+
+    assert(usEncodeBranch(0x2000, 0x3000, &originalCall));
+
+    /* Both halves in place, in the order the kernel would find them */
+    init();
+    usVAMapNotify(NULL, NULL);
+    assert(cfg.highVA == PAYLOAD_VA);
+    cfg.driverLoadThunkRVA = 0x1000;
+    cfg.driverLoadCallRVA = 0x2000;
+    cfg.driverLoadTargetRVA = 0x3000;
+    cfg.driverLoadEntryOffset = 0x1240;
+    *callSite = originalCall;
+    usPayloadPublishAll(kernelBase);
+    usEncodeThunkTarget(expected, entryVA);
+    assert(memcmp(kernelImage + 0x1000, expected, sizeof(expected)) == 0);
+    assert(usEncodeBranchLink(0x2000, 0x1000, &divert));
+    assert(*callSite == divert);
+    /*
+     * A call, not a branch. The two differ by one bit in the opcode and by
+     * everything that matters: `b` does not write the return address into x30,
+     * so the entry would return past the whole of the function whose call it
+     * took over, leaving that function's frame on the stack. This assertion is
+     * the only place that difference is visible before a machine misbehaves
+     * somewhere unrelated to it
+     */
+    assert((*callSite & 0xFC000000U) == 0x94000000U);
+    assert(cfg.driverLoadTarget == kernelBase + 0x3000);
+    /* The thunk and then the call, each followed by the flush that makes the
+     * write visible to an instruction fetch */
+    assert(driverFlushes == 2);
+
+    /* A store the mapping refuses: the call stays where it went before */
+    init();
+    usVAMapNotify(NULL, NULL);
+    cfg.driverLoadThunkRVA = 0x1000;
+    cfg.driverLoadCallRVA = 0x2000;
+    cfg.driverLoadTargetRVA = 0x3000;
+    cfg.driverLoadEntryOffset = 0x1240;
+    *callSite = originalCall;
+    denyAt = kernelBase + 0x1000 + 8U;
+    usPayloadPublishAll(kernelBase);
+    assert(*callSite == originalCall);
+    assert(cfg.driverLoadTarget == 0);
+    denyAt = 0;
+
+    /* No hook recorded: nothing at all is written */
+    init();
+    usVAMapNotify(NULL, NULL);
+    *callSite = originalCall;
+    usPayloadPublishAll(kernelBase);
+    assert(*callSite == originalCall);
+    assert(cfg.driverLoadTarget == 0);
+
+    /* A kernel the loader named no base for: the RVA cannot be turned into an
+     * address, so the hook is not written rather than written somewhere */
+    init();
+    usVAMapNotify(NULL, NULL);
+    cfg.driverLoadThunkRVA = 0x1000;
+    cfg.driverLoadCallRVA = 0x2000;
+    cfg.driverLoadTargetRVA = 0x3000;
+    cfg.driverLoadEntryOffset = 0x1240;
+    *callSite = originalCall;
+    usPayloadPublishAll(0);
+    assert(*callSite == originalCall);
+    assert(cfg.driverLoadTarget == 0);
+}
+
+static void testLandingCache(void) {    uint64_t tail = 0;
 
     /* Nothing is known before anything has been worked out */
     assert(!usPayloadSlotTailCached(tableVA(0), 4U, &tail));
@@ -345,5 +474,8 @@ int main(void) {
     assert(memcmp(stubs[0], original[0], sizeof(stubs[0])) == 0);
     cfg.stubs[0].published = 0;
     assert(usPayloadPublish(tableVA(0)) && flushes == 4);
-    return usCheckPassed("conversion, deferred ASLR publication, table/image identity, write checks and retry passed");
+
+    testDriverLoad();
+    return usCheckPassed("conversion, deferred ASLR publication, table/image identity, "
+                         "write checks, the driver hook and retry passed");
 }

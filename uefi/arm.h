@@ -54,4 +54,18 @@ bool usArmTransfer(UsSession *session);
  */
 bool usArmVectorTable(UsSession *session);
 
+/*
+ * Records the kernel's driver load call, so that the payload can divert it once
+ * it has an address to divert it to
+ *
+ * Writes nothing: what it leaves behind is the RVAs of the call and of what the
+ * call was going to, plus where the thunk will go. The payload acts on them at
+ * the handover, which is the one moment the kernel's base and the payload's
+ * runtime address are both known
+ *
+ * Returns false when there is no call to take over or nowhere to put the thunk,
+ * which costs the speed of covering drivers and not the boot
+ */
+bool usArmDriverLoadHook(UsSession *session);
+
 #endif

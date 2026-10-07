@@ -20,7 +20,7 @@ CFG_CFLAGS := -std=gnu23 -O2 -Wall -Wextra -I$(ROOT) -I$(TOML) $(TOML_DEFS)
 .PHONY: all check clean
 all: test_cfg test_layout test_scan_images test_rva_patch test_plan test_pgtable test_par \
      test_thunk test_stackgen test_payload_place test_early test_ldapr test_acpi test_ldr \
-     test_patchlist test_screen test_driver_hook
+     test_patchlist test_screen test_driver_hook test_drvhook
 
 test_early: test_early.c $(ROOT)/payload/early.c $(ROOT)/payload/vamap.c \
             $(ROOT)/core/thunk.c
@@ -96,6 +96,12 @@ test_driver_hook: test_driver_hook.c $(ROOT)/core/pe.c $(ROOT)/core/scan.c \
                  $(ROOT)/core/thunk.c
 	$(CC) -std=gnu23 -O2 -Wall -Wextra -I$(ROOT) $^ -o $@
 
+# The entry a diverted kernel call arrives at. It reads no register state, so
+# it runs on the host with a configuration of the test's own making and a stand
+# -in for the function it calls through to
+test_drvhook: test_drvhook.c $(ROOT)/payload/drvhook.c
+	$(CC) -std=gnu23 -O2 -Wall -Wextra -I$(ROOT) $^ -o $@
+
 test_rva_patch: test_rva_patch.c $(ROOT)/core/pe.c $(ROOT)/core/rva_patch.c
 	$(CC) -std=gnu23 -O2 -Wall -Wextra -I$(ROOT) $^ -o $@
 
@@ -126,6 +132,7 @@ check: all
 	@./test_acpi
 	@./test_ldr
 	@./test_driver_hook
+	@./test_drvhook
 	@python3 check_entry_frame.py $(ROOT)/payload/entry.S
 	@python3 check_rewrite.py
 	@python3 check_pte.py

@@ -294,6 +294,7 @@ UsConfig *usConfigParse(const char *text, size_t len, char *err, size_t errLen) 
      */
     cfg->imageInplaceRewrite = true;
     cfg->el0InplaceRewrite = true;
+    cfg->driverInplaceRewrite = true;
     cfg->showLicenses = true;
 
     /* toml_parse edits the buffer and keeps pointers into it, so it has to
@@ -345,7 +346,9 @@ UsConfig *usConfigParse(const char *text, size_t len, char *err, size_t errLen) 
      */
     toml_table_t *ldapr = toml_table_table(cfg->root, "ldapr");
     if (!cfgBool(ldapr, "imageInplaceRewrite", &cfg->imageInplaceRewrite, err, errLen)
-        || !cfgBool(ldapr, "el0InplaceRewrite", &cfg->el0InplaceRewrite, err, errLen)) {
+        || !cfgBool(ldapr, "el0InplaceRewrite", &cfg->el0InplaceRewrite, err, errLen)
+        || !cfgBool(ldapr, "driverInplaceRewrite", &cfg->driverInplaceRewrite, err,
+                    errLen)) {
         usConfigFree(cfg);
         return NULL;
     }
