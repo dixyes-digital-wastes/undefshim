@@ -74,7 +74,8 @@ CONFIG="$WORK/bp.toml" ESP="$WORK/bp.img" tests/deploy/build_esp.sh >"$WORK/bp.e
 # pid the shell reports after a background command with an environment prefix
 # is the subshell that prefix creates, not run.sh: killing it leaves the
 # machine running, and the ports it holds are then the next check's problem
-setsid env ESP="$WORK/bp.img" SERIAL_LOG="$log" WIN_DISK="$WIN_DISK" \
+setsid env ESP="$WORK/bp.img" SERIAL_LOG="$log" SERIAL_SOCK="$WORK/bp.sock" \
+    WIN_DISK="$WIN_DISK" \
     STOP_PATTERN='breakpoint-never-matches' BOOT_TIMEOUT=$((SETTLE + 300)) \
     tests/deploy/run.sh >"$WORK/bp.run" 2>&1 &
 runpid=$!
@@ -96,6 +97,10 @@ for _ in $(seq 1 200); do
 done
 if ! tests/deploy/plain.sh "$log" | grep -q 'M4 patched'; then
     checkNote "the patch was never applied"
+    # What run.sh said, which is where a machine that never came up explains
+    # itself. Without this the only visible symptom is the line above, and a
+    # run that could not start looks exactly like a driver that did nothing
+    cat "$WORK/bp.run"
     tests/deploy/plain.sh "$log" | grep -aE 'patch|gmm|milestone' | tail -5
     exit 1
 fi
