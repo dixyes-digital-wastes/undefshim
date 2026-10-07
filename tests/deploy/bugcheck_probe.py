@@ -322,6 +322,9 @@ def main():
     ap.add_argument("--arm-slot0", default="true",
                     help="whether to take over the EL1t synchronous slot too, "
                          "as well as the group the kernel runs under")
+    ap.add_argument("--arm-on-load", default="true",
+                    help="whether to divert the loader's call with the driver "
+                         "hook, separately from the vector slots")
     ap.add_argument("--vamap", default="true",
                     help="whether to register the runtime VA notification")
     ap.add_argument("--handover", default="true",
@@ -376,12 +379,14 @@ notArmVectors = %s
 notArmVectorsEl1t = %s
 notArmHandover = %s
 notVamap = %s
+armOnLoad = %s
 spxStack = %s
 """ % (args.image_rewrite, args.el0_rewrite, args.driver_rewrite,
        str(args.arm == "false").lower(),
        str(args.arm_slot0 == "false").lower(),
        str(args.handover == "false").lower(),
-       str(args.vamap == "false").lower(), args.spx_stack))
+       str(args.vamap == "false").lower(),
+       str(args.arm_on_load == "false").lower(), args.spx_stack))
         # The key names are the ones core/cfg.c reads, spelled the way it
         # spells them. This is not pedantry: an unknown key is not an error,
         # so a name that does not match is a setting that silently does

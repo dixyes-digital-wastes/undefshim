@@ -20,6 +20,7 @@ import json
 import os
 import re
 import sys
+import time
 
 import pool_dump
 import logtext
@@ -142,9 +143,26 @@ def main():
     sys.stderr.write("registers: %d cpus\n" % len(cpus))
 
     import socket
-    con = socket.create_connection(("127.0.0.1", args.qmp_port), timeout=30)
-    f = con.makefile("rwb")
-    f.readline()
+    con = None
+    for attempt in range(10):
+        try:
+            con = socket.create_connection(("127.0.0.1", args.qmp_port), timeout=30)
+            f = con.makefile("rwb")
+            f.readline()
+            break
+        except (OSError, TimeoutError):
+            """
+            The monitor serves one client at a time, so a connection that
+            arrives while the reader before it is still letting go is refused
+            for a moment and accepted after. Snapshotting a machine that just
+            stopped is exactly that moment: the tool that watched it is letting
+            go while this one is arriving.
+            """
+            con = None
+            time.sleep(1)
+    if con is None:
+        sys.stderr.write("the monitor did not answer\n")
+        return 2
     pool_dump.cmd(f, {"execute": "qmp_capabilities"})
 
     regions = []
