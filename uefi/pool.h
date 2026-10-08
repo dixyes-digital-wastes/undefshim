@@ -31,12 +31,13 @@ typedef struct UsPoolAlloc_t {
 } UsPoolAlloc;
 
 /*
- * Allocates and lays out the pool where the page tables map it identity, and
- * reports both addresses so the injector can map it again later
+ * Allocates and lays out the pool where the page tables map it identity, with
+ * one stack per `stackSlots` processor, and reports both addresses so the
+ * injector can map it again later
  *
  * Returns false when the firmware refuses, which the caller must treat as
  * fatal: without a pool there is no stack to run on, and no handler
  */
-bool usPoolAllocate(UsPoolAlloc *out);
+bool usPoolAllocate(UsPoolAlloc *out, uint32_t stackSlots);
 
 #endif

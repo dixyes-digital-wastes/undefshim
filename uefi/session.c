@@ -43,8 +43,17 @@ bool usSessionInit(UsSession *s) {
         s->cpus.mpidr[0] = mpidr & US_MPIDR_AFFINITY_MASK;
         s->cpus.count = 1;
     }
+    /*
+     * A machine with more processors than the tables hold cannot be served:
+     * the ones past the count would take their first exception and find no
+     * stack, which stops them rather than reporting anything. Refusing here
+     * turns that into a boot that says why it did not run
+     */
+    if (s->cpus.count > US_MAX_CPUS || s->cpus.overflow) {
+        return false;
+    }
 
-    if (!usPoolAllocate(&s->poolAlloc)) {
+    if (!usPoolAllocate(&s->poolAlloc, (uint32_t)s->cpus.count)) {
         return false;
     }
     s->pool = s->poolAlloc.pool;

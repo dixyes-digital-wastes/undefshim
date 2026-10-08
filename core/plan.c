@@ -11,15 +11,16 @@
 void usPlanInit(UsPlan *plan) {
     *plan = (UsPlan){ 0 };
     usSiteListInit(&plan->sites);
-    plan->poolBytes = US_POOL_BYTES;
-    plan->poolPages = US_POOL_PAGES;
 }
 
-bool usPlanBuild(UsPlan *plan, UsImage *winload, UsImage *ntoskrnl) {
+bool usPlanBuild(UsPlan *plan, UsImage *winload, UsImage *ntoskrnl,
+                 uint32_t poolSlots) {
     bool leaf = false;
     bool handoff = false;
 
     usPlanInit(plan);
+    plan->poolBytes = usPoolBytes(poolSlots);
+    plan->poolPages = usPoolPages(poolSlots);
 
     if (ntoskrnl != NULL && ntoskrnl->valid) {
         plan->imageCount++;

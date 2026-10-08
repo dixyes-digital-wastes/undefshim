@@ -31,10 +31,13 @@
 
 #include "common/layout.h"
 
-/* The most processors this will report, which is what the payload has room
- * for. A machine with more is not one this project has anything to say
- * about */
-#define US_ACPI_MAX_CPUS 8
+/*
+ * The most processors this will report, which is what the payload has room for
+ * and so is the same ceiling: a table larger than the payload's own is one the
+ * restore could not describe, and reporting a count the rest of the build
+ * cannot hold would only move the failure somewhere it says less
+ */
+#define US_ACPI_MAX_CPUS US_MAX_CPUS
 
 typedef struct UsACPICPUs_t {
     uint64_t mpidr[US_ACPI_MAX_CPUS];  /* affinity fields only */

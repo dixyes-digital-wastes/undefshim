@@ -28,7 +28,9 @@
 #define TABLE_WORDS 0x180U
 
 static UsPayloadConfig cfg;
-static _Alignas(US_PAGE_SIZE) unsigned char poolStorage[US_POOL_BYTES];
+/* One slot per processor this fixture pretends the machine has */
+#define FIXTURE_SLOTS 4U
+static _Alignas(US_PAGE_SIZE) unsigned char poolStorage[US_POOL_BYTES_FOR(US_MAX_CPUS)];
 static uint32_t stubs[4][US_SLOT_RUNTIME_WORDS];
 static uint32_t original[4][US_SLOT_RUNTIME_WORDS];
 static uint32_t tables[4][TABLE_WORDS];
@@ -172,7 +174,10 @@ static void init(void) {
     cfg.stubCount = 4;
     UsPool *pool = (UsPool *)(void *)poolStorage;
     pool->selfPA = pool->selfVA = cfg.poolPA;
-    for (unsigned i = 0; i < US_MAX_CPUS; i++) {
+    pool->stackSlots = FIXTURE_SLOTS;
+    cfg.cpuCount = FIXTURE_SLOTS;
+    cfg.poolBytes = usPoolBytes(FIXTURE_SLOTS);
+    for (unsigned i = 0; i < FIXTURE_SLOTS; i++) {
         cfg.stackTop[i] = cfg.poolPA + US_POOL_STACK_OFFSET(i) + US_STACK_SIZE;
         pool->stackTop[i] = cfg.stackTop[i];
     }
@@ -388,7 +393,7 @@ int main(void) {
     assert(cfg.selfPA == PAYLOAD_PA && cfg.poolPA == (uintptr_t)poolStorage);
     UsPool *pool = (UsPool *)(void *)poolStorage;
     assert(pool->selfVA == POOL_VA && pool->selfPA == cfg.poolPA);
-    for (unsigned i = 0; i < US_MAX_CPUS; i++) {
+    for (unsigned i = 0; i < FIXTURE_SLOTS; i++) {
         assert(cfg.stackTop[i] == POOL_VA + US_POOL_STACK_OFFSET(i) + US_STACK_SIZE);
         assert(pool->stackTop[i] == cfg.stackTop[i]);
     }

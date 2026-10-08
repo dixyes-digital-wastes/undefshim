@@ -7,7 +7,7 @@
 #ifndef US_STACKGEN_H
 #define US_STACKGEN_H
 
-#define US_STACK_LOOKUP_WORDS 320
+#define US_STACK_LOOKUP_WORDS 1536
 
 #ifndef __ASSEMBLER__
 #include <stdint.h>

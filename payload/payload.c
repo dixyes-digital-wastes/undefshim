@@ -880,7 +880,7 @@ void usPayloadSelfTest(void) {
      * where the kernel's tables are in force and the question actually
      * matters
      */
-    self = usSelfMapFind(cfg->selfVA, US_POOL_BYTES, cfg->selfVA);
+    self = usSelfMapFind(cfg->selfVA, cfg->poolBytes, cfg->selfVA);
     usUARTPuts("payload: selfmap ");
     if (self.found) {
         usUARTPuts("va=");

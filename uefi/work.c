@@ -61,7 +61,8 @@ static void collectOnOwnStack(void *arg) {
 
     req->complete = usPlanBuild(&gPlan,
                                 usRegistryGet(&s->registry, UsImageWinload),
-                                usRegistryGet(&s->registry, UsImageNtoskrnl));
+                                usRegistryGet(&s->registry, UsImageNtoskrnl),
+                                (uint32_t)s->cpus.count);
     usPlanEmit(&gPlan, &gSink);
 }
 

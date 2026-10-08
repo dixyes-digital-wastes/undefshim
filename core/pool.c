@@ -10,21 +10,31 @@
 
 #include "core/pool.h"
 
-bool usPoolInitLayout(UsPool *pool, uint64_t baseVA, uint64_t basePA) {
+bool usPoolInitLayout(UsPool *pool, uint64_t baseVA, uint64_t basePA,
+                      uint32_t stackSlots) {
     if (pool == NULL) {
         return false;
     }
     if ((baseVA & (US_PAGE_SIZE - 1)) != 0 || (basePA & (US_PAGE_SIZE - 1)) != 0) {
         return false;
     }
+    /*
+     * At least the processor this is running on, and no more than the header
+     * has room to describe. A pool with no stacks is one nothing can be run
+     * on, and a count past the array is a header that claims slots that are
+     * not in it
+     */
+    if (stackSlots == 0 || stackSlots > US_MAX_CPUS) {
+        return false;
+    }
 
     memset(pool, 0, sizeof(*pool));
     pool->magic = US_POOL_MAGIC;
-    pool->stackSlots = US_MAX_CPUS;
+    pool->stackSlots = stackSlots;
     pool->selfPA = basePA;
     pool->selfVA = baseVA;
 
-    for (uint32_t i = 0; i < US_MAX_CPUS; i++) {
+    for (uint32_t i = 0; i < stackSlots; i++) {
         /*
          * The top is the first byte past the stack, which is where a full
          * descending stack starts. Stacks grow down, so the top is aligned and

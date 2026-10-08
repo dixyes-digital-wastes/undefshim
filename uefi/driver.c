@@ -227,8 +227,9 @@ int main(int argc, char **argv) {
            (unsigned long long)gSession.poolAlloc.bytes,
            (unsigned)gSession.pool->stackSlots);
     usLogV("pool", "stack[0]=" US_VALUE("%#llx") " stack[" US_VALUE("%u") "]=" US_VALUE("%#llx") "\n",
-           (unsigned long long)gSession.pool->stackTop[0], (unsigned)US_MAX_CPUS - 1U,
-           (unsigned long long)gSession.pool->stackTop[US_MAX_CPUS - 1]);
+           (unsigned long long)gSession.pool->stackTop[0],
+           (unsigned)gSession.pool->stackSlots - 1U,
+           (unsigned long long)gSession.pool->stackTop[gSession.pool->stackSlots - 1U]);
     usLogI("pool", "ready\n");
 
     /* The payload goes into place before anything is armed against it: if it

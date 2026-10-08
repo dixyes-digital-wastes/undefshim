@@ -31,6 +31,9 @@
 #define US_CHECK_OUT stderr
 #include "check.h"
 
+/* The plan states the pool it is for, and this probe is not a machine */
+#define PLANPROBE_SLOTS 8U
+
 static void sinkPuts(void *ctx, const char *s) {
     (void)ctx;
     fputs(s, stdout);
@@ -112,7 +115,8 @@ int main(int argc, char **argv) {
         return 2;
     }
 
-    usPlanBuild(&plan, haveWinload ? &winload : NULL, haveKernel ? &kernel : NULL);
+    usPlanBuild(&plan, haveWinload ? &winload : NULL, haveKernel ? &kernel : NULL,
+                PLANPROBE_SLOTS);
     usPlanEmit(&plan, &sink);
 
     free(winloadData);

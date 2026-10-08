@@ -55,13 +55,20 @@ static void writeConfig(const UsPayloadPlace *place, const UsSession *session) {
                         : (session->uartKind == UsUARTPL011 ? US_PAYLOAD_UART_PL011
                                                             : US_PAYLOAD_UART_8250);
     cfg->uartWidth = session->uartOpen ? session->uartWidth : 32U;
-    for (uint32_t i = 0; i < US_MAX_CPUS; i++) {
+    /*
+     * The array's own extent, not a constant that has to be kept in step with
+     * it: filling one that is smaller than the count walks off the end of it
+     * and writes over the fields that follow, which is a configuration that
+     * looks right in every field but one
+     */
+    for (uint32_t i = 0; i < sizeof(cfg->stackTop) / sizeof(cfg->stackTop[0]); i++) {
         cfg->stackTop[i] = session->pool->stackTop[i];
     }
     cfg->selfVA = place->baseVA;
     cfg->selfPA = place->basePA;
     cfg->selfBytes = place->bytes;
     cfg->poolPA = session->pool->selfPA;
+    cfg->poolBytes = session->poolAlloc.bytes;
     cfg->entryOffset = US_PAYLOAD_ENTRY_OFFSET;
 
     /* The trace of what happened goes here, and it has to survive the address

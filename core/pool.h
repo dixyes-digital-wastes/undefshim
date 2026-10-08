@@ -21,16 +21,19 @@
 #include "common/layout.h"
 
 /*
- * Fills in a pool header for memory at baseVA / basePA
+ * Fills in a pool header for memory at baseVA / basePA, with one stack per
+ * `stackSlots` processor
  *
- * The two are passed separately because they stop being equal once the
- * address space is rebuilt, and the payload has to know both: one to reach the
- * pool with, the other to ask the injector to map
+ * The two addresses are passed separately because they stop being equal once
+ * the address space is rebuilt, and the payload has to know both: one to reach
+ * the pool with, the other to ask the injector to map
  *
  * Returns false if either address is not page aligned, which would mean the
- * stacks are misaligned too
+ * stacks are misaligned too, or if the slot count is not one the pool can
+ * describe
  */
-bool usPoolInitLayout(UsPool *pool, uint64_t baseVA, uint64_t basePA);
+bool usPoolInitLayout(UsPool *pool, uint64_t baseVA, uint64_t basePA,
+                      uint32_t stackSlots);
 
 /*
  * Top of a CPU's stack, or 0 when the slot does not exist. The caller checks

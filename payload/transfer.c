@@ -92,7 +92,7 @@ void usTransferEntry(uint64_t kernelEntryVA, uint64_t loaderBlockVA) {
      * what the search is anchored on, since it is the one address in the new
      * space that is known here for certain
      */
-    self = usSelfMapFind(cfg->selfVA, US_POOL_BYTES, kernelEntryVA);
+    self = usSelfMapFind(cfg->selfVA, cfg->poolBytes, kernelEntryVA);
 
     usTransferRecord.mapped = self.found ? 1U : 0U;
     usTransferRecord.poolVAAfter = self.va;

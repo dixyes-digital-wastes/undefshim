@@ -17,26 +17,37 @@ bool usPayloadEarly(void) {
     UsPayloadConfig *cfg = usPayloadConfig();
     uint64_t payloadVA = usVAMapRecord.payloadAfter;
     uint64_t poolVA = usVAMapRecord.poolAfter;
+    UsPool *pool;
 
     if (usVAMapRecord.fired == 0 || usVAMapRecord.payloadStatus != 0
         || usVAMapRecord.poolStatus != 0 || payloadVA >> 48 != 0xFFFFU
         || poolVA >> 48 != 0xFFFFU || cfg->entryOffset >= cfg->selfBytes
         || payloadVA > UINT64_MAX - cfg->selfBytes
-        || poolVA > UINT64_MAX - US_POOL_BYTES) {
+        || poolVA > UINT64_MAX - cfg->poolBytes) {
         return false;
     }
     if (cfg->highVA != 0) {
         return cfg->highVA == payloadVA && cfg->highPoolVA == poolVA;
     }
-    for (uint64_t i = 0; i < US_MAX_CPUS; i++) {
+
+    /*
+     * The slots the pool actually has, which is one per processor this machine
+     * reports and not the most it could have. The boot checked the same count
+     * against the same ceiling before it allocated anything
+     */
+    pool = (UsPool *)(uintptr_t)cfg->poolBase;
+    if (pool->stackSlots == 0 || pool->stackSlots > US_MAX_CPUS
+        || pool->stackSlots != cfg->cpuCount) {
+        return false;
+    }
+    for (uint64_t i = 0; i < pool->stackSlots; i++) {
         if (cfg->stackTop[i] < cfg->poolPA
-            || cfg->stackTop[i] - cfg->poolPA > US_POOL_BYTES) {
+            || cfg->stackTop[i] - cfg->poolPA > cfg->poolBytes) {
             return false;
         }
     }
 
-    UsPool *pool = (UsPool *)(uintptr_t)cfg->poolBase;
-    for (uint64_t i = 0; i < US_MAX_CPUS; i++) {
+    for (uint64_t i = 0; i < pool->stackSlots; i++) {
         cfg->stackTop[i] = poolVA + cfg->stackTop[i] - cfg->poolPA;
         pool->stackTop[i] = cfg->stackTop[i];
     }

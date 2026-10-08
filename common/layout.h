@@ -54,13 +54,18 @@
 #define US_MPIDR_AFFINITY_MASK_LOGICAL 0xFFFFFFFF00FFFFFFULL
 
 /*
- * One stack per possible CPU rather than per present CPU. The count is not
- * known when the pool is allocated, and finding out costs more than the
- * reservation does: eight stacks is 128 KiB, and having a slot for a CPU that
- * is not there is harmless. The payload picks its slot from MPIDR_EL1 and
- * refuses to run on a CPU with no slot
+ * The most processors this serves, and the size of the tables the payload
+ * carries in its own image: the per-CPU state the handler keeps is a fixed
+ * array there, so it cannot grow at runtime
+ *
+ * The pool is not one of those. Its stacks are allocated for the processors
+ * the machine actually has, so this is the ceiling on that count rather than
+ * the size anything is built to
+ *
+ * 64 is a single 920 system's maximum (32 in one chip), so a machine this
+ * would refuse does not exist. A machine with fewer pays for fewer
  */
-#define US_MAX_CPUS 8U
+#define US_MAX_CPUS 64U
 
 /*
  * Sixteen KiB per CPU. The handler runs with interrupts masked and does not
@@ -311,8 +316,8 @@ typedef struct UsPoolEntry_t {
 
 typedef struct UsPool_t {
     uint32_t magic;
-    /* Slots provided, which is US_MAX_CPUS. The payload checks its own CPU
-     * index against this before using a stack */
+    /* Slots provided, which is the processor count the pool was built for.
+     * The payload checks its own CPU index against this before using a stack */
     uint32_t stackSlots;
 
     /*
@@ -352,6 +357,9 @@ typedef struct UsPool_t {
     /*
      * Top of each CPU's stack, that is the address stack grows down from, and
      * already aligned. A zero entry means that CPU has no stack
+     *
+     * One per slot the pool was built for; the rest are zero, and a zero slot
+     * is what the entry treats as "no stack for this processor"
      */
     uint64_t stackTop[US_MAX_CPUS];
 } UsPool;
@@ -359,14 +367,31 @@ typedef struct UsPool_t {
 /* The pool header occupies whole pages, so everything after it starts aligned */
 #define US_POOL_HEADER_SIZE ((sizeof(UsPool) + US_PAGE_SIZE - 1) & ~(uint64_t)(US_PAGE_SIZE - 1))
 
-/* Total bytes the pool needs: header plus every CPU's stack */
-#define US_POOL_BYTES (US_POOL_HEADER_SIZE + (uint64_t)US_MAX_CPUS * US_STACK_SIZE)
-
-/* Pages to ask the firmware for */
-#define US_POOL_PAGES (US_POOL_BYTES / US_PAGE_SIZE)
-
 /* Stack slot n starts here, relative to the pool base */
 #define US_POOL_STACK_OFFSET(n) (US_POOL_HEADER_SIZE + (uint64_t)(n) * US_STACK_SIZE)
+
+/*
+ * What a pool for `slots` stacks costs
+ *
+ * The count is the machine's rather than the most it could have: the boot
+ * allocates one stack per processor it found, so a machine with a few of them
+ * does not pay for the many it could have had. Both parts are whole pages, so
+ * the total is a whole number of pages exactly, with nothing to round
+ *
+ * The macro and the function are the same arithmetic: the first because an
+ * assembly offset and an array size need a constant expression, the second
+ * because the count is a runtime value everywhere else
+ */
+#define US_POOL_BYTES_FOR(slots) (US_POOL_HEADER_SIZE + (uint64_t)(slots) * US_STACK_SIZE)
+#define US_POOL_PAGES_FOR(slots) (US_POOL_BYTES_FOR(slots) / US_PAGE_SIZE)
+
+static inline uint64_t usPoolBytes(uint32_t slots) {
+    return US_POOL_BYTES_FOR(slots);
+}
+
+static inline uint64_t usPoolPages(uint32_t slots) {
+    return US_POOL_PAGES_FOR(slots);
+}
 
 /*
  * AArch64 requires the stack pointer to be sixteen byte aligned at every

@@ -57,6 +57,9 @@ static void eqStr(const char *name, const char *got, const char *want) {
 #define TEXT_RVA 0x1000U
 #define TEXT_SIZE 0x8000U
 #define TEXT_RAW TEXT_RVA
+
+/* What the plan is built for; the report has to state what was asked for */
+#define PLAN_SLOTS 8U
 /*
  * The image is examined as a memory view, where a section sits at its RVA and
  * the array offset is the RVA. Writing a section's contents at its RVA is
@@ -350,12 +353,13 @@ static void testPlanDump(void) {
     putInsn(gWinload, TEXT_RVA + 0x040, 0xD518C000);
     putInsn(gKernel, TEXT_RVA + 0x100, 0xD518C010);
 
-    ok("a plan without a leaf is not complete", !usPlanBuild(&plan, &winload, &kernel));
+    ok("a plan without a leaf is not complete",
+       !usPlanBuild(&plan, &winload, &kernel, PLAN_SLOTS));
     eqSize("two images", plan.imageCount, 2);
     eqSize("two writes", plan.sites.count, 2);
     eqSize("no ldapr", plan.ldapr.total, 0);
-    eqSize("pool pages are stated", plan.poolPages, US_POOL_PAGES);
-    eqSize("pool bytes are stated", plan.poolBytes, US_POOL_BYTES);
+    eqSize("pool pages are stated", plan.poolPages, usPoolPages(PLAN_SLOTS));
+    eqSize("pool bytes are stated", plan.poolBytes, usPoolBytes(PLAN_SLOTS));
 
     memset(&buf, 0, sizeof(buf));
     makeSink(&sink, &buf);
@@ -421,14 +425,15 @@ static void testCompletePlan(void) {
         eqSize("the handoff is at the ttbr0 write", handoff.rva, TEXT_RVA + 0x2000);
     }
 
-    ok("a plan with both is complete", usPlanBuild(&plan, &winload, &kernel));
+    ok("a plan with both is complete", usPlanBuild(&plan, &winload, &kernel, PLAN_SLOTS));
     eqSize("two sites in all", plan.sites.count, 2);
     eqSize("one is the leaf", plan.sites.sites[0].kind, UsSiteTransferLeaf);
     eqSize("one is the handoff", plan.sites.sites[1].kind, UsSiteTTBRHandoff);
 
     /* And without the kernel there is nothing to plan against */
-    ok("a plan without the kernel is not complete", !usPlanBuild(&plan, &winload, NULL));
-    ok("a plan with neither is not complete", !usPlanBuild(&plan, NULL, NULL));
+    ok("a plan without the kernel is not complete",
+       !usPlanBuild(&plan, &winload, NULL, PLAN_SLOTS));
+    ok("a plan with neither is not complete", !usPlanBuild(&plan, NULL, NULL, PLAN_SLOTS));
     eqSize("and covers no images", plan.imageCount, 0);
 }
 

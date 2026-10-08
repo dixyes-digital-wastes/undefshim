@@ -93,7 +93,15 @@ void usPlanInit(UsPlan *plan);
  *
  * Returns plan->complete
  */
-bool usPlanBuild(UsPlan *plan, UsImage *winload, UsImage *ntoskrnl);
+/*
+ * Builds the work order for one machine
+ *
+ * poolSlots is how many processors the pool is being built for, since that is
+ * what its size follows from and the report is meant to say what was actually
+ * asked for
+ */
+bool usPlanBuild(UsPlan *plan, UsImage *winload, UsImage *ntoskrnl,
+                 uint32_t poolSlots);
 
 /*
  * Writes the plan as text. The format is fixed and the order is sorted, so

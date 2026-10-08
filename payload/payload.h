@@ -236,7 +236,14 @@ typedef struct UsPayloadConfig_t {
     uint64_t uartWidth;  /* bits per access: 8 or 32 */
 
     /* Stack tops indexed by the firmware CPU index, not a raw affinity byte */
-    uint64_t stackTop[8];
+    /*
+     * One entry per processor the payload can serve, which is the ceiling and
+     * not the machine's count: the boot fills in the ones this machine has and
+     * leaves the rest zero, and the entry refuses a processor whose slot is
+     * zero. It is the same ceiling the pool and the generated lookup use, so
+     * the three cannot disagree about how many entries there are
+     */
+    uint64_t stackTop[US_MAX_CPUS];
 
     /* Address the blob was entered at, written by the boot. The only way the
      * payload can locate its own data */
@@ -281,6 +288,9 @@ typedef struct UsPayloadConfig_t {
     uint64_t selfPA;
     uint64_t selfBytes;
     uint64_t poolPA;
+    /* How much the pool is, which is the boot's answer and not US_MAX_CPUS's:
+     * the stacks are allocated for the processors this machine has */
+    uint64_t poolBytes;
     uint64_t entryOffset;
 
     uint64_t highVA;

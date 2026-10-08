@@ -41,9 +41,14 @@ static void eqU64(const char *name, uint64_t got, uint64_t want) {
 
 static void testShape(void) {
     /* The pool has to be a whole number of pages, or the firmware cannot hand
-     * it over and the stacks would start mid page */
-    ok("pool bytes are page sized", US_POOL_BYTES % US_PAGE_SIZE == 0);
-    ok("pages match bytes", US_POOL_PAGES * US_PAGE_SIZE == US_POOL_BYTES);
+     * it over and the stacks would start mid page. It is built for a count, so
+     * the check is run at a few of them rather than at one */
+    for (uint32_t slots = 1; slots <= US_MAX_CPUS; slots = slots * 2U + 1U) {
+        ok("pool bytes are page sized", usPoolBytes(slots) % US_PAGE_SIZE == 0);
+        ok("pages match bytes", usPoolPages(slots) * US_PAGE_SIZE == usPoolBytes(slots));
+        ok("the header is paid for once",
+           usPoolBytes(slots) == US_POOL_HEADER_SIZE + (uint64_t)slots * US_STACK_SIZE);
+    }
     ok("header fits in a page", US_POOL_HEADER_SIZE >= sizeof(UsPool));
     ok("header is page sized", US_POOL_HEADER_SIZE % US_PAGE_SIZE == 0);
     ok("stack size is page sized", US_STACK_SIZE % US_PAGE_SIZE == 0);
@@ -53,7 +58,8 @@ static void testShape(void) {
     for (uint32_t i = 0; i < US_MAX_CPUS; i++) {
         uint64_t start = US_POOL_STACK_OFFSET(i);
         ok("stack starts after the header", start >= US_POOL_HEADER_SIZE);
-        ok("stack ends within the pool", start + US_STACK_SIZE <= US_POOL_BYTES);
+        ok("stack ends within the pool",
+           start + US_STACK_SIZE <= usPoolBytes(US_MAX_CPUS));
         if (i > 0) {
             ok("stacks do not overlap",
                US_POOL_STACK_OFFSET(i) >= US_POOL_STACK_OFFSET(i - 1) + US_STACK_SIZE);
@@ -66,10 +72,14 @@ static void testInit(void) {
      * practice, so anything else is a bug worth refusing */
     UsPool pool;
     ok("rejects an unaligned base",
-       !usPoolInitLayout(&pool, 0x1000 + 1, 0x1000 + 1));
-    ok("rejects a null pool", !usPoolInitLayout(NULL, 0x1000, 0x1000));
+       !usPoolInitLayout(&pool, 0x1000 + 1, 0x1000 + 1, US_MAX_CPUS));
+    ok("rejects a null pool", !usPoolInitLayout(NULL, 0x1000, 0x1000, US_MAX_CPUS));
+    ok("rejects no slots", !usPoolInitLayout(&pool, 0x1000, 0x1000, 0));
+    ok("rejects more slots than the table holds",
+       !usPoolInitLayout(&pool, 0x1000, 0x1000, US_MAX_CPUS + 1));
 
-    ok("accepts an aligned base", usPoolInitLayout(&pool, 0x40000000, 0x40000000));
+    ok("accepts an aligned base", usPoolInitLayout(&pool, 0x40000000, 0x40000000,
+                                                    US_MAX_CPUS));
     eqU64("magic", pool.magic, US_POOL_MAGIC);
     eqU64("stack slots", pool.stackSlots, US_MAX_CPUS);
     eqU64("self pa", pool.selfPA, 0x40000000);
@@ -81,7 +91,8 @@ static void testInit(void) {
         uint64_t top = usPoolStackTop(&pool, i);
         ok("stack top is aligned", (top & (US_STACK_ALIGN - 1)) == 0);
         ok("stack top is above the header", top > 0x40000000 + US_POOL_HEADER_SIZE);
-        ok("stack top is within the pool", top <= 0x40000000 + US_POOL_BYTES);
+        ok("stack top is within the pool",
+           top <= 0x40000000 + usPoolBytes(US_MAX_CPUS));
         eqU64("stack top matches the layout",
               top, 0x40000000 + US_POOL_STACK_OFFSET(i) + US_STACK_SIZE);
     }
@@ -93,11 +104,26 @@ static void testInit(void) {
 
     ok("out of range slot yields zero", usPoolStackTop(&pool, US_MAX_CPUS) == 0);
     ok("out of range slot is not a pointer", usPoolStackTop(&pool, 999) == 0);
+
+    /*
+     * One per processor the machine has rather than per processor it could
+     * have: a pool built for four describes four, and the ones past that have
+     * no top at all rather than one borrowed from a slot that is not there
+     */
+    {
+        UsPool few;
+        ok("a pool can be built for fewer", usPoolInitLayout(&few, 0x50000000, 0x50000000, 4));
+        eqU64("and says so", few.stackSlots, 4);
+        ok("a smaller pool is valid", usPoolIsValid(&few));
+        ok("slots past the count are empty", usPoolStackTop(&few, 4) == 0);
+        ok("the last slot it has is there", usPoolStackTop(&few, 3) != 0);
+        ok("it costs what it says", usPoolBytes(4) < usPoolBytes(US_MAX_CPUS));
+    }
 }
 
 static void testValidation(void) {
     UsPool pool;
-    ok("setup", usPoolInitLayout(&pool, 0x80000000, 0x80000000));
+    ok("setup", usPoolInitLayout(&pool, 0x80000000, 0x80000000, US_MAX_CPUS));
 
     /* The checks have to actually reject, or they are decoration */
     {
@@ -135,7 +161,8 @@ static void testValidation(void) {
            !usPoolIsValid(&moved));
 
         ok("relocating both stays consistent",
-           usPoolInitLayout(&moved, 0x80000000 + delta, 0x80000000) && usPoolIsValid(&moved));
+           usPoolInitLayout(&moved, 0x80000000 + delta, 0x80000000, US_MAX_CPUS)
+               && usPoolIsValid(&moved));
         eqU64("relocated stack top",
               usPoolStackTop(&moved, 0), usPoolStackTop(&pool, 0) + delta);
     }
