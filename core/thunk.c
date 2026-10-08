@@ -171,11 +171,6 @@ tail:
     restore = n;
     if (slot == UsStubSlotEL0) {
         out[n++] = 0xF84107F2U; /* ldr x18, [sp], #16 */
-    } else {
-        out[n++] = 0xD538D092U; /* mrs x18, tpidr_el1 */
-        out[n++] = 0x9274CE52U; /* and x18, x18, #~0xfff */
-    }
-    if (slot == UsStubSlotEL0) {
         /*
          * The first tail word, and so where a handed-back frame branches: put
          * back the interrupted x18 from the word the push left below the SP
@@ -184,16 +179,21 @@ tail:
          * never spent it - so one load serves both
          */
         out[n++] = 0xF85F03F2U; /* ldur x18, [sp, #-16] */
+    } else {
+        out[n++] = 0xD538D092U; /* mrs x18, tpidr_el1 */
+        out[n++] = 0x9274CE52U; /* and x18, x18, #~0xfff */
     }
     out[n++] = tail0;
     out[n++] = tail1;
     while (n < US_SLOT_STUB_WORDS) {
         out[n++] = US_NOP;
     }
-    /* The two filters exist only in the forms that have them, and the fault
-     * branch of the kernel-mode form is patched where it is written */
-    /* The kernel-mode form has no class filter: its first word is the branch
-     * to the destination, written where it stands */
+    /*
+     * The class filter is written only in the forms that have one, and it
+     * sends anything that is not an undefined instruction past the target and
+     * on to the tail. The kernel-mode form has none: its first word is the
+     * branch to the destination, written where it stands
+     */
     if (slot != UsStubSlotEL1h) {
         out[classBranch] = 0xB5000012U | ((restore - classBranch) << 5);
     }

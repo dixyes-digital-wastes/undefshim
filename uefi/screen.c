@@ -115,15 +115,6 @@ static void drawGlyph(char c, uint32_t x, uint32_t y) {
 /*
  * The colours the console names with SGR, as pixels
  *
- * The eight base colours and grey, and no bright ones: the escapes are read
- * by a terminal as well as by this, and a terminal is usually light text on a
- * dark background while this is the other way round. Only the base eight read
- * acceptably on both. A colour that is not named here is drawn in black,
- * which is what a terminal would do with a colour it had no opinion about
- */
-/*
- * The colours the console names with SGR, as pixels
- *
  * Black ink on white paper is what the rest of this draws, so a colour has to
  * be dark enough to read against white - which rules out the bright half of
  * the palette, whose whole point is being legible on black. The two that the

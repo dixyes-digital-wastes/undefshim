@@ -175,7 +175,11 @@ def digestFor(textRaw, textRva, textBytes, sectionsByName, directories, data):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--kernel", default="path/to/windowsthings/26100pe/ntoskrnl.exe")
+    # Required rather than defaulted: the corpus is not in the repository and
+    # no path to it would be right on another machine
+    parser.add_argument("--kernel", required=True,
+                        help="the kernel image to enumerate, which is not in "
+                             "this repository")
     parser.add_argument("--symbols", default="build/symbols.tsv",
                         help="a TSV of RVA, section and symbol name")
     parser.add_argument("--pefile", default="ntoskrnl")

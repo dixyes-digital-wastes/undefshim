@@ -333,13 +333,18 @@ static bool armImage(UsSession *s, UsImageKind kind, size_t *armed) {
         return false;
     }
     if (kind == UsImageNtoskrnl) {
+        UsPteBaseSite pte;
+
         s->kernelSpareRVA = hole.rva + stubs;
         s->kernelSpareBytes = hole.bytes > stubs ? hole.bytes - stubs : 0U;
-    }
 
-    if (kind == UsImageNtoskrnl) {
-        UsPteBaseSite pte = usLocatePteBase(img);
-
+        /*
+         * Where this image keeps the base of its own descriptor mapping. The
+         * kernel chooses the value and it moves between builds, so it is read
+         * out of the image; the configured one is only a fallback for a build
+         * whose shape is not recognised
+         */
+        pte = usLocatePteBase(img);
         if (pte.found) {
             descriptorBaseRVA = pte.rva;
             usLogV("arm", "descriptor base at +" US_VALUE("%#x")
