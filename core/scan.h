@@ -174,6 +174,31 @@ typedef struct UsSpareSlot_t {
 UsSpareSlot usLocateSpareSlot(UsImage *img, uint32_t minBytes);
 
 /*
+ * MmPteBase, the base of the kernel's mapping of its own page descriptors
+ *
+ * The value is the kernel's to choose and lives in a variable, so the only
+ * thing that survives a rebuild is the function that reads it. That function
+ * is four instructions, and its literal is the base, which makes the variable
+ * findable without naming any address (core/scan.c has the shape, and why
+ * each constraint in it is there)
+ *
+ * `found` is false whenever the question is not answered: no body, more than
+ * one body, a literal that is not a base, or more than one variable holding
+ * it. The counts are reported either way, because which of those happened is
+ * what says whether a build is unrecognised or the search is wrong
+ */
+typedef struct UsPteBaseSite_t {
+    bool     found;
+    uint32_t rva;        /* the variable holding the base */
+    uint32_t helperRVA;  /* the body it was derived from */
+    uint64_t base;       /* the literal the body carries */
+    size_t   helpers;    /* bodies seen; only one is usable */
+    size_t   candidates; /* loads that named the literal */
+} UsPteBaseSite;
+
+UsPteBaseSite usLocatePteBase(UsImage *img);
+
+/*
  * The tables an image actually installs, found by following the register that
  * each `msr vbar_el1, xN` writes
  *

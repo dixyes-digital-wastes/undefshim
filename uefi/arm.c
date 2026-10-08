@@ -303,6 +303,8 @@ static bool armImage(UsSession *s, UsImageKind kind, size_t *armed) {
     UsVBARTables tables;
     UsSpareSlot hole;
     uint32_t stubs;
+    /* Where the image's descriptor base is, or zero when it has none */
+    uint32_t descriptorBaseRVA = 0U;
 
     if (img == NULL) {
         return false;
@@ -335,6 +337,36 @@ static bool armImage(UsSession *s, UsImageKind kind, size_t *armed) {
         s->kernelSpareBytes = hole.bytes > stubs ? hole.bytes - stubs : 0U;
     }
 
+    if (kind == UsImageNtoskrnl) {
+        UsPteBaseSite pte = usLocatePteBase(img);
+
+        if (pte.found) {
+            descriptorBaseRVA = pte.rva;
+            usLogV("arm", "descriptor base at +" US_VALUE("%#x")
+                   " (body +" US_VALUE("%#x") ", literal " US_VALUE("%#llx")
+                   ", " US_VALUE("%zu") " load(s))\n",
+                   (unsigned)pte.rva, (unsigned)pte.helperRVA,
+                   (unsigned long long)pte.base, pte.candidates);
+        } else if (s->config != NULL && s->config->hasDescriptorBase) {
+            /*
+             * A build whose shape is not recognised. The configured value is
+             * still a candidate, and the handler checks it against the
+             * hardware before trusting it, so a stale one costs a rewrite
+             * rather than a wrong store
+             */
+            descriptorBaseRVA = s->config->descriptorBaseRVA;
+            usLogW("arm", "descriptor base not located (" US_VALUE("%zu")
+                   " body(s), " US_VALUE("%zu") " load(s)); using the"
+                   " configured +" US_VALUE("%#x") "\n",
+                   pte.helpers, pte.candidates, (unsigned)descriptorBaseRVA);
+        } else {
+            usLogW("arm", "descriptor base not located (" US_VALUE("%zu")
+                   " body(s), " US_VALUE("%zu") " load(s)) and none is"
+                   " configured; no site can be rewritten in place\n",
+                   pte.helpers, pte.candidates);
+        }
+    }
+
     usLogV("arm", "%s tables=" US_VALUE("%u") " stubs at +" US_VALUE("%#x")
            " room=" US_VALUE("%u") "\n",
            usImageKindName(kind), (unsigned)tables.count, hole.rva, hole.bytes);
@@ -352,14 +384,10 @@ static bool armImage(UsSession *s, UsImageKind kind, size_t *armed) {
                            + (uint32_t)(i * US_STUB_SLOTS + k) * US_SLOT_RUNTIME_BYTES,
                 .slot = s->stubVectorsEl1t ? slots[k] : UsVectorSlotEL1hSync,
                 /*
-                 * Only if the configuration states one for this build, and
-                 * only as a candidate: the handler checks it against the
-                 * hardware before trusting it
+                 * Emptied for every image that is not the kernel, and for the
+                 * kernel it is whatever the locator answered or nothing
                  */
-                .descriptorBaseRVA = kind == UsImageNtoskrnl && s->config != NULL
-                                             && s->config->hasDescriptorBase
-                                         ? s->config->descriptorBaseRVA
-                                         : 0U,
+                .descriptorBaseRVA = descriptorBaseRVA,
             };
 
             if (armSlot(s, &target)) {

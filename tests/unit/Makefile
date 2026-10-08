@@ -85,7 +85,9 @@ test_cfg: test_cfg.c $(ROOT)/core/cfg.c $(TOML)/toml.c
 test_layout: test_layout.c $(ROOT)/core/pool.c
 	$(CC) -std=gnu23 -O2 -Wall -Wextra -I$(ROOT) $^ -o $@
 
-test_scan_images: test_scan_images.c $(ROOT)/core/pe.c
+# The region scan, and the descriptor base under it. Both are shape and
+# content only, so the images are built here and no Windows binary is needed
+test_scan_images: test_scan_images.c $(ROOT)/core/pe.c $(ROOT)/core/scan.c
 	$(CC) -std=gnu23 -O2 -Wall -Wextra -I$(ROOT) $^ -o $@
 
 # The locator and the two PE facts under it: the export table and the

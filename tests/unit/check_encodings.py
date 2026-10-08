@@ -78,6 +78,15 @@ ENCODINGS = [
     ("core/ldapr.c", "0x38BFC000U", "ldaprb w0, [x0]", 0xFFFFFFFF, "ldaprb"),
     ("core/ldapr.c", "0x08DFFC00U", "ldarb w0, [x0]", 0xFFFFFFFF, "ldarb"),
 
+    # The four instructions the kernel's descriptor-base lookup is recognised
+    # by (core/scan.c). Each fixed word is the widest form of its family, with
+    # the operands zeroed, and the operand bits are what the masks leave out
+    ("core/scan.c", "0xD34CBC00U", "ubfx x0, x0, #12, #36", 0xFFFFFFFF, "ubfx"),
+    ("core/scan.c", "0x58000000U", "ldr x0, .+0", 0xFFFFFFFF, "ldr"),
+    ("core/scan.c", "0x8B000C00U", "add x0, x0, x0, lsl #3", 0xFFFFFFFF, "add"),
+    ("core/scan.c", "0xD65F03C0U", "ret", 0xFFFFFFFF, "ret"),
+    ("core/scan.c", "0xF9400000U", "ldr x0, [x0]", 0xFFFFFFFF, "ldr"),
+
     ("tests/demo/lrcpc_demo.c", "0xB8BFC000u", "ldapr w0, [x0]", 0xFFFFFFFF,
      "ldapr"),
 ]

@@ -597,6 +597,242 @@ static uint64_t adrpPage(uint32_t at, uint32_t word) {
     return (uint64_t)(int64_t)(at & ~0xFFFU) + ((uint64_t)imm << 12);
 }
 
+/* --- the descriptor base ----------------------------------------------- */
+
+/*
+ * MmPteBase, the base of the kernel's mapping of its own page descriptors
+ *
+ * payload/rewrite.c needs this to make a read-only text page writable where it
+ * stands, and it cannot be computed: the kernel chooses the value, and it is a
+ * variable rather than a link-time constant, which is why naming its RVA in a
+ * configuration key has to be maintained by hand for every build. What is
+ * stable across builds is the one function that reads it, and the shape the
+ * compiler gives that function
+ *
+ * The kernel's translate functions carry it as four instructions:
+ *
+ *   ubfx xA, xB, #12, #48    the index of the descriptor inside its table
+ *   ldr  xC, <literal>       the base, from a read-only pool in the same section
+ *   add  xD, xC, xA, lsl #3  base plus index times eight, into the result
+ *   ret
+ *
+ * Its literal is the base the kernel starts with. The variable lives in a
+ * section that is read-only once the kernel has initialised, so this is what
+ * it is initialised to rather than a copy of it, and the load that reads it
+ * names it
+ *
+ * Both steps are shape and content, never an address: the first is a body of
+ * four instructions, the second is a page-relative load whose target holds the
+ * first step's literal. Neither needs a build to have been seen before
+ *
+ * Uniqueness is required of the second step, but not of the first one's uses:
+ * more than one instruction loading the same variable is ordinary, since every
+ * use site gets its own adrp and ldr. What has to be one is the number of
+ * distinct variables the loads name. Two of those means the question is not
+ * answered, and the caller is told so rather than handed whichever was found
+ * first -- a wrong base is a rewrite that does not happen, or worse, a store
+ * into a page that is not a descriptor table
+ *
+ * The other translate function, the one that answers for a page directory
+ * entry, is this same body with the shift and the width changed. Its literal
+ * differs, so a build that emitted it identically would be refusing rather
+ * than answering
+ */
+
+/* ubfx x0, x0, #12, #36. The field is bits 12 up to 47, which is the whole
+ * index of a descriptor in a 48 bit address space, and imms is the top bit of
+ * the field rather than its width, so this reads #36 and not #48. The
+ * registers are free and are compared as a chain below */
+#define US_PTE_UBFX_FIXED 0xD34CBC00U
+#define US_PTE_UBFX_MASK 0xFFFFFC00U
+/* ldr x0, <literal>: opc 01, so the 64 bit form, with rt and imm19 free */
+#define US_PTE_LDRLIT_FIXED 0x58000000U
+#define US_PTE_LDRLIT_MASK 0xFF000000U
+/* add x0, x0, x0, lsl #3: the shift type, the N bit and the flag bit are part
+ * of the fixed word, the operands are not */
+#define US_PTE_ADD_FIXED 0x8B000C00U
+#define US_PTE_ADD_MASK 0xFFE0FC00U
+/* ret */
+#define US_PTE_RET_FIXED 0xD65F03C0U
+#define US_PTE_RET_MASK 0xFFFFFFFFU
+/* ldr x0, [x0]: the unsigned offset form, with rt, rn and imm12 free */
+#define US_PTE_LDROFF_FIXED 0xF9400000U
+#define US_PTE_LDROFF_MASK 0xFFC00000U
+
+#define US_RM(word) (((word) >> 16) & 0x1FU)
+
+/* The byte offset a literal load reaches, relative to the instruction */
+static int64_t ldrLiteralOffset(uint32_t word) {
+    int64_t imm = (int64_t)((word >> 5) & 0x7FFFFU);
+
+    /* Sign extend from bit 18 without shifting into the sign bit */
+    return (((imm ^ 0x40000) - 0x40000) * 4);
+}
+
+/* Eight bytes at an RVA, or zero when they are not all there. A base is never
+ * zero, so zero doubles as "nothing readable here" */
+static uint64_t readU64(const UsImage *img, uint32_t rva) {
+    const uint8_t *p;
+    size_t avail = 0;
+    uint64_t v = 0;
+
+    p = usImageRVASpan(img, rva, &avail);
+    if (p == NULL || avail < 8U) {
+        return 0;
+    }
+    for (size_t i = 0; i < 8U; i++) {
+        v |= (uint64_t)p[i] << (i * 8U);
+    }
+    return v;
+}
+
+/* The literal a four-instruction translate body at an RVA carries, or zero
+ * when the words there are not that body */
+static uint64_t pteHelperLiteral(const UsImage *img, uint32_t rva) {
+    uint32_t w[4];
+    int64_t at;
+
+    for (size_t i = 0; i < 4U; i++) {
+        w[i] = readInsn(img, rva + (uint32_t)i * 4U);
+    }
+    if ((w[0] & US_PTE_UBFX_MASK) != US_PTE_UBFX_FIXED) {
+        return 0;
+    }
+    if ((w[1] & US_PTE_LDRLIT_MASK) != US_PTE_LDRLIT_FIXED) {
+        return 0;
+    }
+    if ((w[2] & US_PTE_ADD_MASK) != US_PTE_ADD_FIXED) {
+        return 0;
+    }
+    if ((w[3] & US_PTE_RET_MASK) != US_PTE_RET_FIXED) {
+        return 0;
+    }
+    /*
+     * The four are a chain rather than four instructions that happen to sit
+     * together: the add takes its base from what the load wrote and its index
+     * from what the ubfx wrote, and it writes the register the return carries.
+     * A body that is similar but not this one does not satisfy all three, and
+     * requiring them is what keeps the match from being a coincidence
+     */
+    if (US_RN(w[2]) != US_RD(w[1]) || US_RM(w[2]) != US_RD(w[0])
+        || US_RD(w[2]) != 0U) {
+        return 0;
+    }
+    at = (int64_t)rva + 4 + ldrLiteralOffset(w[1]);
+    if (at < 0 || (uint64_t)at + 8U > (uint64_t)img->sizeOfImage) {
+        return 0;
+    }
+    return readU64(img, (uint32_t)at);
+}
+
+/* A kernel half address on a page boundary, which is the only thing the base
+ * of a mapping can be. Both of the literals the x64 form of this function
+ * carries are in the same range, so this only rules out a body that is not
+ * one of them at all */
+static bool isPlausibleBase(uint64_t v) {
+    return (v & 0xFFFU) == 0 && (v >> 47) == 0x1FFFFU;
+}
+
+UsPteBaseSite usLocatePteBase(UsImage *img) {
+    UsPteBaseSite site = { 0 };
+    uint64_t base = 0;
+    uint32_t target = 0;
+    size_t distinct = 0;
+
+    if (img == NULL || !img->valid) {
+        return site;
+    }
+
+    /* Step one: the four-instruction body and the literal it carries */
+    for (uint16_t i = 0; i < img->sectionCount; i++) {
+        const UsPESection *s = &img->sections[i];
+        const uint8_t *p;
+        size_t avail = 0;
+
+        if ((s->characteristics & US_PE_SECTION_EXECUTABLE) == 0
+            || s->virtualSize == 0 || s->rawSize == 0) {
+            continue;
+        }
+        p = usImageRVASpan(img, s->virtualAddress, &avail);
+        if (p == NULL) {
+            continue;
+        }
+        if (avail > s->virtualSize) {
+            avail = s->virtualSize;
+        }
+        for (size_t off = 0; off + 16U <= avail; off += 4U) {
+            uint32_t rva = s->virtualAddress + (uint32_t)off;
+            uint64_t literal = pteHelperLiteral(img, rva);
+
+            if (literal == 0) {
+                continue;
+            }
+            site.helpers++;
+            if (site.helpers == 1U) {
+                base = literal;
+                site.helperRVA = rva;
+            }
+        }
+    }
+    if (site.helpers != 1U || !isPlausibleBase(base)) {
+        return site;
+    }
+    site.base = base;
+
+    /* Step two: the loads that read that literal, and the variable they name */
+    for (uint16_t i = 0; i < img->sectionCount; i++) {
+        const UsPESection *s = &img->sections[i];
+        const uint8_t *p;
+        size_t avail = 0;
+
+        if ((s->characteristics & US_PE_SECTION_EXECUTABLE) == 0
+            || s->virtualSize == 0 || s->rawSize == 0) {
+            continue;
+        }
+        p = usImageRVASpan(img, s->virtualAddress, &avail);
+        if (p == NULL) {
+            continue;
+        }
+        if (avail > s->virtualSize) {
+            avail = s->virtualSize;
+        }
+        for (size_t off = 0; off + 8U <= avail; off += 4U) {
+            uint32_t rva = s->virtualAddress + (uint32_t)off;
+            uint32_t w0 = readInsn(img, rva);
+            uint32_t w1 = readInsn(img, rva + 4U);
+            uint32_t at;
+
+            if ((w0 & US_ADRP_MASK) != US_ADRP_OPCODE
+                || (w1 & US_PTE_LDROFF_MASK) != US_PTE_LDROFF_FIXED
+                || US_RN(w1) != US_RD(w0)) {
+                continue;
+            }
+            at = (uint32_t)adrpPage(rva, w0) + US_IMM12(w1) * 8U;
+            if (readU64(img, at) != base) {
+                continue;
+            }
+            site.candidates++;
+            if (distinct == 0) {
+                target = at;
+                distinct = 1;
+            } else if (target != at) {
+                /* A second variable holding the same literal: which one the
+                 * kernel uses is not something this can answer, so neither is
+                 * the answer given */
+                distinct = 2;
+            }
+        }
+    }
+    if (distinct != 1U) {
+        site.rva = 0;
+        return site;
+    }
+
+    site.found = true;
+    site.rva = target;
+    return site;
+}
+
 UsVBARTables usFindVBARTables(UsImage *img) {
     UsVBARTables out = { 0 };
 
