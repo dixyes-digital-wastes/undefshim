@@ -94,7 +94,8 @@ trap stop EXIT INT TERM
 # Wait for the shim to be armed, which is the last thing our side can say.
 armed=no
 for _ in $(seq 1 $((WATCH + 240))); do
-    if tests/deploy/plain.sh "$log" | grep -q 'M6.5 armed' 2>/dev/null; then
+    # Anchored: "armed skipped" and "armed failed" start with the same words
+    if tests/deploy/plain.sh "$log" | grep -q 'M6.5 armed$' 2>/dev/null; then
         armed=yes
         break
     fi

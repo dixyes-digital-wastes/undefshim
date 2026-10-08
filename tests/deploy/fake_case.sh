@@ -69,8 +69,9 @@ tests/deploy/plain.sh "$SERIAL_LOG" | grep -a "FAKEK:" || true
 
 # The property that makes the rest mean anything: the vectors were taken
 # over. Without it the run could be succeeding for a reason that has nothing
-# to do with the handler
-if ! tests/deploy/plain.sh "$SERIAL_LOG" | grep -qa "M6.5 armed"; then
+# to do with the handler. Anchored, because the line now says what it came to
+# and only the bare one is the success
+if ! tests/deploy/plain.sh "$SERIAL_LOG" | grep -qa "M6.5 armed$"; then
     checkFail "the vectors were never taken over, so nothing here was tested"
 fi
 

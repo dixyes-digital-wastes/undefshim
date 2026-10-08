@@ -10,7 +10,7 @@ appears - so the port is free and the next thing started can have it. Which is
 the point: KD needs the port, and it needs it immediately.
 
     serial_wait.py COM2
-    serial_wait.py COM2 --marker "M6.5 armed" --timeout 300
+    serial_wait.py COM2 --marker "milestone: M7" --timeout 300
 
 Everything read is kept in COMx-YYYYMMDDHHMMSS.log beside where this is run,
 raw, so a run that stops is still readable afterwards.
@@ -170,11 +170,12 @@ def main():
     ap.add_argument("--baud", type=int, default=115200)
     ap.add_argument("--marker", default="milestone: M7",
                     help="what to wait for; the middle of a line is fine. "
-                         "The default is the rewrite phase's milestone, "
-                         "which ends either 'rewritten' or 'nothing to "
-                         "rewrite' - up to the M7 covers both. It is not "
-                         "matched until --from has gone by, so a pattern "
-                         "the firmware also says cannot fire early")
+                         "The default is the boot-time rewrite's milestone, "
+                         "which is said whatever the switches were: what it "
+                         "came to follows ('rewritten', 'nothing to rewrite', "
+                         "'skip rewrite'), so up to the M7 covers them all. It "
+                         "is not matched until --from has gone by, so a "
+                         "pattern the firmware also says cannot fire early")
     ap.add_argument("--timeout", type=float, default=180.0)
     ap.add_argument("--from", dest="start",
                     default="undefshim:",

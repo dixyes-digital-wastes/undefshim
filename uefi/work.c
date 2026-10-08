@@ -78,8 +78,14 @@ void usWorkCollect(UsSession *session) {
      * into the kernel with, and the stub left in its place is what points
      * every other stub at the payload's runtime address before the kernel runs
      */
-    if (req.complete && session->stubHandover && usArmTransfer(session)) {
-        usConsoleMilestone("M6.5 transfer");
+    if (req.complete) {
+        if (!session->stubHandover) {
+            usConsoleMilestone("M6.5 transfer skipped");
+        } else if (usArmTransfer(session)) {
+            usConsoleMilestone("M6.5 transfer done");
+        } else {
+            usConsoleMilestone("M6.5 transfer failed");
+        }
     }
     /*
      * Drawing the exception path covers what the replacement cannot reach:
@@ -88,8 +94,14 @@ void usWorkCollect(UsSession *session) {
      * the payload's address -- is known there, and the memory it writes is
      * writable there
      */
-    if (req.complete && session->stubVectors && usArmVectorTable(session)) {
-        usConsoleMilestone("M6.5 armed");
+    if (req.complete) {
+        if (!session->stubVectors) {
+            usConsoleMilestone("M6.5 armed skipped");
+        } else if (usArmVectorTable(session)) {
+            usConsoleMilestone("M6.5 armed");
+        } else {
+            usConsoleMilestone("M6.5 arm failed");
+        }
     }
     /*
      * The driver hook: recorded here, written by the payload at the handover.
@@ -98,9 +110,14 @@ void usWorkCollect(UsSession *session) {
      * the one the stubs took their share of, which the arming above is what
      * worked out
      */
-    if (req.complete && session->driverInplaceRewrite
-        && usArmDriverLoadHook(session)) {
-        usConsoleMilestone("M6.5 driver hook");
+    if (req.complete) {
+        if (!session->driverInplaceRewrite) {
+            usConsoleMilestone("M6.5 driver hook skipped");
+        } else if (usArmDriverLoadHook(session)) {
+            usConsoleMilestone("M6.5 driver hook done");
+        } else {
+            usConsoleMilestone("M6.5 driver hook failed");
+        }
     }
     /*
      * Replacing the instructions happens after the arming, not before.
@@ -110,9 +127,13 @@ void usWorkCollect(UsSession *session) {
      * while arming ntoskrnl, with all of its LDAPRs already an LDAR.
      * Both still happen before the kernel runs any of it
      */
-    if (req.complete && session->imageInplaceRewrite) {
-        size_t replaced = usRewriteLDAPR(session);
+    if (req.complete) {
+        if (session->imageInplaceRewrite) {
+            size_t replaced = usRewriteLDAPR(session);
 
-        usConsoleMilestone(replaced != 0 ? "M7 rewritten" : "M7 nothing to rewrite");
+            usConsoleMilestone(replaced != 0 ? "M7 rewritten" : "M7 nothing to rewrite");
+        } else {
+            usConsoleMilestone("M7 skip rewrite");
+        }
     }
 }

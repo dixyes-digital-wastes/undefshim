@@ -447,12 +447,15 @@ tag = "spin probe"
         ser = Serial(serialSock, serialLog)
         ser.connect(args.find_timeout)
 
-        # What says the driver is done depends on what it was asked to do: the
-        # arming marker does not appear when the arming is switched off, and
-        # waiting for it then waits out the whole timeout on a machine that is
-        # already running.
+        # Every configuration ends on the same milestone: what the boot-time
+        # pass came to is spelled out after it, and a pass that is switched off
+        # says so rather than saying nothing. So this one line is the end of
+        # our side whatever the switches were, and waiting for the line of a
+        # particular pass is how a machine that booted fine gets read as one
+        # that never reported
         log("waiting for the driver to finish")
-        if ser.waitFor(r"M6\.5 armed|M7 rewritten", args.find_timeout) is None:
+        if ser.waitFor(r"M7 (rewritten|nothing to rewrite|skip rewrite)",
+                       args.find_timeout) is None:
             log("the driver never reported; last serial output:")
             tail = open(serialLog, "rb").read().decode("latin1")[-800:]
             log(tail)

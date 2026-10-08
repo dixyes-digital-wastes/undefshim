@@ -108,7 +108,9 @@ trap stop EXIT INT TERM
 # than a step the driver takes.
 armed=no
 for _ in $(seq 1 $((SETTLE + 240))); do
-    if tests/deploy/plain.sh "$log" | grep -q 'M6.5 armed' 2>/dev/null; then
+    # Anchored: the pass now says which way it went, and "armed skipped" and
+    # "armed failed" both start with the words this is looking for
+    if tests/deploy/plain.sh "$log" | grep -q 'M6.5 armed$' 2>/dev/null; then
         armed=yes
         break
     fi

@@ -55,7 +55,7 @@ QEMU_PID=$!
 trap 'kill $QEMU_PID 2>/dev/null || true' EXIT INT TERM
 
 for _ in $(seq 1 120); do
-    tests/deploy/plain.sh "$LOG" | grep -q 'M6.5 armed' 2>/dev/null && break
+    tests/deploy/plain.sh "$LOG" | grep -q 'M6.5 armed$' 2>/dev/null && break
     sleep 2
 done
 checkNote "armed; waiting ${SETTLE:-90}s for the kernel to run"
