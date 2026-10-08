@@ -346,6 +346,7 @@ static UsRewriteResult rewriteOne(uint64_t site, UsLDAPRKind kind,
     bool relaxed = false;
     bool written = false;
     bool restored = true;
+    bool panWasOn;
     UsProbeBank bank;
 
     if (site == 0 || (site & 3) != 0 || cfg->poolBase == 0) {
@@ -375,11 +376,18 @@ static UsRewriteResult rewriteOne(uint64_t site, UsLDAPRKind kind,
      * reading or writing a user page at EL1 is what PAN stops. The exception
      * being handled came from EL0, so the access being replaced is one EL0 is
      * allowed to make; making it with PAN clear is the same thing the kernel
-     * does when it copies to a user address. What PAN is left as does not
-     * matter: the entry restores the interrupted state from the SPSR, and
-     * sets PAN on the way out for a hand-back, which is what a real entry to
-     * EL1 does
+     * does when it copies to a user address
+     *
+     * What PAN is left as is what it was found as, read here before it is
+     * moved. On the exception path that is the state the entry left, and the
+     * entry puts that back for a hand-back anyway. On the path where this is
+     * reached as a call - an image being rewritten as the loader loads it -
+     * there is no entry and no hand-back, so this is the only thing that can
+     * put it back, and leaving it set is the whole of the difference between
+     * a machine that boots and one whose next user access by the kernel faults
+     * forever
      */
+    panWasOn = usPANIsOn();
     bank = probeBankEnter();
     usPANOff();
 
@@ -393,7 +401,7 @@ static UsRewriteResult rewriteOne(uint64_t site, UsLDAPRKind kind,
      * the read has to be able to sit at the end of its page
      */
     if (!usPayloadProbeReadWord(site, &now)) {
-        usPANOn();
+        usPANRestore(panWasOn);
         probeBankLeave(&bank);
         record(site, 0, NULL, UsRewriteRefused);
         return UsRewriteRefused;
@@ -404,12 +412,12 @@ static UsRewriteResult rewriteOne(uint64_t site, UsLDAPRKind kind,
 
         if (usLDARDecode(insn, &acquire)) {
             publishInstruction(site);
-            usPANOn();
+            usPANRestore(panWasOn);
             probeBankLeave(&bank);
             record(site, insn, NULL, UsRewriteAlready);
             return UsRewriteAlready;
         }
-        usPANOn();
+        usPANRestore(panWasOn);
         probeBankLeave(&bank);
         record(site, insn, NULL, UsRewriteNotRcpc);
         return UsRewriteNotRcpc;
@@ -426,7 +434,7 @@ static UsRewriteResult rewriteOne(uint64_t site, UsLDAPRKind kind,
             slot->descriptorVA = baseTried;
             slot->descriptor = baseValue;
         }
-        usPANOn();
+        usPANRestore(panWasOn);
         probeBankLeave(&bank);
         record(site, insn, NULL, UsRewriteNoBase);
         return UsRewriteNoBase;
@@ -435,7 +443,7 @@ static UsRewriteResult rewriteOne(uint64_t site, UsLDAPRKind kind,
     step(site, insn, UsRewriteWalking);
     leaf = usLeafFind(base, readProbed, &state, site);
     if (state.refused || !leaf.found) {
-        usPANOn();
+        usPANRestore(panWasOn);
         probeBankLeave(&bank);
         record(site, insn, NULL, UsRewriteUnmapped);
         return UsRewriteUnmapped;
@@ -457,7 +465,7 @@ static UsRewriteResult rewriteOne(uint64_t site, UsLDAPRKind kind,
         if (!usTranslateAddress(site, false, &hardwarePA)
             || (hardwarePA & ~(uint64_t)(leaf.size - 1U))
                != (leaf.pa & ~(uint64_t)(leaf.size - 1U))) {
-            usPANOn();
+            usPANRestore(panWasOn);
             probeBankLeave(&bank);
             record(site, insn, &leaf, UsRewriteNoBase);
             return UsRewriteNoBase;
@@ -466,15 +474,27 @@ static UsRewriteResult rewriteOne(uint64_t site, UsLDAPRKind kind,
     original = leaf.descriptor;
 
     /*
-     * The descriptor has to be writable for this to be possible at all, and
-     * the page it lives on is a page table: the kernel writes those all the
-     * time, so it normally is. The probe is the value it already holds, so a
-     * refusal leaves everything as it was
+     * The store is tried on the mapping as it stands, before anything is done
+     * to the tables. An image the loader has not finished with is one it still
+     * owns, and its text is writable while that is so; a page it has handed
+     * over to the kernel is not, and the store is what says which the site is
+     * on. Taking the permission away and putting it back is a change to a
+     * table a running system is reading, so it is done only when the store has
+     * shown that nothing short of it will do
      */
-    if ((original & US_PTE_AP2) != 0) {
+    step(site, insn, UsRewriteStoring);
+    written = usPayloadProbeWriteWord(site, replacement);
+
+    if (!written && (original & US_PTE_AP2) != 0) {
+        /*
+         * The descriptor has to be writable for this to be possible at all,
+         * and the page it lives on is a page table: the kernel writes those
+         * all the time, so it normally is. The probe is the value it already
+         * holds, so a refusal leaves everything as it was
+         */
         step(site, insn, UsRewriteProbing);
         if (!usPayloadProbeWrite(leaf.descriptorVA, original)) {
-            usPANOn();
+            usPANRestore(panWasOn);
             probeBankLeave(&bank);
             record(site, insn, &leaf, UsRewriteReadOnly);
             return UsRewriteReadOnly;
@@ -482,20 +502,19 @@ static UsRewriteResult rewriteOne(uint64_t site, UsLDAPRKind kind,
         step(site, insn, UsRewriteClearing);
         if (!usPayloadProbeWrite(leaf.descriptorVA, original & ~US_PTE_AP2)) {
             (void)usPayloadProbeWrite(leaf.descriptorVA, original);
-            usPANOn();
+            usPANRestore(panWasOn);
             probeBankLeave(&bank);
             record(site, insn, &leaf, UsRewriteReadOnly);
             return UsRewriteReadOnly;
         }
         relaxed = true;
+
+        /* The table changed, so this processor's translation of the site is
+         * stale and would still refuse the store */
+        invalidateTranslation(site);
+        step(site, insn, UsRewriteStoring);
+        written = usPayloadProbeWriteWord(site, replacement);
     }
-
-    /* The table changed, so this processor's translation of the site is stale
-     * and would still refuse the store */
-    invalidateTranslation(site);
-
-    step(site, insn, UsRewriteStoring);
-    written = usPayloadProbeWriteWord(site, replacement);
 
     if (written) {
         step(site, insn, UsRewritePublishing);
@@ -524,7 +543,7 @@ static UsRewriteResult rewriteOne(uint64_t site, UsLDAPRKind kind,
         }
         invalidateTranslation(site);
     }
-    usPANOn();
+    usPANRestore(panWasOn);
     probeBankLeave(&bank);
     if (!restored) {
         record(site, insn, &leaf, UsRewriteStuck);

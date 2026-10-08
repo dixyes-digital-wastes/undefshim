@@ -48,6 +48,7 @@ IMM19 = 0x7FFFF << 5
 ENCODINGS = [
     ("core/pan.h", "0xd500419f", "msr pan, #1", 0xFFFFFFFF, "msr"),
     ("core/pan.h", "0xd500409f", "msr pan, #0", 0xFFFFFFFF, "msr"),
+    ("core/pan.h", "0xd5384260", "mrs x0, pan", 0xFFFFFFFF, "mrs"),
     ("payload/entry.S", "0xd500419f", "msr pan, #1", 0xFFFFFFFF, "msr"),
 
     ("core/thunk.c", "0xF81F0FF2U", "str x18, [sp, #-16]!", 0xFFFFFFFF, "str"),

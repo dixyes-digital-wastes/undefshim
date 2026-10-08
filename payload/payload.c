@@ -733,10 +733,17 @@ UsFrame *usPayloadFault(void) {
     UsFrame *outer;
     uint64_t vbar;
     uint64_t far;
-    /* The access may have cleared PAN; the handler that is about to run
-     * would have been entered with it set */
-    usPANOn();
 
+    /*
+     * PAN is not touched here, though a handler's own entry to EL1 leaves it
+     * set. Two of the answers below return into the payload rather than to the
+     * kernel - a probe's answer and a fault with no interrupted frame - and
+     * what the payload is in the middle of is work that reads and writes
+     * addresses whose mapping is not known, which it holds PAN clear for. The
+     * hand-back is the one answer that needs it set, and by then it is not
+     * this function's caller but the entry's landing that decides, so the
+     * entry sets it there
+     */
     if (cpu < 0 || cpu >= (int)US_MAX_CPUS) {
         return NULL;
     }
