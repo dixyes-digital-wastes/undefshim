@@ -89,6 +89,12 @@ CONFIG="$WORK/bp.toml" ESP="$WORK/bp.img" tests/deploy/build_esp.sh >"$WORK/bp.e
     exit 1
 }
 
+# The log and its socket are cleared here rather than left to run.sh, which
+# clears them when it starts -- later than this script's first look at the log
+# A log left behind by an earlier run still says the patch was applied, so the
+# wait below would answer for a run that has not begun
+rm -f "$log" "$WORK/bp.sock"
+
 # The run is not stopped by a marker: the machine has to stay up so gdb can be
 # attached to it, and run.sh is what owns the QEMU process.
 #
