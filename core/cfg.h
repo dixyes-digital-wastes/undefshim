@@ -171,6 +171,27 @@ typedef struct UsConfig_t {
     bool          spxStack;
 
     /*
+     * Where to stop on purpose, for checking that the report works
+     *
+     * A panic only ever happens on a path that is already going wrong, so
+     * nothing in ordinary use goes near the code that writes one and a broken
+     * report would first be found at the worst possible moment. These name a
+     * milestone to stop after, and how many exceptions or rewrite attempts to
+     * let pass before stopping at one of those
+     *
+     * panicAfter is a milestone name from the ones the boot prints, and it is
+     * matched as written. Zero means no injection, which is why the counts
+     * start at zero: "not asked for" and "the first one" have to be different
+     * answers
+     */
+    const char   *panicAfter;
+    /* Its length, because the accessor hands back a pointer into the document
+     * rather than a terminated string */
+    int           panicAfterLen;
+    uint64_t      panicAfterTraps;
+    uint64_t      panicAfterRewrites;
+
+    /*
      * Whether to take the vectors over as soon as a kernel is loaded, rather
      * than when the plan that says which image the kernel is has been built
      *

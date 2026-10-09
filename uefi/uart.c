@@ -76,6 +76,13 @@ void usConsoleOpen(const UsConfig *cfg, UsSession *session) {
         .found = false,
     };
 
+    /*
+     * Before the early returns below, because the stop the configuration may
+     * ask for is checked at every milestone and a machine with no serial port
+     * has just as much reason to be able to ask for one
+     */
+    usConsoleStopAfter(cfg->panicAfter, cfg->panicAfterLen);
+
     if (cfg->uartKind == UsCfgUARTOff) {
         return;
     }

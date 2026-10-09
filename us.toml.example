@@ -134,6 +134,27 @@ notVamap = false
 # vector Windows actually arrives on; leave it off.
 spxStack = false
 
+# Stop on purpose, to check that a stop is noticed and reported.
+#
+# A panic only ever happens on a path that is already going wrong, so nothing
+# in ordinary use goes near the code that writes one and a broken report would
+# first be found at the worst possible moment. These put a machine on one of
+# those paths deliberately, so the report can be read on a screen and over the
+# serial port while the rest of the boot is working.
+#
+# panicAfter is a milestone exactly as the boot prints it, and the boot stops
+# after printing that one. Compared whole, not by prefix: four milestones start
+# with "M6.5", so a prefix would stop at whichever of them came first.
+#
+# The other two are counts, of exceptions taken and of rewrite attempts, and
+# zero is off. They are what the payload checks, and unlike the milestone they
+# are only reached once the kernel is running, which is the state a stop is
+# most likely to happen in and the hardest to recognise.
+#
+# panicAfter = "M6.5 armed"
+# panicAfterTraps = 1000
+# panicAfterRewrites = 1
+
 # [[debug.patch]] entries replace instructions in an image before it runs,
 # by name and RVA, without a list file. One table per site:
 #

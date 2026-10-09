@@ -10,6 +10,7 @@
 #include <uefi.h>
 
 #include "uefi/console.h"
+#include "uefi/panic.h"
 #include "uefi/screen.h"
 
 /*
@@ -53,11 +54,29 @@ static uintptr_t gBase;
 static uint32_t gShift;
 static uint32_t gWidth = 32U;
 static UsLogLevel gLevel = UsLogInfo;
+
+/*
+ * The milestone the configuration asked to stop after, if any
+ *
+ * Two fields rather than a string, because the configuration hands back a
+ * pointer into its own document and a length rather than a terminated string.
+ * Set once when the console is opened, and read at every milestone, which is
+ * the one place that has to know: a check at each site would be a list to keep
+ * in step with the messages, and the ones that were forgotten would be exactly
+ * the ones that matter
+ */
+static const char *gPanicAfter;
+static int gPanicAfterLen;
 static bool gColour = true;
 static bool gScreen = true;
 /* Set while an escape sequence is going out, so that the serial port can skip
  * one whole rather than leave its tail in the log */
 static bool gEscape;
+
+void usConsoleStopAfter(const char *what, int whatLen) {
+    gPanicAfter = what;
+    gPanicAfterLen = whatLen;
+}
 
 static uintptr_t regAt(uint32_t index) {
     return gBase + ((uintptr_t)index << gShift);
@@ -284,6 +303,14 @@ void usConsoleMilestone(const char *what) {
     emitString(US_GREEN "milestone" US_RESET ": ");
     emitString(what);
     emitNewline();
+    if (usPanicNameMatches(gPanicAfter, gPanicAfterLen, what)) {
+        /*
+         * The detail is zero: what identifies this stop is the milestone,
+         * which is already in the line above, and a number would be a second
+         * way of naming the same thing
+         */
+        usPanicHaltEFI(US_PANIC_INJECTED, what, 0U);
+    }
 }
 
 void usConsoleProgress(char mark) {

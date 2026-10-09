@@ -19,6 +19,8 @@
 
 #include "common/layout.h"
 #include "common/version.h"
+#include "core/pool.h"
+#include "core/translate.h"
 #include "uefi/config.h"
 #include "uefi/console.h"
 #include "uefi/screen.h"
@@ -105,6 +107,19 @@ static void printConfig(const UsConfig *cfg) {
            boolWord(cfg->notArmHandover), boolWord(cfg->notVamap),
            boolWord(cfg->armOnLoad),
            boolWord(cfg->spxStack), (unsigned)cfg->patchCount);
+
+    /*
+     * The injected stops, including the ones that were not asked for: a
+     * machine that does not stop where it was told to is a machine whose
+     * configuration was not read, and the way to tell those apart is to see
+     * what was read
+     */
+    usLogV("config", "[debug] stopAfter=" US_VALUE("\"%.*s\"")
+           " afterTraps=" US_VALUE("%llu") " afterRewrites=" US_VALUE("%llu")
+           "\n",
+           cfg->panicAfterLen, cfg->panicAfter != NULL ? cfg->panicAfter : "",
+           (unsigned long long)cfg->panicAfterTraps,
+           (unsigned long long)cfg->panicAfterRewrites);
 }
 
 int main(int argc, char **argv) {
@@ -152,6 +167,42 @@ int main(int argc, char **argv) {
     }
 
     usLogI("undefshim", US_VERSION_STRING " " US_BUILD_ID "\n");
+
+    /*
+     * Where the screen is, while it is still directly addressable
+     *
+     * It is the one channel that outlives the kernel taking over: the serial
+     * port is not mapped by the kernel's tables, and the frame buffer is
+     * memory the firmware keeps because this machine has no graphics driver
+     * and goes on drawing the desktop into it. So the geometry and the
+     * physical address are worked out here, where the firmware can still be
+     * asked, and put in the pool for whatever might have to report from later
+     *
+     * The physical address has to be asked for rather than assumed: the
+     * firmware maps its memory identity, but that is a property of the
+     * firmware's tables and not of the address, and it is the physical one
+     * that a mapping built later is made of
+     */
+    {
+        UsScreenInfo screen;
+        uint64_t pa = 0;
+
+        usScreenFrameBuffer(&screen);
+        if (screen.base != 0
+            && usTranslateOwnAddress(screen.base, true, &pa)
+            && usPoolRecordFB(gSession.pool, pa, screen.bytes, screen.width,
+                              screen.height, screen.stride, screen.blueFirst)) {
+            usLogV("screen", "fb=" US_VALUE("%#llx") " pa=" US_VALUE("%#llx")
+                   " " US_VALUE("%u") "x" US_VALUE("%u") " stride="
+                   US_VALUE("%u") " blueFirst=" US_VALUE("%u") "\n",
+                   (unsigned long long)screen.base, (unsigned long long)pa,
+                   (unsigned)screen.width, (unsigned)screen.height,
+                   (unsigned)screen.stride, (unsigned)screen.blueFirst);
+        } else {
+            usLogW("screen", "no frame buffer to record\n");
+        }
+    }
+
     switch (result) {
     case UsConfigLoaded:
         usLogI("config", "loaded\n");

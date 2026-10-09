@@ -547,6 +547,38 @@ UsConfig *usConfigParse(const char *text, size_t len, char *err, size_t errLen) 
         return NULL;
     }
 
+    /*
+     * Where to stop on purpose, for checking the report
+     *
+     * A key that says where to stop is not a piece of the mechanism taken out
+     * of the way, so it is parsed here rather than with the switches above,
+     * and it is refused rather than ignored when it is nonsense: a machine
+     * asked to stop at a point that does not exist would otherwise run to
+     * completion and look exactly like one whose report works
+     */
+    {
+        int nameLen = 0;
+        int64_t count = 0;
+
+        if (!cfgStr(dbg, "panicAfter", &cfg->panicAfter, &nameLen, err, errLen)) {
+            usConfigFree(cfg);
+            return NULL;
+        }
+        if (cfg->panicAfter != NULL) {
+            cfg->panicAfterLen = nameLen;
+        }
+        if (!cfgInt(dbg, "panicAfterTraps", &count, err, errLen) || count < 0) {
+            usConfigFree(cfg);
+            return NULL;
+        }
+        cfg->panicAfterTraps = (uint64_t)count;
+        if (!cfgInt(dbg, "panicAfterRewrites", &count, err, errLen) || count < 0) {
+            usConfigFree(cfg);
+            return NULL;
+        }
+        cfg->panicAfterRewrites = (uint64_t)count;
+    }
+
     return cfg;
 }
 

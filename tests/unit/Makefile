@@ -20,7 +20,13 @@ CFG_CFLAGS := -std=gnu23 -O2 -Wall -Wextra -I$(ROOT) -I$(TOML) $(TOML_DEFS)
 .PHONY: all check clean
 all: test_cfg test_layout test_scan_images test_rva_patch test_plan test_pgtable test_par \
      test_thunk test_stackgen test_payload_place test_early test_ldapr test_acpi test_ldr \
-     test_patchlist test_screen test_driver_hook test_drvhook
+     test_patchlist test_screen test_driver_hook test_drvhook test_panic
+
+# The name a stop is asked for by, compared the way the configuration hands it
+# over: a pointer and a length rather than a terminated string. The comparison
+# is in the header, so this links nothing
+test_panic: test_panic.c $(ROOT)/uefi/panic.h
+	$(CC) -std=gnu23 -O2 -Wall -Wextra -I$(ROOT) test_panic.c -o $@
 
 test_early: test_early.c $(ROOT)/payload/early.c $(ROOT)/payload/vamap.c \
             $(ROOT)/core/thunk.c
@@ -31,11 +37,12 @@ test_early: test_early.c $(ROOT)/payload/early.c $(ROOT)/payload/vamap.c \
 # The console is linked in as well: the preview drives the real one into the
 # real drawer, so what is looked at is what a machine would draw
 test_screen: test_screen.c $(ROOT)/uefi/screen.c $(ROOT)/uefi/screen.h \
-             $(ROOT)/uefi/console.c $(ROOT)/uefi/console.h $(ROOT)/uefi/font.h \
-             $(ROOT)/common/log.h
+             $(ROOT)/uefi/console.c $(ROOT)/uefi/console.h $(ROOT)/common/font.h \
+             $(ROOT)/uefi/panic.c $(ROOT)/uefi/panic.h $(ROOT)/common/log.h
 	$(CC) -std=gnu23 -O2 -Wall -Wextra -I. -I$(ROOT) \
 	    -I$(ROOT)/third_party/posix-uefi/uefi \
-	    test_screen.c $(ROOT)/uefi/screen.c $(ROOT)/uefi/console.c -o $@
+	    test_screen.c $(ROOT)/uefi/screen.c $(ROOT)/uefi/console.c \
+	    $(ROOT)/uefi/panic.c -o $@
 
 test_patchlist: test_patchlist.c $(ROOT)/core/patchlist.c $(ROOT)/core/patchapply.c \
                 $(ROOT)/core/sha256.c
@@ -131,6 +138,7 @@ check: all
 	@./test_ldapr
 	@./test_patchlist
 	@./test_screen
+	@./test_panic
 	@./test_acpi
 	@./test_ldr
 	@./test_driver_hook

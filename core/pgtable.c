@@ -12,11 +12,6 @@
 
 #include "core/pgtable.h"
 
-/* bits [1:0] == 0b11 is a table at L0-L2 and a page at L3 */
-#define US_DESC_TABLE_OR_PAGE 3ULL
-/* bits [1:0] == 0b01 is a block, which only L1 and L2 may use */
-#define US_DESC_BLOCK 1ULL
-
 /* A block descriptor at L1 covers 1GB, at L2 2MB, in 4KB granule */
 #define US_L1_BLOCK_MASK 0x0000FFFFC0000000ULL
 #define US_L2_BLOCK_MASK 0x0000FFFFFFE00000ULL
@@ -35,14 +30,7 @@ const UsSelfMapLevel usSelfMapLevels[US_SELF_MAP_LEVELS] = {
     { US_PAGE_ADDR_MASK },
 };
 
-UsLeaf usLeafFind(uint64_t selfMapBase, UsWordRead read, void *ctx, uint64_t va) {
-    UsLeaf out = { 0 };
-    uint64_t bases[US_SELF_MAP_LEVELS];
-
-    if (read == NULL || selfMapBase == 0) {
-        return out;
-    }
-
+void usLevelBases(uint64_t selfMapBase, uint64_t bases[US_SELF_MAP_LEVELS]) {
     /* The bases, from the page level up. Each level's descriptors are mapped
      * by the level below, so the address of a level's descriptors is that
      * level's own page descriptor: the same computation as for an address,
@@ -53,13 +41,81 @@ UsLeaf usLeafFind(uint64_t selfMapBase, UsWordRead read, void *ctx, uint64_t va)
     for (unsigned i = US_SELF_MAP_LEVELS - 1; i > 0; i--) {
         bases[i - 1] = usPTESlotFor(selfMapBase, bases[i]);
     }
+}
+
+UsDescriptorKind usDescriptorKind(uint64_t descriptor, unsigned level) {
+    bool last = (level + 1U == US_SELF_MAP_LEVELS);
+
+    if (descriptor == 0) {
+        return UsDescriptorEmpty;
+    }
+    if ((descriptor & US_DESC_TABLE_OR_PAGE) == US_DESC_TABLE_OR_PAGE) {
+        /* The same bits mean a table above the last level and the mapped page
+         * at it, and which of the two is not a detail: only one of them can be
+         * written into or walked past */
+        return last ? UsDescriptorLeaf : UsDescriptorTable;
+    }
+    if ((descriptor & US_DESC_BLOCK) == US_DESC_BLOCK) {
+        /* A block is a thing at the middle two levels: at the top it would
+         * cover 512GB, which this does not handle, and at the page level it is
+         * not a shape that exists */
+        return (!last && level > 0) ? UsDescriptorLeaf : UsDescriptorOther;
+    }
+    return UsDescriptorOther;
+}
+
+UsFreeSlot usFreeSlotFind(uint64_t selfMapBase, UsWordRead read, void *ctx,
+                          uint64_t va) {
+    UsFreeSlot out = { 0 };
+    uint64_t bases[US_SELF_MAP_LEVELS];
+
+    if (read == NULL || selfMapBase == 0) {
+        return out;
+    }
+    usLevelBases(selfMapBase, bases);
+
+    for (unsigned i = 0; i < US_SELF_MAP_LEVELS; i++) {
+        uint64_t at = usLevelEntry(bases[i], i, va);
+        UsDescriptorKind kind = usDescriptorKind(read(ctx, at), i);
+
+        if (kind == UsDescriptorEmpty) {
+            /*
+             * Free, and usable only where a leaf may go. An empty entry at the
+             * top level is not one of those: filling it means either a 512GB
+             * block, which is not a mapping this makes, or a table that does
+             * not exist yet, which is not something this can create
+             */
+            if (i == 0) {
+                return out;
+            }
+            out.found = true;
+            out.level = i;
+            out.descriptorVA = at;
+            return out;
+        }
+        if (kind != UsDescriptorTable || i + 1U >= US_SELF_MAP_LEVELS) {
+            /* Mapped, or a shape nothing may descend through */
+            return out;
+        }
+    }
+    return out;
+}
+
+UsLeaf usLeafFind(uint64_t selfMapBase, UsWordRead read, void *ctx, uint64_t va) {
+    UsLeaf out = { 0 };
+    uint64_t bases[US_SELF_MAP_LEVELS];
+
+    if (read == NULL || selfMapBase == 0) {
+        return out;
+    }
+
+    usLevelBases(selfMapBase, bases);
 
     for (unsigned i = 0; i < US_SELF_MAP_LEVELS; i++) {
         const UsSelfMapLevel *level = &usSelfMapLevels[i];
         unsigned shift = US_LEVEL_SHIFT(i);
         uint64_t size = 1ULL << shift;
-        uint64_t index = (va >> shift) & ((1ULL << US_LEVEL_BITS(i)) - 1);
-        uint64_t at = bases[i] + index * 8;
+        uint64_t at = usLevelEntry(bases[i], i, va);
         uint64_t descriptor = read(ctx, at);
         bool last = (i + 1 == US_SELF_MAP_LEVELS);
 

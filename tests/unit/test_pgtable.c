@@ -14,6 +14,8 @@
 
 #include <stdio.h>
 
+#include "common/layout.h"
+#include "core/mair.h"
 #include "core/pgtable.h"
 
 #define US_CHECK_NAME "test_pgtable"
@@ -81,7 +83,15 @@ static uint64_t leafRead(void *ctx, uint64_t at) {
 }
 
 /* Where the four descriptors are, written the long way: this is what the
- * implementation has to compute, so writing it out again is the check */
+ * implementation has to compute, so writing it out again is the check
+ *
+ * Every bit of the page number from this level's shift upwards, which is what
+ * the implementation uses and is not nine: the self map is flat, so a level's
+ * index carries the bits the levels above it have already accounted for as
+ * well. Written as 48 - shift rather than as nine so that it is the flat rule
+ * being restated and not a second guess at the width -- this helper is meant
+ * to be an independent statement of the layout, and a copy of the
+ * implementation's own expression would agree with it whatever it said */
 static uint64_t slot(uint64_t base, uint64_t va, unsigned shift) {
     return base + ((va >> shift) & ((1ULL << (48 - shift)) - 1)) * 8;
 }
@@ -269,11 +279,225 @@ static void testLeafUnmappedAndReserved(void) {
     ok("no reader means no leaf", !usLeafFind(KERNEL_BASE, NULL, NULL, va).found);
 }
 
+/* --- the shape of an entry, and where a mapping may go ------------------ */
+
+/*
+ * The same bases the walk computes, for a test that needs one of them without
+ * having the array the implementation fills in
+ */
+static const uint64_t *levelBasesOf(uint64_t base) {
+    static uint64_t out[4];
+
+    out[3] = base;
+    for (int i = 3; i > 0; i--) {
+        out[i - 1] = base + ((out[i] & US_PTE_VA_MASK) >> 9);
+    }
+    return out;
+}
+
+/*
+ * A reader that was refused, which is what a probe reports when the mapping
+ * will not answer: the reserved shape, so that a walk treats the entry as one
+ * it must not touch rather than as one that is free
+ */
+static uint64_t unreadableRead(void *ctx, uint64_t at) {
+    (void)ctx;
+    (void)at;
+    return 2U;
+}
+
+/*
+ * The tables above a level, with that level left empty
+ *
+ * This is the shape an address the kernel has not mapped for has: the levels
+ * that lead to it are the ones its own mappings put there, and what is missing
+ * is the entry that would name this page. Everything below the empty one is
+ * left out, because the walk must not read it
+ */
+static void plantTablesAbove(uint64_t base, uint64_t va, unsigned leafLevel) {
+    const unsigned shifts[4] = { 39, 30, 21, 12 };
+
+    for (unsigned i = 0; i < leafLevel && i < 4; i++) {
+        plant(slot(levelBasesOf(base)[i], va, shifts[i]), (0x10002000ULL) | 3);
+    }
+}
+
+/*
+ * The two bits that say what a descriptor is do not say the same thing at
+ * every level, and that is the whole of what this is here to pin down: a
+ * table above the last level is a place to keep walking, the same bits at the
+ * last level are the mapping itself, and a block is only a shape the middle
+ * two may hold
+ */
+static void testKindOfDescriptor(void) {
+    /* Nothing there at all */
+    for (unsigned level = 0; level < 4; level++) {
+        ok("an empty entry is empty at every level",
+           usDescriptorKind(0, level) == UsDescriptorEmpty);
+    }
+
+    /* Bits [1:0] == 11: a table down to the last, the page at the last */
+    for (unsigned level = 0; level < 3; level++) {
+        ok("11 above the last level is a table",
+           usDescriptorKind((0x1000ULL << 4) | 3, level) == UsDescriptorTable);
+    }
+    ok("11 at the last level is the page",
+       usDescriptorKind((0x1000ULL << 4) | 3, 3) == UsDescriptorLeaf);
+
+    /* Bits [1:0] == 01: a block, which the middle two hold */
+    ok("a block at the first level is reserved",
+       usDescriptorKind(0x1000ULL | 1, 0) == UsDescriptorOther);
+    ok("a block at the second level is a leaf",
+       usDescriptorKind(0x200000ULL | 1, 1) == UsDescriptorLeaf);
+    ok("a block at the third level is a leaf",
+       usDescriptorKind(0x200000ULL | 1, 2) == UsDescriptorLeaf);
+    ok("a block at the last level is reserved",
+       usDescriptorKind(0x1000ULL | 1, 3) == UsDescriptorOther);
+
+    /* Bits [1:0] == 10 is a shape that does not exist at any level */
+    ok("an invalid descriptor is reserved",
+       usDescriptorKind(0x1000ULL | 2, 3) == UsDescriptorOther);
+}
+
+/*
+ * Where a mapping may be put, which is the question the frame buffer's alias
+ * is built on: the kernel may not have the address, and everything above it
+ * has to be a table already, since making one is not something this can do
+ */
+static void testFreeSlot(void) {
+    const uint64_t va = KVA_BASE + 0x40000000ULL;
+    UsFreeSlot free1;
+
+    /*
+     * Nothing under the top level: there is no table below it to write into,
+     * and making one is not something this does. Refusing is the answer, not
+     * a mapping at a level that does not exist
+     */
+    resetPlant();
+    free1 = usFreeSlotFind(KERNEL_BASE, leafRead, NULL, va);
+    ok("an address with no tables above it has nowhere to go", !free1.found);
+
+    /*
+     * The realistic case, and the one the frame buffer's alias is in: the
+     * tables above are the kernel's own linear mapping and exist, and what is
+     * empty is the entry that would name this page
+     */
+    resetPlant();
+    plantTablesAbove(KERNEL_BASE, va, 3);
+    free1 = usFreeSlotFind(KERNEL_BASE, leafRead, NULL, va);
+    ok("an unmapped address under a table has a free entry", free1.found);
+    eqU64("and it is at the page level", free1.level, 3);
+
+    /* Every level present down to a page: nothing is free and nothing may be
+     * written over */
+    resetPlant();
+    plantLevels(KERNEL_BASE, va, (0x13BC00000ULL & US_PAGE_ADDR_MASK) | 3, 3);
+    ok("a mapped address has no free entry",
+       !usFreeSlotFind(KERNEL_BASE, leafRead, NULL, va).found);
+
+    /* The top level points at a table, and that table has an entry for the
+     * second level, but nothing fills in the first: the walk stops at the
+     * first empty entry it meets, which is the one it would write */
+    resetPlant();
+    plant(slot(levelBasesOf(KERNEL_BASE)[0], va, 39), (0x10002000ULL) | 3);
+    plant(slot(levelBasesOf(KERNEL_BASE)[2], va, 21), (0x10002000ULL) | 3);
+    free1 = usFreeSlotFind(KERNEL_BASE, leafRead, NULL, va);
+    ok("an entry below a missing table is free", free1.found);
+    eqU64("at the first level with nothing in it", free1.level, 1);
+
+    /* A block covers the address, so there is nothing to fill in and nothing
+     * to descend through */
+    resetPlant();
+    plant(slot(levelBasesOf(KERNEL_BASE)[1], va, 30), 0x40000000ULL | 1);
+    ok("a block leaves nothing free",
+       !usFreeSlotFind(KERNEL_BASE, leafRead, NULL, va).found);
+
+    /* A read that was refused is not an empty entry: an entry that could not
+     * be read is one to leave alone, and writing over it would be writing
+     * over whatever is there */
+    resetPlant();
+    {
+        UsFreeSlot refused;
+        /* The reader answers the reserved shape for everything, which is what
+         * a probe that was refused reports */
+        refused = usFreeSlotFind(KERNEL_BASE, unreadableRead, NULL, va);
+        ok("an unreadable entry is not free", !refused.found);
+    }
+
+    ok("no base means no free entry",
+       !usFreeSlotFind(0, leafRead, NULL, va).found);
+    ok("no reader means no free entry",
+       !usFreeSlotFind(KERNEL_BASE, NULL, NULL, va).found);
+}
+
+/* A block built with an attribute index, checked against what it is made of */
+static void testBlockDescriptor(void) {
+    /* The address field of a 2MB block at the second level, written the long
+     * way: this is what the constructor has to clear */
+    const uint64_t block2M = 0x0000FFFFFFE00000ULL;
+    const uint64_t pa = 0x138400000ULL;
+    uint64_t descriptor = usBlockDescriptor(pa, US_GRANULE_2M, 3);
+
+    eqU64("the address is rounded down to the block",
+          descriptor & block2M, pa & block2M);
+    eqU64("the attribute index is where the architecture puts it",
+          (descriptor >> US_ATTR_INDEX_SHIFT) & 7U, 3);
+    ok("it is a block", (descriptor & 3U) == US_DESC_BLOCK);
+    ok("the access flag is set, since a fault here is the end of everything",
+       (descriptor & US_PTE_AF) != 0);
+    ok("it is not executable at EL1", (descriptor & US_PTE_PXN) != 0);
+    ok("it is not executable at EL0", (descriptor & US_PTE_UXN) != 0);
+
+    /* A 4KB block is the page level's shape: the same bits, a different size,
+     * and the rounding is what tells them apart */
+    descriptor = usBlockDescriptor(pa + 0x123, US_PAGE_SIZE, 0);
+    eqU64("a page-sized descriptor is rounded to its own size",
+          descriptor & US_PAGE_ADDR_MASK, pa & US_PAGE_ADDR_MASK);
+}
+
+/* --- the attribute a mapping is made with ------------------------------- */
+
+static void testMAIRIndex(void) {
+    /*
+     * The assignment a running machine uses, written out as the
+     * bytes it is made of: attribute 3 is the non-cacheable one, and the two
+     * below it are the ordinary memory ones. What matters is that the answer
+     * comes from where the byte is rather than from a constant
+     */
+    const uint64_t mair = 0x00000000440004FFULL;
+
+    eqU64("the non-cacheable attribute is found where it is",
+          (uint64_t)usMAIRNormalNonCacheableIndex(mair), 3);
+    eqU64("an attribute at the bottom is found too",
+          (uint64_t)usMAIRIndex(mair, 0xFF), 0);
+
+    /* Zero is a legitimate index, so "not there" has to be negative rather
+     * than zero: a caller that tested for zero would take the low byte */
+    eqU64("an attribute that is not there is negative",
+          (uint64_t)usMAIRNormalNonCacheableIndex(0x00000000000004FFULL) >> 63, 1);
+    eqU64("and so is a byte that appears nowhere",
+          (uint64_t)usMAIRIndex(mair, 0xAB) >> 63, 1);
+
+    /* All eight entries are reachable */
+    eqU64("the last entry is reachable",
+          (uint64_t)usMAIRIndex(0x4400000000000000ULL, 0x44), 7);
+
+    /* A machine whose low byte is the non-cacheable one is answered with that
+     * index rather than the usual one: this is the whole point of looking it
+     * up instead of writing three */
+    eqU64("the index follows the machine, not a convention",
+          (uint64_t)usMAIRNormalNonCacheableIndex(0x0000000000000044ULL), 0);
+}
+
 int main(void) {
     testSelfMapBases();
     testLeafFindsAPage();
     testLeafStopsAtABlock();
     testLeafUnmappedAndReserved();
+    testKindOfDescriptor();
+    testFreeSlot();
+    testBlockDescriptor();
+    testMAIRIndex();
 
     return usCheckSummary(checks, failures);
 }

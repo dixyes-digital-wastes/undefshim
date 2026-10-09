@@ -346,7 +346,17 @@ static bool armImage(UsSession *s, UsImageKind kind, size_t *armed) {
          */
         pte = usLocatePteBase(img);
         if (pte.found) {
+            UsPayloadConfig *cfg =
+                (UsPayloadConfig *)(uintptr_t)s->payloadPlace.configVA;
+
             descriptorBaseRVA = pte.rva;
+            /*
+             * The payload needs the same base, at the handover, to build a
+             * mapping of its own. What it gets is the RVA: the variable's
+             * address moves with the image and the RVA does not, and the
+             * payload is the side that knows where the image ended up
+             */
+            cfg->descriptorBaseRVA = pte.rva;
             usLogV("arm", "descriptor base at +" US_VALUE("%#x")
                    " (body +" US_VALUE("%#x") ", literal " US_VALUE("%#llx")
                    ", " US_VALUE("%zu") " load(s))\n",

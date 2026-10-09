@@ -293,6 +293,69 @@ typedef struct UsPayloadConfig_t {
     uint64_t poolBytes;
     uint64_t entryOffset;
 
+    /*
+     * The firmware's frame buffer, as the firmware described it
+     *
+     * The address is a physical one, which the boot worked out while it could
+     * still ask: the frame buffer is the one thing the kernel's own tables do
+     * not reach and the one thing worth reaching after them, so the payload
+     * has to know where it is and how wide a row of it is. Zero for pa means
+     * the machine has no usable one, and nothing is drawn
+     *
+     * stride is in pixels and not bytes, which is the way the firmware states
+     * it: a row is stride pixels wide and may be wider than width
+     */
+    uint64_t fbPA;
+    uint64_t fbBytes;
+    uint64_t fbWidth;
+    uint64_t fbHeight;
+    uint64_t fbStride;
+    uint64_t fbBlueFirst;
+
+    /*
+     * Where the kernel keeps the base of its own descriptor mapping, as an
+     * RVA into its image, or zero when the boot could not find it
+     *
+     * The payload needs the value and not the address: it reaches a
+     * descriptor by computing its address from that base, which is the only
+     * way to write one without knowing where the kernel put the tables. The
+     * boot reads the variable at the handover, where the kernel's image is at
+     * an address the payload can reach
+     */
+    uint64_t descriptorBaseRVA;
+
+    /*
+     * Where the kernel's image is, once it has one
+     *
+     * Written by the payload at the handover, which is the moment it is known
+     * and the moment after which it does not change. It is what the two
+     * things that must be read out of the kernel later are read through: the
+     * variable holding the base of its descriptor mapping, and nothing else
+     *
+     * It has to be kept rather than worked out again, because the boot's own
+     * address for the image stops being valid the instant the kernel's tables
+     * are in force, and the payload is the only side that is running when it
+     * happens
+     */
+    uint64_t kernelBase;
+
+    /*
+     * Where to stop on purpose, for checking that the report works
+     *
+     * The report only exists on paths that are only reached when something has
+     * already gone wrong, so nothing exercises it in ordinary use and a broken
+     * one would be found at the worst possible moment. These name a point and
+     * the counters below count towards it
+     *
+     * Zero means no injection, which is why the counts start at zero rather
+     * than one: "not asked for" and "the first one" have to be different
+     * answers, or a test either always fires or never does
+     */
+    uint64_t panicAfterTraps;
+    uint64_t panicTraps;
+    uint64_t panicAfterRewrites;
+    uint64_t panicRewrites;
+
     uint64_t highVA;
     uint64_t highPoolVA;
     uint64_t stubCount;

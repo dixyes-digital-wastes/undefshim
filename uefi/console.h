@@ -45,6 +45,19 @@ void usConsoleUse(UsUARTKind kind, uint64_t base, uint32_t width,
                   uint64_t clock, uint32_t baud);
 
 /*
+ * The milestone to stop after, if the configuration named one
+ *
+ * Handed over once when the console is opened rather than passed with every
+ * milestone: a milestone is printed from all over the boot, including from
+ * paths that have no session to give, and this is the one thing the check
+ * needs
+ *
+ * The name comes from the configuration, which hands back a pointer into its
+ * own document rather than a terminated string, so its length goes with it
+ */
+void usConsoleStopAfter(const char *what, int whatLen);
+
+/*
  * How much is worth saying. A line above this level is not written at all,
  * and is not formatted either
  */

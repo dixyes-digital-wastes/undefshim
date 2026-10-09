@@ -25,7 +25,8 @@ int atoi(const char *s);
  */
 
 #include "uefi/console.h"
-#include "uefi/font.h"
+#include "common/font.h"
+#include "core/pixel.h"
 #include "uefi/screen.h"
 
 #define US_CHECK_NAME "test_screen"
@@ -406,6 +407,54 @@ static void testLevel(void) {
  * may be read by something that would rather not see the escapes. So turning
  * it off has to leave the screen exactly as it was
  */
+/*
+ * A pixel, in the order the firmware said the channels are in
+ *
+ * Black and white are the same word whichever order the bytes are in, so a
+ * swap that is missing or backwards draws those two correctly and everything
+ * else wrong. The colours are what is checked: red has to come out where the
+ * machine expects red, and it has to be somewhere different in the two orders
+ */
+static void testPixelOrder(void) {
+    uint32_t redLo = usPixelColour(0xFF, 0, 0, false);
+    uint32_t redHi = usPixelColour(0xFF, 0, 0, true);
+    uint32_t whiteLo = usPixelColour(0xFF, 0xFF, 0xFF, false);
+    uint32_t whiteHi = usPixelColour(0xFF, 0xFF, 0xFF, true);
+    uint32_t blackLo = usPixelColour(0, 0, 0, false);
+    uint32_t blackHi = usPixelColour(0, 0, 0, true);
+
+    if (redLo == redHi) {
+        usCheckFail("pixel: the two channel orders agree about red\n");
+        failures++;
+    }
+    /* Red at the bottom of the word, and at the top of it the other way */
+    if (redLo != 0x000000FFU || redHi != 0x00FF0000U) {
+        usCheckFail("pixel: red is at 0x%08x and 0x%08x\n", redLo, redHi);
+        failures++;
+    }
+    /* The two that agree either way, which is why a wrong order hid here */
+    if (whiteLo != whiteHi || whiteLo != 0x00FFFFFFU) {
+        usCheckFail("pixel: white is not white in both orders\n");
+        failures++;
+    }
+    if (blackLo != blackHi || blackLo != 0U) {
+        usCheckFail("pixel: black is not black in both orders\n");
+        failures++;
+    }
+    /* Green sits between the two in both, and blue is red's opposite */
+    if (usPixelColour(0, 0xFF, 0, false) != 0x0000FF00U
+        || usPixelColour(0, 0, 0xFF, false) != 0x00FF0000U
+        || usPixelColour(0, 0, 0xFF, true) != 0x000000FFU) {
+        usCheckFail("pixel: green or blue is not where it belongs\n");
+        failures++;
+    }
+    /* The byte above the colour is not part of it */
+    if ((whiteLo >> 24) != 0 || (whiteHi >> 24) != 0) {
+        usCheckFail("pixel: something was written above the colour\n");
+        failures++;
+    }
+}
+
 static void testColourIsScreenIndependent(void) {
     usScreenUseFrameBuffer(frame, WIDTH, HEIGHT, WIDTH, false);
     usConsoleUse(UsUARTOff, 0, 8, 0, 0);
@@ -490,6 +539,7 @@ int main(int argc, char **argv) {
         }
     } else {
         testColour();
+        testPixelOrder();
         testColourIsScreenIndependent();
         testLevel();
         usScreenUseFrameBuffer(frame, WIDTH, HEIGHT, WIDTH, false);

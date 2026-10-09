@@ -8,7 +8,8 @@
 
 #include <uefi.h>
 
-#include "uefi/font.h"
+#include "common/font.h"
+#include "core/pixel.h"
 #include "uefi/screen.h"
 
 /*
@@ -53,9 +54,7 @@ typedef struct {
 /*
  * Black text on white, rather than the other way round: the firmware draws
  * its own console on the same screen, so what this driver says has to be
- * distinguishable at a glance from what everything else says. It also has the
- * useful property that both colours look the same whichever order the
- * channels are in, so the two 8 bit formats need no telling apart
+ * distinguishable at a glance from what everything else says
  */
 #define US_SCREEN_INK 0x00000000U
 #define US_SCREEN_PAPER 0x00FFFFFFU
@@ -83,14 +82,9 @@ static void putPixel(uint32_t x, uint32_t y, uint32_t value) {
     if (x >= gWidth || y >= gHeight) {
         return;
     }
-    /*
-     * Black and white are the same number whatever order the channels are in,
-     * which is why this went unnoticed while they were the only two colours.
-     * A colour is not: the format says which end of the word the red is at
-     */
+    /* The format says which end of the word the red is at */
     if (gBlueFirst) {
-        value = (value & 0xFF00FF00U) | ((value & 0xFFU) << 16)
-                | ((value >> 16) & 0xFFU);
+        value = usPixelSwap(value);
     }
     *(volatile uint32_t *)(gFrame + (y * gStride + x) * 4U) = value;
 }
@@ -228,6 +222,20 @@ void usScreenUseFrameBuffer(void *pixels, uint32_t width, uint32_t height,
     if (gReady) {
         usScreenClear();
     }
+}
+
+void usScreenFrameBuffer(UsScreenInfo *out) {
+    if (out == NULL) {
+        return;
+    }
+    *out = (UsScreenInfo){
+        .base = gReady ? (uint64_t)(uintptr_t)gFrame : 0,
+        .bytes = gReady ? (uint64_t)gStride * gHeight * 4U : 0,
+        .width = gWidth,
+        .height = gHeight,
+        .stride = gStride,
+        .blueFirst = gBlueFirst,
+    };
 }
 
 bool usScreenInit(void) {

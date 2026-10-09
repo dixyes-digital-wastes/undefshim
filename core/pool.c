@@ -6,9 +6,21 @@
  * Laying out the runtime pool, see pool.h for why this is separate
  */
 
-#include <string.h>
-
 #include "core/pool.h"
+
+/*
+ * Zeroed a word at a time rather than with memset, because this file is on
+ * both sides of the handover: the boot has a libc, the payload has none, and a
+ * header that is not there is what makes that a build error in the one place
+ * that does not have it. The loop is what the compiler would emit anyway
+ */
+static void zeroPool(UsPool *pool) {
+    uint64_t *words = (uint64_t *)(void *)pool;
+
+    for (size_t i = 0; i < sizeof(*pool) / sizeof(*words); i++) {
+        words[i] = 0;
+    }
+}
 
 bool usPoolInitLayout(UsPool *pool, uint64_t baseVA, uint64_t basePA,
                       uint32_t stackSlots) {
@@ -28,7 +40,7 @@ bool usPoolInitLayout(UsPool *pool, uint64_t baseVA, uint64_t basePA,
         return false;
     }
 
-    memset(pool, 0, sizeof(*pool));
+    zeroPool(pool);
     pool->magic = US_POOL_MAGIC;
     pool->stackSlots = stackSlots;
     pool->selfPA = basePA;
@@ -52,6 +64,53 @@ uint64_t usPoolStackTop(const UsPool *pool, uint32_t slot) {
         return 0;
     }
     return pool->stackTop[slot];
+}
+
+bool usPoolRecordFB(UsPool *pool, uint64_t pa, uint64_t bytes, uint32_t width,
+                    uint32_t height, uint32_t stride, bool blueFirst) {
+    if (pool == NULL || pa == 0 || bytes == 0 || width == 0 || height == 0
+        || stride < width) {
+        return false;
+    }
+    pool->fb = (UsPoolFB){
+        .magic = US_POOL_FB_MAGIC,
+        .pa = pa,
+        .bytes = bytes,
+        .width = width,
+        .height = height,
+        .stride = stride,
+        .blueFirst = blueFirst ? 1U : 0U,
+    };
+    return true;
+}
+
+void usPoolFBSet(UsPool *pool, uint64_t aliasVA, uint64_t blocks,
+                 uint64_t attrIndex) {
+    if (pool == NULL || pool->fb.magic != US_POOL_FB_MAGIC) {
+        return;
+    }
+    pool->fb.aliasVA = aliasVA;
+    pool->fb.blocks = blocks;
+    pool->fb.attrIndex = attrIndex;
+    pool->fb.reason = US_FB_OK;
+    pool->fb.detail = 0;
+}
+
+/*
+ * Says why there is no mapping, in the record the host can read
+ *
+ * A refusal on this path is silent by nature: nothing can be reported at the
+ * time it happens, because the thing being built is the only way left to
+ * report anything. So the reason is written where a reader will look, and it
+ * is written even on the paths that had no frame buffer to begin with, so that
+ * "the boot never looked" and "this build refused" stay different answers
+ */
+void usPoolFBRefuse(UsPool *pool, uint64_t reason, uint64_t detail) {
+    if (pool == NULL || pool->fb.magic != US_POOL_FB_MAGIC) {
+        return;
+    }
+    pool->fb.reason = reason;
+    pool->fb.detail = detail;
 }
 
 bool usPoolIsValid(const UsPool *pool) {

@@ -7,7 +7,7 @@ and a font is a table of small integers nobody wants to read or maintain by
 hand, so it is generated once and the result is committed: the build then
 needs nothing but what is in the tree.
 
-    tests/tools/fontgen.py third_party/atarist-font/atarist-normal.bdf uefi/font.h
+    tests/tools/fontgen.py third_party/atarist-font/atarist-normal.bdf common/font.h
 
 The source is https://github.com/ntwk/atarist-font: a BDF, which is a bitmap
 written out as text, so the glyphs are read rather than rendered. That is the

@@ -14,6 +14,8 @@
 #include "core/pan.h"
 #include "payload/payload.h"
 #include "payload/early.h"
+#include "payload/panic.h"
+#include "payload/regs.h"
 #include "payload/rewrite.h"
 #include "payload/selfmap.h"
 #include "payload/uart.h"
@@ -75,45 +77,6 @@ typedef struct UsActive_t {
 } UsActive;
 
 static UsActive gActive[US_MAX_CPUS];
-
-static uint64_t currentESR(void) {
-    uint64_t esr;
-
-    __asm__ volatile("mrs %0, esr_el1" : "=r"(esr));
-    return esr;
-}
-
-static uint64_t currentFAR(void) {
-    uint64_t far;
-
-    __asm__ volatile("mrs %0, far_el1" : "=r"(far));
-    return far;
-}
-
-static void usSetELR(uint64_t elr) {
-    __asm__ volatile("msr elr_el1, %0" ::"r"(elr));
-}
-
-static uint64_t currentSPSR(void) {
-    uint64_t spsr;
-
-    __asm__ volatile("mrs %0, spsr_el1" : "=r"(spsr));
-    return spsr;
-}
-
-static uint64_t currentVBAR(void) {
-    uint64_t vbar;
-
-    __asm__ volatile("mrs %0, vbar_el1" : "=r"(vbar));
-    return vbar;
-}
-
-static uint64_t currentELR(void) {
-    uint64_t elr;
-
-    __asm__ volatile("mrs %0, elr_el1" : "=r"(elr));
-    return elr;
-}
 
 /* Says that the frame in flight is finished with, so a later fault is not
  * blamed on it. Every return from the handler goes through here */
@@ -641,6 +604,17 @@ int usPayloadHandle(UsFrame *frame) {
     if (cfg->quiet == 0) {
         usUARTInit(cfg->uartBase, (uint32_t)cfg->uartKind, (uint32_t)cfg->uartWidth);
     }
+
+    /*
+     * The injected stop, once the trace is down and the port is set up
+     *
+     * After the trace and not before: what it exists for is showing that a
+     * report can be made from a machine in this state, and stopping before the
+     * record of what arrived would leave the two indistinguishable. After the
+     * port rather than before it, because the report goes to both channels,
+     * and a stop taken earlier is one that only reaches the screen
+     */
+    usPanicCountTrap();
 
     if (frame == NULL) {
         if (cfg->quiet == 0) {

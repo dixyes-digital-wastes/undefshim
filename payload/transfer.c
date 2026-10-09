@@ -19,6 +19,7 @@
 #include "common/layout.h"
 #include "core/ldr.h"
 #include "payload/early.h"
+#include "payload/fb.h"
 #include "payload/payload.h"
 #include "payload/selfmap.h"
 #include "payload/transfer.h"
@@ -39,6 +40,7 @@ typedef struct UsTransferRecord_t {
 
     /* What the loader's own list said about the kernel */
     uint32_t foundKernel;
+    uint32_t fbMapped;      /* whether the frame buffer got a mapping */
     uint32_t reserved;
     uint64_t kernelBase;
     uint64_t kernelSize;
@@ -100,6 +102,24 @@ void usTransferEntry(uint64_t kernelEntryVA, uint64_t loaderBlockVA) {
     usTransferRecord.probes = self.probes;
     usTransferRecord.exhausted = self.exhausted ? 1U : 0U;
     usTransferRecord.faulted = self.faulted ? 1U : 0U;
+
+    /*
+     * The screen, mapped for the payload's own use
+     *
+     * This is the one moment it can be done: the kernel's tables are the ones
+     * in force, every other processor is still stopped by the kernel's own
+     * start-up, and none of the kernel has run. Afterwards a free entry of the
+     * kind this needs may have been filled in by the kernel, and taking one
+     * would be writing over whatever landed there
+     *
+     * A refusal is not a failure and is not reported as one: the report this
+     * exists for is written by a machine that has already stopped, and a
+     * machine with no screen to write it on is one that is reported about
+     * another way. What must not happen is a fault here, and nothing here can
+     * fault
+     */
+    usTransferRecord.fbMapped =
+        usFBBuild(usTransferRecord.kernelBase) ? 1U : 0U;
 
     /* The images are on the other side of the switch now: the loader's is where
      * it was, the kernel's where its image names it, and the payload's runtime

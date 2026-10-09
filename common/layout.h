@@ -107,6 +107,21 @@
 #define US_POOL_ENTRY_MAGIC 0x005952544E455355ULL /* "USENTRY" - the record */
 
 /*
+ * Set in the entry record when the payload stopped on purpose
+ *
+ * Written last, after everything it explains, so that a reader which finds it
+ * has found a complete record: the host samples memory while the machine may
+ * still be writing, and a flag written first would let it read a half-written
+ * one and believe it
+ *
+ * It is a different magic rather than a field beside the count, because what
+ * the two describe is different in kind: the ordinary record is a machine at
+ * work, and this one is a machine that has stopped, and a reader that has to
+ * look at a field to tell them apart will eventually not
+ */
+#define US_POOL_PANIC_MAGIC 0x0043494E41505555ULL /* "USPANIC" - it stopped */
+
+/*
  * One exception, as it was when the handler was entered
  *
  * The whole frame is kept rather than a chosen few registers. A register
@@ -186,6 +201,81 @@ typedef struct UsPoolStats_t {
 } UsPoolStats;
 
 #define US_POOL_STATS_MAGIC 0x0053544154535355ULL   /* "USSTATS" - trap counts */
+
+/*
+ * The firmware's frame buffer, and the payload's own way of reaching it
+ *
+ * The screen is the one channel that outlives the kernel taking over: the
+ * serial port is not mapped by the kernel's tables, and the frame buffer is
+ * memory the firmware keeps because the machine has no graphics driver and
+ * goes on drawing the desktop into it. So it is where a failure with nothing
+ * else left to say it is reported
+ *
+ * Nothing about that is free. The address the firmware gave is in the
+ * firmware's own space, and reaching the region from the kernel means a
+ * mapping the payload makes for itself, in the kernel's tables, at an address
+ * the kernel never chose. That mapping is written once, at the handover, and
+ * the record here is what says where it is and whether it is still good: the
+ * kernel may take the address back at any time, and the only way to find out
+ * is to ask the tables again before each use
+ *
+ * Written by the payload at the handover, never before: until then the pool
+ * is reached through the firmware's tables and the aliases mean nothing
+ */
+typedef struct UsPoolFB_t {
+    uint64_t magic;
+    uint64_t pa;        /* where the frame buffer is, physically */
+    uint64_t bytes;     /* how much of it the firmware described */
+    uint64_t aliasVA;   /* where the payload mapped it, or zero when it has no
+                         * mapping and nothing can be drawn */
+    uint64_t blocks;    /* how many block entries that mapping took */
+    uint64_t attrIndex; /* the MAIR attribute it was made with */
+    uint64_t drawn;     /* how many times the panic path has drawn on it */
+    /*
+     * Why there is no mapping, when there is none
+     *
+     * A build that refuses is the ordinary outcome on a machine this was not
+     * expected to work on, and the difference between the reasons is the
+     * difference between a machine that has no screen and one this code got
+     * wrong. Left as zero when the mapping was made, so a reader that finds a
+     * non-zero alias can ignore it
+     */
+    uint64_t reason;
+    uint64_t detail;    /* the number the reason is about */
+    /*
+     * What the payload knew about the kernel when it tried: where the image
+     * is, and the value it found for the base of the kernel's own descriptor
+     * mapping
+     *
+     * Recorded whether or not the mapping was made, and that is the point:
+     * the base is what a reader needs to walk the kernel's tables at all, and
+     * the only side that can work it out is the one that is running. A host
+     * that has to look at the tables has no other way in
+     */
+    uint64_t kernelBase;
+    uint64_t mpteBase;
+    uint32_t width;
+    uint32_t height;
+    uint32_t stride;    /* in pixels, not bytes */
+    uint32_t blueFirst; /* which end of a pixel is blue */
+} UsPoolFB;
+
+#define US_POOL_FB_MAGIC 0x0000004246505355ULL   /* "USPFB" - the frame buffer */
+
+/*
+ * Why the frame buffer could not be mapped, in the order the build checks
+ *
+ * These are the answers to "why is there no screen", which is otherwise a
+ * silent refusal: every one of them is a different problem, from a machine
+ * that simply has no frame buffer to one whose tables could not be walked at
+ * all
+ */
+#define US_FB_OK 0U
+#define US_FB_NO_KERNEL 1U        /* the kernel's base is unknown */
+#define US_FB_NO_BASE_RVA 2U      /* the boot did not leave a descriptor base */
+#define US_FB_NO_BASE 3U          /* the descriptor base could not be read */
+#define US_FB_NO_ATTR 4U          /* no MAIR entry holds a non-cacheable byte */
+#define US_FB_NO_SLOT 5U          /* no free entry was found to map into */
 
 typedef struct UsPoolEntry_t {
     uint64_t magic;
@@ -312,6 +402,29 @@ typedef struct UsPoolEntry_t {
      */
     uint64_t driverSkipped;
 
+    /*
+     * Set when the payload stopped on purpose, and what it knew
+     *
+     * The report itself goes to the serial port and to the screen, and neither
+     * can be relied on: the port is not mapped once the kernel is running, and
+     * the frame buffer is only there on a machine that has one the payload
+     * managed to map. This is the third copy, in memory the host can read
+     * through the monitor whatever else is true
+     *
+     * panicEntries is how many exceptions the handler had been entered for by
+     * then, which is the one piece of context nothing else in this record
+     * carries and which says whether the stop was on the boot path or long
+     * after it
+     */
+    uint64_t panic;
+    uint64_t panicCode;
+    uint64_t panicDetail;
+    uint64_t panicELR;
+    uint64_t panicESR;
+    uint64_t panicFAR;
+    uint64_t panicSPSR;
+    uint64_t panicEntries;
+
 } UsPoolEntry;
 
 typedef struct UsPool_t {
@@ -338,6 +451,9 @@ typedef struct UsPool_t {
      * rather than recorded
      */
     UsPoolStats stats;
+
+    /* The frame buffer, and the payload's own mapping of it */
+    UsPoolFB fb;
 
     /*
      * Physical address of this pool. At bootPhase the pool is identity mapped

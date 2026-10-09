@@ -37,6 +37,7 @@
 #include "core/pan.h"
 #include "core/pgtable.h"
 #include "core/translate.h"
+#include "payload/panic.h"
 #include "payload/payload.h"
 #include "payload/rewrite.h"
 
@@ -329,6 +330,15 @@ static void record(uint64_t site, uint64_t insn, const UsLeaf *leaf, uint64_t re
     if (result == UsRewriteWritten) {
         pool->entry.rewriteWritten++;
     }
+
+    /*
+     * The injected stop, so that a rewrite which has just happened can be
+     * reported about from the state it left behind. It counts attempts and not
+     * successes: what it exists for is checking the report and not the rewrite,
+     * and an attempt that was refused is as much a place to stop as one that
+     * worked
+     */
+    usPanicCountRewrite();
 }
 
 static UsRewriteResult rewriteOne(uint64_t site, UsLDAPRKind kind,

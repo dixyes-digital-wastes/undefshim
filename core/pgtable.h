@@ -98,6 +98,44 @@ static inline uint64_t usPTEForAddress(uint64_t va) {
 #define US_PTE_AP2 (UINT64_C(1) << 7)
 
 /*
+ * The rest of what a leaf descriptor has to say besides its address
+ *
+ * The access flag is not optional here and its absence is not a lazy fault
+ * that gets fixed up: on the path that uses these, a fault is the end of
+ * everything, so the first access has to be allowed rather than arranged to
+ * be allowed later
+ *
+ * Both execute-never bits are set because a frame buffer is data. Leaving
+ * them clear would make the memory executable at EL1 and EL0 for no reason,
+ * on an address the kernel never chose
+ */
+#define US_PTE_AF  (UINT64_C(1) << 10)
+#define US_PTE_PXN (UINT64_C(1) << 53)
+#define US_PTE_UXN (UINT64_C(1) << 54)
+
+/* Where a descriptor's attribute index sits */
+#define US_ATTR_INDEX_SHIFT 2U
+
+/* Bits [1:0] of a descriptor, which say which of the three things it is */
+#define US_DESC_INVALID 0ULL
+#define US_DESC_BLOCK 1ULL
+#define US_DESC_TABLE_OR_PAGE 3ULL
+
+/*
+ * A block descriptor covering the block pa falls in, with an attribute index
+ *
+ * Only the middle levels may hold a block, and how much it covers is what
+ * says which of them this is: 1GB at the first, 2MB at the second, and 4KB is
+ * a page rather than a block. The address is rounded down rather than checked,
+ * because a block maps its whole region whatever the address given means
+ */
+static inline uint64_t usBlockDescriptor(uint64_t pa, uint64_t blockSize,
+                                         uint64_t attrIndex) {
+    return (pa & ~(blockSize - 1)) | (attrIndex << US_ATTR_INDEX_SHIFT)
+           | US_PTE_AF | US_DESC_BLOCK | US_PTE_PXN | US_PTE_UXN;
+}
+
+/*
  * Reading a descriptor, in the address space that is in force
  *
  * The same shape as UsPhysRead above, and deliberately not the same thing: the
@@ -113,11 +151,43 @@ typedef uint64_t (*UsWordRead)(void *ctx, uint64_t va);
  * The index fields are nine bits each and start at bit 39 at the top, so both
  * the shift and the width follow from the level's number rather than being
  * written down: four levels of nine bits is the whole of a 47-bit address
- * space, which is what this kernel uses. What does not follow is what a leaf
- * descriptor at a level can be, which is the table below
+ * space, which is what this kernel uses
  */
 #define US_LEVEL_SHIFT(index) (39U - 9U * (index))
+/*
+ * How many bits of the page number a level's index carries
+ *
+ * Not nine, and that is the thing to be careful about. The self map is flat:
+ * the entry for an address is at MmPteBase plus the whole of its page number,
+ * and a level's base is that same array moved so that the level's entries
+ * start there. So a level's index is every bit of the page number from its
+ * shift upwards -- nine at the top and nine more at each level down -- rather
+ * than the nine bits an entry has within its own table
+ *
+ * Written this way it reads like a width, and reading it as one is what makes
+ * it look wrong: nine bits is what a table has, so the mask "should" be nine.
+ * It is not. With nine bits the walk addresses the entry for a low address
+ * instead of the one it wants, and on a machine whose tables are full of page
+ * mappings the wrong entry is usually a table pointer as well -- so the walk
+ * keeps descending, through tables that have nothing to do with the address,
+ * and comes back with a descriptor that looks entirely plausible. The first
+ * and the last level are the ones where the two readings agree, which is why
+ * the mistake survives a test that only walks those
+ */
 #define US_LEVEL_BITS(index) (9U * ((index) + 1U))
+
+/*
+ * Where the entry that translates an address sits at one level
+ *
+ * The walk's own arithmetic, written once so that a caller wanting a single
+ * entry does not restate it -- and restating it is exactly how it gets written
+ * with nine bits
+ */
+static inline uint64_t usLevelEntry(uint64_t base, unsigned level, uint64_t va) {
+    return base + ((va >> US_LEVEL_SHIFT(level))
+                   & ((1ULL << US_LEVEL_BITS(level)) - 1ULL))
+                      * 8U;
+}
 
 typedef struct UsSelfMapLevel_t {
     /*
@@ -144,6 +214,58 @@ typedef struct UsLeaf_t {
     uint64_t size;          /* how much it covers: 4K, 2M or 1G */
     uint64_t pa;            /* where the address translates to, offset included */
 } UsLeaf;
+
+/*
+ * Where each level's descriptors are, given the page level's base
+ *
+ * The recursion, written once so that everything that walks the tables agrees
+ * about it: a level's descriptors are mapped by the level below, so the base
+ * of the level above is that level's own page descriptor, computed by the same
+ * formula. Filled top first, in the numbering the walk uses
+ */
+void usLevelBases(uint64_t selfMapBase, uint64_t bases[US_SELF_MAP_LEVELS]);
+
+/*
+ * What a descriptor at a level is
+ *
+ * The levels are not the same shape and this is where that shows: the same two
+ * bits mean "a table" above the page level and "a page" at it, and a block is
+ * only a thing at the middle two. A descriptor that is not one of these is
+ * reserved, and is reported as something to leave alone rather than guessed at
+ */
+typedef enum UsDescriptorKind_e {
+    /* Nothing is mapped through this entry, and it is all zeroes */
+    UsDescriptorEmpty = 0,
+    /* A pointer to the next table down */
+    UsDescriptorTable,
+    /* A page or a block, which ends the walk */
+    UsDescriptorLeaf,
+    /* Reserved, or a shape that cannot appear at this level */
+    UsDescriptorOther,
+} UsDescriptorKind;
+
+UsDescriptorKind usDescriptorKind(uint64_t descriptor, unsigned level);
+
+/*
+ * The first level at which nothing is mapped for an address
+ *
+ * This is the question an address has to answer before anything may be written
+ * over it: a mapping may only be put where the kernel has none, and the levels
+ * above it must already be tables, since making one is not something this can
+ * do. The top level is excluded for that reason, and its emptiness is reported
+ * as nothing found
+ *
+ * found is false when the address is mapped, when a block covers it, or when
+ * the walk cannot get past a level. Nothing is written either way
+ */
+typedef struct UsFreeSlot_t {
+    bool     found;
+    unsigned level;         /* which level's descriptor is free */
+    uint64_t descriptorVA;  /* where that descriptor is, ready to be written */
+} UsFreeSlot;
+
+UsFreeSlot usFreeSlotFind(uint64_t selfMapBase, UsWordRead read, void *ctx,
+                          uint64_t va);
 
 /*
  * Finds the descriptor that translates an address which is already mapped

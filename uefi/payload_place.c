@@ -128,6 +128,39 @@ static void writeConfig(const UsPayloadPlace *place, const UsSession *session) {
                       : 0U;
     cfg->statsEnabled = session->config != NULL && session->config->statsEnabled ? 1U : 0U;
     cfg->driverRewrite = session->driverInplaceRewrite ? 1U : 0U;
+
+    /*
+     * The injected stops, which are counters rather than a name: a milestone
+     * is a point the boot passes through once and can be matched there, while
+     * an exception and a rewrite attempt happen thousands of times and the
+     * one to stop at is a count
+     */
+    if (session->config != NULL) {
+        cfg->panicAfterTraps = session->config->panicAfterTraps;
+        cfg->panicAfterRewrites = session->config->panicAfterRewrites;
+    }
+
+    /*
+     * The frame buffer, for the report that has nothing else left
+     *
+     * Taken from the pool rather than asked for again here: the boot worked
+     * out the physical address while the firmware's own tables were the ones
+     * in force, and the answer does not change after that. A record the boot
+     * did not write leaves the fields at zero, which is a machine with
+     * nothing to draw on rather than one that failed
+     */
+    {
+        const UsPoolFB *fb = &session->pool->fb;
+
+        if (fb->magic == US_POOL_FB_MAGIC) {
+            cfg->fbPA = fb->pa;
+            cfg->fbBytes = fb->bytes;
+            cfg->fbWidth = fb->width;
+            cfg->fbHeight = fb->height;
+            cfg->fbStride = fb->stride;
+            cfg->fbBlueFirst = fb->blueFirst;
+        }
+    }
 }
 
 bool usPayloadPlace(UsSession *session, UsPayloadPlace *out) {

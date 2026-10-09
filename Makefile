@@ -48,8 +48,10 @@ PAYLOAD_CFLAGS := --target=aarch64-none-elf -std=gnu23 -ffreestanding \
 PAYLOAD_SRCS := $(PAYLOAD_DIR)/payload.c $(PAYLOAD_DIR)/uart.c $(PAYLOAD_DIR)/us_mem.c \
                 $(PAYLOAD_DIR)/selfmap.c $(PAYLOAD_DIR)/transfer.c $(PAYLOAD_DIR)/vamap.c \
                 $(PAYLOAD_DIR)/early.c $(PAYLOAD_DIR)/rewrite.c $(PAYLOAD_DIR)/drvhook.c \
+                $(PAYLOAD_DIR)/fb.c $(PAYLOAD_DIR)/panic.c \
                 core/cache.c core/thunk.c \
-                core/pgtable.c core/par.c core/ldapr.c core/ldr.c core/stackgen.c core/translate.c
+                core/pgtable.c core/par.c core/ldapr.c core/ldr.c core/stackgen.c core/translate.c \
+                core/pool.c
 PAYLOAD_ASM := $(PAYLOAD_DIR)/entry.S $(PAYLOAD_DIR)/end.S
 PAYLOAD_OBJS := $(patsubst %.c,$(PAYLOAD_BUILD)/%.o,$(notdir $(PAYLOAD_SRCS))) \
                 $(patsubst $(PAYLOAD_DIR)/%.S,$(PAYLOAD_BUILD)/%.o,$(PAYLOAD_ASM))
@@ -125,7 +127,7 @@ DRIVER_SRCS := uefi/config.c uefi/patch_apply.c uefi/registry.c \
                uefi/service_hook.c uefi/gmm_hook.c uefi/patch.c uefi/work.c \
                uefi/payload_place.c uefi/arm.c uefi/rewrite.c uefi/acpi.c \
                uefi/vamap.c uefi/session.c uefi/uart.c uefi/uacpi_kernel.c \
-               uefi/licenses.c \
+               uefi/licenses.c uefi/panic.c \
                core/cache.c core/cfg.c core/pe.c core/scan.c core/plan.c \
                core/rva_patch.c core/pool.c core/patchlist.c core/patchapply.c \
                core/sha256.c core/thunk.c core/ldapr.c core/acpi.c \

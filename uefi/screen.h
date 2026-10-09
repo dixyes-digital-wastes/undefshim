@@ -11,7 +11,7 @@
  * the case where something needs to be said. The screen is the other channel,
  * and it does not depend on the configuration having been read
  *
- * Text is drawn by writing pixels, with the glyphs in font.h. The colour
+ * Text is drawn by writing pixels, with the glyphs in common/font.h. The colour
  * escapes the console writes are parsed here and turn into the ink a glyph is
  * drawn in; a sequence that is not one of those is drawn as the characters it
  * is, so a reader of the screen never sees less than what was said. Nothing
@@ -31,6 +31,22 @@
  * configuration cannot be read
  */
 bool usScreenInit(void);
+
+/*
+ * The frame buffer as the firmware described it, for the record and for
+ * anything that has to draw without the console being usable any more. Zero
+ * when no usable one was found, in which case there is nothing to draw on
+ */
+typedef struct UsScreenInfo_t {
+    uint64_t base;
+    uint64_t bytes;   /* how much of the buffer the rows below need */
+    uint32_t width;
+    uint32_t height;
+    uint32_t stride;
+    bool     blueFirst;
+} UsScreenInfo;
+
+void usScreenFrameBuffer(UsScreenInfo *out);
 
 /*
  * The same, for a caller that already has the frame buffer - a test, or
