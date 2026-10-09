@@ -12,6 +12,29 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "core/pgtable.h"
+
+/*
+ * How many two megabyte entries a frame buffer takes
+ *
+ * This is the one number the mapping must not work out for itself, because
+ * getting it wrong is silent in exactly the way a screen is: the frame buffer
+ * is not aligned to the start of a block, so what it needs is the rest of the
+ * block it starts in and then as many whole ones as its length takes. A screen
+ * of 800 by 600 is 1,875 kilobytes sitting 192 kilobytes into its block, which
+ * takes two -- and one is a screen whose last six rows are not mapped at all
+ */
+static inline uint64_t usFBBlocksFor(uint64_t fbPA, uint64_t fbBytes) {
+    const uint64_t offset = fbPA & (US_GRANULE_2M - 1U);
+
+    /* A mapping of nothing is nothing, and the caller refuses it rather than
+     * taking an entry for it */
+    if (fbBytes == 0) {
+        return 0;
+    }
+    return (offset + fbBytes + US_GRANULE_2M - 1U) / US_GRANULE_2M;
+}
+
 /*
  * Records where the frame buffer is and where the kernel's descriptor mapping
  * will be, and nothing else

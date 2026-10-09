@@ -50,7 +50,11 @@ QEMU_FW_EL2="${QEMU_FW_EL2:-../winemu/linaro_ovmf.fd}"
 QEMU_FW_EL1="${QEMU_FW_EL1:-../winemu/edk2-nightly-armvirtqemu-aarch64-release-code.fd}"
 QEMU_FW_LOAD="${QEMU_FW_LOAD:-kernel}"
 QEMU_FW_VARS="${QEMU_FW_VARS:-}"
-QEMU_CPU="${QEMU_CPU:-cortex-a76-nolrcpc}"
+# The model, when one is asked for by name. It has no default here: which one
+# a machine can be is the accel's answer and not this file's, and a default
+# filled in at this point would be the tcg one -- so a run with QEMU_ACCEL=kvm
+# and nothing else would ask a KVM machine for the tcg model and be refused
+QEMU_CPU="${QEMU_CPU:-}"
 QEMU_MEM="${QEMU_MEM:-4096}"
 QEMU_SMP="${QEMU_SMP:-8,sockets=1,clusters=2,cores=4,threads=1}"
 BUILD_DIR="${BUILD_DIR:-build}"

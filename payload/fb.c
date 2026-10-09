@@ -32,6 +32,16 @@
 /* A descriptor read that was refused, as a shape no level may hold */
 #define US_FB_UNREADABLE 2U
 
+/*
+ * The most two megabyte entries one frame buffer may take
+ *
+ * It is the room the addresses of those entries are kept in while a run of
+ * them is being written, so it is a bound on the array and not a limit that
+ * means anything to a screen: 32 of them is 64 megabytes of frame buffer,
+ * and a machine with more than that to draw on is not one of these
+ */
+#define US_FB_MAX_BLOCKS 32U
+
 static uint32_t gFBRow;
 static uint32_t gFBColumn;
 
@@ -175,20 +185,33 @@ static bool descriptorBase(uint64_t *out) {
 /*
  * Puts the frame buffer at an address of the payload's own choosing
  *
- * The entry is written at the level that covers two megabytes, so that one
- * store covers the whole screen: a page at a time would be several hundred
- * writes into a table, on a path that has nothing left to recover with, and
- * every one of them another chance to be the thing that faults
+ * The entries are written at the level that covers two megabytes, so that one
+ * store covers two megabytes of the screen: a page at a time would be several
+ * hundred writes into a table, on a path that has nothing left to recover
+ * with, and every one of them another chance to be the thing that faults
+ *
+ * More than one entry, and that is the part that had to be got right. The
+ * frame buffer is not aligned to the start of a block, so what it needs is the
+ * rest of the block it starts in and then however many whole ones its length
+ * takes: a machine whose frame buffer is a little under two megabytes and
+ * starts a little into its block needs two, the first covering the screen up
+ * to the end of that block and the second the rows past it. One entry and no
+ * more was a screen whose last rows were not there at all -- and nothing had
+ * run into them, because everything drawn on it until then was near the top
  *
  * The search is inside the gigabyte the pool is already in, and that is the
  * whole of it. The pool's own descriptors are there, so there is a table to
  * write into; the kernel maps what it needs and leaves the rest of that
  * table alone, which is what makes a free entry in it the ordinary case
- * rather than the lucky one; and the two megabyte block that goes in one
- * covers the screen and nothing else. A gigabyte block would also fit and
- * would be a single entry as well, but it would map a gigabyte of physical
- * memory of which all but the first two megabytes is something else -- an
- * alias of memory nothing asked to see at that address
+ * rather than the lucky one. A gigabyte block would also fit and would be one
+ * entry, but it would map a gigabyte of physical memory of which all but the
+ * first part is something else -- an alias of memory nothing asked to see at
+ * that address
+ *
+ * The entries have to be a run: every one of them is free before any of them
+ * is written, and one that does not take effect takes the whole mapping back
+ * with it. A surface that is half there and says it is whole is worse than
+ * one that was never made, because nothing downstream can tell
  *
  * Nothing is assumed about which entries are free: each candidate's entry is
  * read, and only an entry that reads as zero is written. A read that is
@@ -202,9 +225,24 @@ static bool mapFB(UsPool *pool, uint64_t *vaOut) {
     const uint64_t slots = US_GRANULE_1G / US_GRANULE_2M;
     const uint64_t gigabyte = cfg->poolBase & ~(US_GRANULE_1G - 1U);
     const uint64_t mine = (cfg->poolBase & (US_GRANULE_1G - 1U)) / US_GRANULE_2M;
+    const uint64_t offset = cfg->fbPA & (US_GRANULE_2M - 1U);
+    const uint64_t paBase = cfg->fbPA & ~(US_GRANULE_2M - 1U);
+    /* How many of them the frame buffer takes from the block it starts in */
+    const uint64_t blocks = usFBBlocksFor(cfg->fbPA, cfg->fbBytes);
+    uint64_t where[US_FB_MAX_BLOCKS];
     uint64_t base;
     uint64_t mair;
     int attr;
+
+    /*
+     * A frame buffer longer than a gigabyte of entries is a machine this was
+     * not written for, and the array below is what says so rather than a loop
+     * that would run off its end
+     */
+    if (blocks == 0 || blocks > US_FB_MAX_BLOCKS || blocks > slots) {
+        usPoolFBRefuse(pool, US_FB_NO_SLOT, blocks);
+        return false;
+    }
 
     if (!descriptorBase(&base)) {
         usPoolFBRefuse(pool, US_FB_NO_BASE, 0);
@@ -230,53 +268,83 @@ static bool mapFB(UsPool *pool, uint64_t *vaOut) {
     for (uint64_t n = 0; n < slots; n++) {
         /*
          * The pool's own slot first and then outwards in both directions, so
-         * the entry taken is the one nearest to where the pool already is
+         * the entries taken are the ones nearest to where the pool already is
          */
         uint64_t slot = n == 0 ? mine
                                : ((n & 1U) != 0
                                       ? (mine + slots - (n + 1U) / 2U) % slots
                                       : (mine + n / 2U) % slots);
-        uint64_t va = gigabyte + slot * US_GRANULE_2M;
-        UsFreeSlot free1 = usFreeSlotFind(base, readDescriptor, NULL, va);
-        uint64_t descriptor;
+        uint64_t va;
+        bool free = true;
 
         /*
-         * Only an empty entry at the two megabyte level. Anything else means
-         * either that the address is already used, or that the walk could not
-         * get to the level that would hold the block
+         * A run that stays inside the gigabyte, because the entries of one
+         * gigabyte are the entries of one table: a run that wrapped would be
+         * two runs, and the screen between them would be wherever the wrap
+         * landed
          */
-        if (!free1.found || free1.level + 2U != US_SELF_MAP_LEVELS) {
+        if (slot + blocks > slots) {
+            continue;
+        }
+        for (uint64_t i = 0; i < blocks; i++) {
+            UsFreeSlot entry = usFreeSlotFind(
+                base, readDescriptor, NULL,
+                gigabyte + (slot + i) * US_GRANULE_2M);
+
+            /*
+             * Only an empty entry at the two megabyte level. Anything else
+             * means either that the address is already used, or that the walk
+             * could not get to the level that would hold the block
+             */
+            if (!entry.found || entry.level + 2U != US_SELF_MAP_LEVELS) {
+                free = false;
+                break;
+            }
+            where[i] = entry.descriptorVA;
+        }
+        if (!free) {
             continue;
         }
         /*
-         * The mapping goes at the frame buffer's own place inside the block
-         * and not at the block's start
-         *
-         * A block covers two megabytes and the frame buffer is a little under
-         * two megabytes sitting somewhere inside it, so the block's start is
-         * up to that much memory before the screen. Writing there is not a
-         * fault and nothing complains about it: the rows go somewhere that is
-         * not displayed, and the report is lost in a way that looks exactly
-         * like the drawing never happened at all
+         * The mapping goes at the frame buffer's own place inside the first
+         * block and not at the block's start, and the rest follow it: the
+         * frame buffer is one run of memory and the screen is drawn through
+         * it as one, so what is before its start is not part of it. Writing
+         * before it is not a fault and nothing complains -- the rows go
+         * somewhere that is not displayed, and the report is lost in a way
+         * that looks exactly like the drawing never happened
          */
-        va += cfg->fbPA & (US_GRANULE_2M - 1U);
-        descriptor = usBlockDescriptor(cfg->fbPA, US_GRANULE_2M,
-                                       (uint64_t)attr);
-        if (!writeDescriptor(free1.descriptorVA, descriptor)) {
-            continue;
+        for (uint64_t i = 0; i < blocks; i++) {
+            (void)writeDescriptor(
+                where[i], usBlockDescriptor(paBase + i * US_GRANULE_2M,
+                                            US_GRANULE_2M, (uint64_t)attr));
         }
-        invalidate(va);
-        if (!mapsTo(va, cfg->fbPA, US_GRANULE_2M)) {
+        va = gigabyte + slot * US_GRANULE_2M + offset;
+        for (uint64_t i = 0; i < blocks; i++) {
+            invalidate(gigabyte + (slot + i) * US_GRANULE_2M);
+        }
+        /*
+         * Both ends of it, because the first entry taking effect says nothing
+         * about the last: it is the far end of a screen that a mapping one
+         * entry short leaves out, and asking about it here is what turns that
+         * into a refusal rather than into a fault in the middle of a report
+         */
+        if (!mapsTo(va, cfg->fbPA, US_GRANULE_2M)
+            || !mapsTo(va - offset + (blocks - 1U) * US_GRANULE_2M,
+                       paBase + (blocks - 1U) * US_GRANULE_2M,
+                       US_GRANULE_2M)) {
             /*
-             * The store did not take effect. Put nothing behind: the walk
-             * found the entry empty, so an empty one is what belongs there
+             * The stores did not take effect. Put nothing behind: the walk
+             * found these entries empty, so empty ones are what belong there
              */
-            (void)writeDescriptor(free1.descriptorVA, 0);
-            invalidate(va);
+            for (uint64_t i = 0; i < blocks; i++) {
+                (void)writeDescriptor(where[i], 0);
+                invalidate(gigabyte + (slot + i) * US_GRANULE_2M);
+            }
             continue;
         }
         *vaOut = va;
-        usPoolFBSet(pool, va, 1U, (uint64_t)attr);
+        usPoolFBSet(pool, va, blocks, (uint64_t)attr);
         return true;
     }
 
@@ -348,6 +416,22 @@ bool usFBAvailable(void) {
      * took is not one to argue about
      */
     if (!mapsTo(pool->fb.aliasVA, pool->fb.pa, US_GRANULE_2M)) {
+        pool->fb.aliasVA = 0;
+        return false;
+    }
+    /*
+     * The far end of the screen, and not just its first entry: the kernel may
+     * have taken back any part of the mapping, and a screen that is drawn on
+     * while its last rows are not there is a fault in the middle of a report --
+     * which is the one thing this path may not do. Asking about the last row is
+     * asking about the whole of it, because a mapping is a run and what is
+     * between two of its addresses is mapped too
+     */
+    if (!mapsTo(pool->fb.aliasVA
+                    + (uint64_t)(pool->fb.height - 1U) * pool->fb.stride * 4U,
+                pool->fb.pa
+                    + (uint64_t)(pool->fb.height - 1U) * pool->fb.stride * 4U,
+                US_GRANULE_2M)) {
         pool->fb.aliasVA = 0;
         return false;
     }
