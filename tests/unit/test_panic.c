@@ -16,6 +16,12 @@
  * of the milestones begin with "M6.5", so a prefix would stop at whichever
  * came first -- which is a machine that stopped somewhere other than where it
  * was told to, and looks exactly like the right behaviour until it is read
+ *
+ * The names themselves are read out of the boot's own sources rather than
+ * listed here. A list is a copy that goes stale the first time a milestone is
+ * added, and the check it would carry -- "no two of the boot's names match
+ * each other" -- would then be made against names the boot no longer prints,
+ * which passes and means nothing
  */
 
 #include <stdio.h>
@@ -29,6 +35,91 @@
 static int failures;
 static int checks;
 
+/*
+ * The boot's files that print a milestone, seen from this test's own directory
+ *
+ * All of them rather than one: the names have to be unique across the boot and
+ * not within a file, and nothing here can walk a directory to find them, so the
+ * list is the paths as they are. A file that starts printing a milestone and is
+ * not here is the one way this check can go quiet, and the floor the caller
+ * puts on the count does not catch it -- a file added elsewhere would only add
+ * names
+ */
+static const char *const kSources[] = {
+    "../../uefi/driver.c",
+    "../../uefi/loadimage_hook.c",
+    "../../uefi/patch.c",
+    "../../uefi/payload_place.c",
+    "../../uefi/work.c",
+};
+#define SOURCE_COUNT (sizeof(kSources) / sizeof(kSources[0]))
+
+/* Every distinct name handed to usConsoleMilestone, up to these many */
+#define MAX_NAMES 32
+#define MAX_NAME 48
+
+static char names[MAX_NAMES][MAX_NAME];
+static int nameCount;
+
+/* Whether a name is already in the set, so that a milestone printed from two
+ * places counts once: what has to be unique is the set of names, not the set
+ * of calls */
+static int haveName(const char *name, size_t len) {
+    for (int i = 0; i < nameCount; i++) {
+        if (strlen(names[i]) == len && memcmp(names[i], name, len) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/*
+ * The names, taken out of the calls that print them
+ *
+ * Only the string literals on a line that calls the milestone printer, which
+ * is what makes this a reading of the code rather than a reading of any string
+ * that happens to be in the file. A call whose arguments are spelled out over
+ * several lines would be missed, and the floor the caller puts on the count is
+ * what catches that rather than a silent short list
+ *
+ * The count is the whole set so far and not what this file added, so callers
+ * ask once at the end rather than adding up what each call returned
+ */
+static int readNames(const char *path) {
+    FILE *f = fopen(path, "r");
+    char line[512];
+
+    if (f == NULL) {
+        return nameCount;
+    }
+    while (fgets(line, sizeof(line), f) != NULL) {
+        const char *p;
+
+        if (strstr(line, "usConsoleMilestone(") == NULL) {
+            continue;
+        }
+        for (p = line; (p = strchr(p, '"')) != NULL; p++) {
+            const char *end = strchr(++p, '"');
+            size_t len;
+
+            if (end == NULL) {
+                break;
+            }
+            len = (size_t)(end - p);
+            if (len == 0 || len >= MAX_NAME || nameCount >= MAX_NAMES
+                || haveName(p, len)) {
+                continue;
+            }
+            memcpy(names[nameCount], p, len);
+            names[nameCount][len] = '\0';
+            nameCount++;
+            p = end;
+        }
+    }
+    fclose(f);
+    return nameCount;
+}
+
 /* The configuration's shape: a pointer and a length, with the byte after the
  * value being whatever the document has there rather than a terminator */
 static void matchesText(const char *name, const char *want, int wantLen,
@@ -39,6 +130,46 @@ static void matchesText(const char *name, const char *want, int wantLen,
     if (got != expected) {
         failures++;
         usCheckFail("%-46s want %d got %d\n", name, expected, got);
+    }
+}
+
+/*
+ * Every name the boot prints, against every other
+ *
+ * Two things have to hold for a stop to be askable for by name: each name
+ * matches itself, and no name matches a different one. The second is what a
+ * prefix comparison would break and it is not visible by reading a single
+ * name -- the four that begin "M6.5" are the case, and there are four of them
+ */
+static void testAgainstTheBoot(void) {
+    int found;
+
+    for (size_t s = 0; s < SOURCE_COUNT; s++) {
+        (void)readNames(kSources[s]);
+    }
+    found = nameCount;
+
+    checks++;
+    if (found < 8) {
+        failures++;
+        usCheckFail("the boot's sources listed %d milestones, too few to be "
+                    "all of them\n", found);
+        return;
+    }
+    for (int i = 0; i < found; i++) {
+        int hits = 0;
+
+        for (int j = 0; j < found; j++) {
+            if (usPanicNameMatches(names[i], (int)strlen(names[i]), names[j])) {
+                hits++;
+            }
+        }
+        checks++;
+        if (hits != 1) {
+            failures++;
+            usCheckFail("\"%s\" matched %d of the boot's names\n", names[i],
+                        hits);
+        }
     }
 }
 
@@ -69,46 +200,7 @@ int main(void) {
     /* An empty milestone only matches a name with an empty length */
     matchesText("", want, 0, 1);
 
-    /* Every milestone the boot prints, against a name that is one of them,
-     * so that the list and the comparison are checked against each other */
-    {
-        static const char *const names[] = {
-            "M2 done",
-            "M6 payload placed",
-            "M4 setup",
-            "M5 planned",
-            "M6.5 transfer skipped",
-            "M6.5 transfer done",
-            "M6.5 transfer failed",
-            "M6.5 armed skipped",
-            "M6.5 armed",
-            "M6.5 arm failed",
-            "M6.5 driver hook skipped",
-            "M6.5 driver hook done",
-            "M6.5 driver hook failed",
-            "M7 rewritten",
-            "M7 nothing to rewrite",
-            "M7 skip rewrite",
-        };
-        static const char *const wanted[] = { "M7 rewritten", "M2 done",
-                                              "M6.5 armed" };
-
-        for (size_t w = 0; w < sizeof(wanted) / sizeof(wanted[0]); w++) {
-            int hits = 0;
-
-            for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
-                if (usPanicNameMatches(wanted[w], (int)strlen(wanted[w]),
-                                       names[i])) {
-                    hits++;
-                }
-            }
-            checks++;
-            if (hits != 1) {
-                failures++;
-                usCheckFail("%-46s matched %d milestones\n", wanted[w], hits);
-            }
-        }
-    }
+    testAgainstTheBoot();
 
     return usCheckSummary(checks, failures);
 }

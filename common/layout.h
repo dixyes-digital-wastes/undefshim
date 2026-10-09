@@ -230,7 +230,7 @@ typedef struct UsPoolFB_t {
                          * mapping and nothing can be drawn */
     uint64_t blocks;    /* how many block entries that mapping took */
     uint64_t attrIndex; /* the MAIR attribute it was made with */
-    uint64_t drawn;     /* how many times the panic path has drawn on it */
+    uint64_t drawn;     /* how many times text has been drawn on it */
     /*
      * Why there is no mapping, when there is none
      *

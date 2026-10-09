@@ -40,7 +40,6 @@ typedef struct UsTransferRecord_t {
 
     /* What the loader's own list said about the kernel */
     uint32_t foundKernel;
-    uint32_t fbMapped;      /* whether the frame buffer got a mapping */
     uint32_t reserved;
     uint64_t kernelBase;
     uint64_t kernelSize;
@@ -104,7 +103,7 @@ void usTransferEntry(uint64_t kernelEntryVA, uint64_t loaderBlockVA) {
     usTransferRecord.faulted = self.faulted ? 1U : 0U;
 
     /*
-     * The screen, mapped for the payload's own use
+     * The screen, for a report that has nothing else left
      *
      * This is the one moment it can be done: the kernel's tables are the ones
      * in force, every other processor is still stopped by the kernel's own
@@ -112,14 +111,10 @@ void usTransferEntry(uint64_t kernelEntryVA, uint64_t loaderBlockVA) {
      * kind this needs may have been filled in by the kernel, and taking one
      * would be writing over whatever landed there
      *
-     * A refusal is not a failure and is not reported as one: the report this
-     * exists for is written by a machine that has already stopped, and a
-     * machine with no screen to write it on is one that is reported about
-     * another way. What must not happen is a fault here, and nothing here can
-     * fault
+     * A mapping that is refused is not a failure and is not recorded as one:
+     * the reason goes in the pool, which is the shape a reader of it expects
      */
-    usTransferRecord.fbMapped =
-        usFBBuild(usTransferRecord.kernelBase) ? 1U : 0U;
+    (void)usFBBuild(usTransferRecord.kernelBase);
 
     /* The images are on the other side of the switch now: the loader's is where
      * it was, the kernel's where its image names it, and the payload's runtime

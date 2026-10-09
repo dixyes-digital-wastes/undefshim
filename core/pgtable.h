@@ -117,7 +117,6 @@ static inline uint64_t usPTEForAddress(uint64_t va) {
 #define US_ATTR_INDEX_SHIFT 2U
 
 /* Bits [1:0] of a descriptor, which say which of the three things it is */
-#define US_DESC_INVALID 0ULL
 #define US_DESC_BLOCK 1ULL
 #define US_DESC_TABLE_OR_PAGE 3ULL
 
