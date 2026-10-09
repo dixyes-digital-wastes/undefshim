@@ -85,7 +85,10 @@ static void exercise(const uint64_t *ids, uint32_t count, uint32_t codeRVA,
     uint32_t used = usGenerateStackLookup(ids, count, codeRVA, tableRVA,
                                          readyRVA, haltRVA, code);
     assert(used == expectedWords);
-    assert(used <= 305);
+    /* The table the lookup goes into, which is the only ceiling that holds at
+     * every count: the expected number of words above is exact, and it is what
+     * says the encoding is not growing per processor */
+    assert(used <= US_STACK_LOOKUP_WORDS);
     for (uint32_t i = used; i < US_STACK_LOOKUP_WORDS; i++) {
         assert(code[i] == 0xD503201FU);
     }
@@ -144,12 +147,44 @@ int main(void) {
         sparseWords += (uint32_t)__builtin_popcountll(sparse[i]);
     }
     exercise(sparse, 8, 0x100004, 0x0FF800, sparseWords);
-    for (uint32_t count = 1; count <= US_MAX_CPUS; count++) {
+    /*
+     * The sparse shape at every count it has ids for, which is eight: the loop
+     * below used to run to US_MAX_CPUS, and that was the same number until the
+     * ceiling was raised for a machine with more processors -- at which point
+     * it read past the end of this array and took whatever was there for an
+     * affinity id
+     */
+    for (uint32_t count = 1; count <= 8U; count++) {
         uint32_t words = 6U * count + 1U;
+
         for (uint32_t i = 0; i < count; i++) {
             words += (uint32_t)__builtin_popcountll(sparse[i]);
         }
         exercise(sparse, count, 0x100004, 0x100800, words);
+    }
+    /*
+     * And the most processors this supports, which is the case the ceiling
+     * exists for: distinct ids inside the affinity mask, each one the pattern
+     * of its own index spread over the low bits. The ids are generated rather
+     * than written out because there have to be US_MAX_CPUS of them and they
+     * have to stay distinct as that number changes
+     */
+    uint64_t many[US_MAX_CPUS];
+    for (uint32_t i = 0; i < US_MAX_CPUS; i++) {
+        many[i] = 0;
+        for (uint32_t bit = 0; bit < 6U; bit++) {
+            if ((i & (1U << bit)) != 0) {
+                many[i] |= UINT64_C(1) << (2U * bit);
+            }
+        }
+    }
+    for (uint32_t count = 1; count <= US_MAX_CPUS; count++) {
+        uint32_t words = 6U * count + 1U;
+
+        for (uint32_t i = 0; i < count; i++) {
+            words += (uint32_t)__builtin_popcountll(many[i]);
+        }
+        exercise(many, count, 0x100004, 0x100800, words);
     }
     uint64_t dense[US_MAX_CPUS];
     dense[0] = US_MPIDR_AFFINITY_MASK;
@@ -166,7 +201,10 @@ int main(void) {
     rejected(unnormalized, 1, 0x100000, 0x100800, 0x200000, 0x200004);
     rejected(highReserved, 1, 0x100000, 0x100800, 0x200000, 0x200004);
     rejected(zero, 0, 0x100000, 0x100800, 0x200000, 0x200004);
-    rejected(zero, 9, 0x100000, 0x100800, 0x200000, 0x200004);
+    /* One more than the ceiling, named by the ceiling: this was written as 9,
+     * which was over the limit while the limit was 8 and is under it now */
+    rejected(zero, US_MAX_CPUS + 1U, 0x100000, 0x100800,
+             0x200000, 0x200004);
     rejected(NULL, 1, 0x100000, 0x100800, 0x200000, 0x200004);
     assert(usGenerateStackLookup(zero, 1, 0x100000, 0x100800,
                                 0x200000, 0x200004, NULL) == 0);
@@ -199,8 +237,19 @@ int main(void) {
                                 0xF0001000, 0xF0001004, code) == 7);
     assert(usGenerateStackLookup(zero, 1, 0x7FFFFFF0, 0x80000800,
                                 0x80001000, 0x80001004, code) == 7);
-    assert(usGenerateStackLookup(zero, 1, 0xFFFFFB00, 0xFFFFFFF8,
-                                0xFFFFFFFC, 0xFFFFFA00, code) == 7);
+    /*
+     * The last code address the table still fits below. This was written as
+     * 0xFFFFFB00, which was that address while the table was 320 words and is
+     * past the end of the address space now that it is 1536
+     */
+    {
+        uint32_t lastCode =
+            (uint32_t)(UINT64_C(0x100000000)
+                       - (uint64_t)US_STACK_LOOKUP_WORDS * 4U);
+
+        assert(usGenerateStackLookup(zero, 1, lastCode, 0xFFFFFFF8,
+                                     0xFFFFFFFC, 0xFFFFFA00, code) == 7);
+    }
     /* The first ready branch fits, but the next one crosses the lower bound */
     rejected(twoClusters, 8, 0x08000000, 0x08000800, 0x14, 0x08001000);
     return usCheckPassed("native interpreter and input/bounds checks passed");
