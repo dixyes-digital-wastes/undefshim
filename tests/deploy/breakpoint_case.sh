@@ -28,7 +28,29 @@ BUILD_DIR="${BUILD_DIR:-build}"
 WORK="$BUILD_DIR/breakpoint-case"
 WIN_DISK="${WIN_DISK:-}"
 GDB="${GDB:-aarch64-linux-gnu-gdb}"
-# Entry point of the kernel on the media the checks run against.
+# Where the kernel's entry point is, which is a different number for every
+# build. The image is what has it, so the corpus the rest of the checks
+# are run against is asked for it -- that corpus is required to be the same
+# build as WIN_DISK, and a number that is right for one build is silently
+# wrong for the next: the
+# patch lands somewhere else and the check reports that the kernel is not
+# executing it
+NTO_RVA="${NTO_RVA:-}"
+PLAN_CORPUS="${PLAN_CORPUS:-}"
+if [ -z "$NTO_RVA" ] && [ -f "$PLAN_CORPUS/ntoskrnl.exe" ]; then
+    NTO_RVA=$(python3 - "$PLAN_CORPUS/ntoskrnl.exe" <<'PY'
+import struct
+import sys
+
+data = open(sys.argv[1], "rb").read()
+pe = struct.unpack_from("<I", data, 0x3C)[0]
+if data[pe:pe + 4] != b"PE\0\0":
+    raise SystemExit("not a PE image: %s" % sys.argv[1])
+print("0x%x" % struct.unpack_from("<I", data, pe + 40)[0])
+PY
+)
+fi
+# The build this was written against, for a run that has no corpus to ask
 NTO_RVA="${NTO_RVA:-0xa5f7a0}"
 # The kernel does not start until the address space has been rebuilt, so the
 # machine is watched for a while after the patch lands before looking at it.
