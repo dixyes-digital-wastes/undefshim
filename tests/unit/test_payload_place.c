@@ -129,11 +129,11 @@ static void placed(const UsACPICPUs *cpus) {
     assert(cfg->uartWidth == 32U);
     assert(cfg->quiet == 1);
     /*
-     * The replacement is asked for and cannot happen: the configuration states
-     * no base for the kernel's descriptor mapping, and without one every
-     * attempt is refused. A payload told to try anyway would take the probe
-     * bank - a stack the kernel owns - on every RCpc load in user code, to
-     * reach the answer it is given here instead
+     * The replacement is asked for and this side does not answer it: whether
+     * it can happen turns on the base of the kernel's descriptor mapping, and
+     * that is read out of the kernel's image when the loader is about to hand
+     * over to it, which is after this. The arming is where the request is
+     * answered, so a placement leaves the refusal
      */
     assert(cfg->el0InPlace == 0);
 

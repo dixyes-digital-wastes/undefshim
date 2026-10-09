@@ -106,26 +106,21 @@ static void writeConfig(const UsPayloadPlace *place, const UsSession *session) {
      */
     cfg->quiet = 1;
     /*
-     * Whether the user-mode replacement can happen at all, not just whether it
-     * was asked for
+     * Whether the user-mode replacement is wanted, which is the request and
+     * not the answer
      *
-     * Making an instruction's page writable needs the base of the image's
-     * descriptor mapping, and that comes from the configuration alone - see
-     * UsPayloadStub.descriptorBaseRVA, which the arming leaves at zero when
-     * there is none. With no base every attempt is refused, so a payload told
-     * to try anyway would take the trap path for every RCpc load in user code
-     * and spend, on each one, a stack the kernel owns, to reach an answer it
-     * could have been given here
+     * It can happen only when the base of the image's descriptor mapping is
+     * known, and that is not known here: the mapping is a property of the
+     * kernel, and the kernel's own image is not looked at until the loader is
+     * about to hand over to it, which is later than this. So this says what
+     * the configuration asked for and the arming is what answers it, at the
+     * moment it reads the base out of the image
      *
-     * The exception path still stands: an RCpc load that is not replaced is
-     * carried out by the handler, which is correct and slower, and that is
-     * exactly what a machine with no base is
+     * A payload whose arming never ran keeps the refusal this leaves, which is
+     * the answer there too: with no stub there is nothing for the replacement
+     * to reach
      */
-    cfg->el0InPlace = session->config != NULL
-                          && session->config->el0InplaceRewrite
-                          && session->config->hasDescriptorBase
-                      ? 1U
-                      : 0U;
+    cfg->el0InPlace = 0;
     cfg->statsEnabled = session->config != NULL && session->config->statsEnabled ? 1U : 0U;
     cfg->driverRewrite = session->driverInplaceRewrite ? 1U : 0U;
 

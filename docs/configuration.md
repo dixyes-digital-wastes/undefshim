@@ -84,7 +84,7 @@ Neither of the replacement keys can make the machine wrong by being off. The ker
 
 | Key | Default | Meaning |
 |---|---|---|
-| `descriptorBaseRVA` | none | The RVA of the variable holding the kernel's page table base, for the build this configuration is for. Optional: without it the kernel's own page table entries are not edited. |
+| `descriptorBaseRVA` | none | The RVA of the variable holding the kernel's page table base. It is read out of the kernel's own image, so this is needed only for a build whose shape the locator does not recognise |
 
 This is per build. A value from another build is checked against the hardware before it is used and refused when it does not fit, so a wrong one costs a rewrite rather than the machine.
 

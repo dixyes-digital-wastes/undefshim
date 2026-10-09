@@ -334,6 +334,8 @@ static bool armImage(UsSession *s, UsImageKind kind, size_t *armed) {
     }
     if (kind == UsImageNtoskrnl) {
         UsPteBaseSite pte;
+        UsPayloadConfig *cfg =
+            (UsPayloadConfig *)(uintptr_t)s->payloadPlace.configVA;
 
         s->kernelSpareRVA = hole.rva + stubs;
         s->kernelSpareBytes = hole.bytes > stubs ? hole.bytes - stubs : 0U;
@@ -346,9 +348,6 @@ static bool armImage(UsSession *s, UsImageKind kind, size_t *armed) {
          */
         pte = usLocatePteBase(img);
         if (pte.found) {
-            UsPayloadConfig *cfg =
-                (UsPayloadConfig *)(uintptr_t)s->payloadPlace.configVA;
-
             descriptorBaseRVA = pte.rva;
             /*
              * The payload needs the same base, at the handover, to build a
@@ -380,6 +379,34 @@ static bool armImage(UsSession *s, UsImageKind kind, size_t *armed) {
                    " configured; no site can be rewritten in place\n",
                    pte.helpers, pte.candidates);
         }
+        /*
+         * Whether the user-mode replacement can happen, which is first known
+         * here
+         *
+         * With no base every attempt is refused, so a payload told to try
+         * anyway would enter the probe bank - a stack the kernel owns - on
+         * every RCpc load in user code to reach an answer it could have been
+         * given here. The exception path still stands: an RCpc load that is
+         * not replaced is carried out by the handler, which is correct and
+         * slower, and that is exactly what a machine with no base is
+         */
+        cfg->el0InPlace = descriptorBaseRVA != 0 && s->config != NULL
+                              && s->config->el0InplaceRewrite
+                          ? 1U
+                          : 0U;
+        /*
+         * Said out loud, because the two ways it can be off look the same
+         * from everywhere else: the configuration did not ask for it, or the
+         * base was not found. A machine whose user code takes the exception
+         * path for every RCpc load has this line to say which
+         */
+        usLogV("arm", "user-mode replacement "
+               US_VALUE("%s") " (asked " US_VALUE("%s") ", base "
+               US_VALUE("%s") ")\n",
+               cfg->el0InPlace != 0 ? "on" : "off",
+               s->config != NULL && s->config->el0InplaceRewrite ? "yes"
+                                                                 : "no",
+               descriptorBaseRVA != 0 ? "found" : "none");
     }
 
     usLogV("arm", "%s tables=" US_VALUE("%u") " stubs at +" US_VALUE("%#x")

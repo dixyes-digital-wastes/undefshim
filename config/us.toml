@@ -47,8 +47,9 @@ driverInplaceRewrite = true
 enabled = false
 
 [kernel]
-# The RVA of the variable holding the kernel's page table base, for the build
-# this configuration is for. Optional: without it no descriptor is rewritten.
+# The RVA of the variable holding the kernel's page table base. It is read
+# out of the kernel's own image, so this is needed only for a build whose
+# shape the locator does not recognise
 descriptorBaseRVA = 0xE06368
 
 [patch]

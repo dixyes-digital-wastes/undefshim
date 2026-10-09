@@ -96,6 +96,8 @@ enabled = false
 # exception. It is never trusted - the handler checks it against the hardware's
 # own translation and carries on without it if the two disagree.
 # 0xE06368 is the value for the 26100 kernel used in development.
+# The base is ordinarily read out of the kernel's own image, so this is needed
+# only for a build whose shape the locator does not recognise.
 descriptorBaseRVA = 0xE06368
 
 [patch]
