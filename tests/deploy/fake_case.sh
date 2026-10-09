@@ -18,6 +18,11 @@
 #     Every vector this project takes over is an EL1 one, because that is the
 #     level a kernel runs at. So the stand-in leaves EL2 for EL1 itself.
 #
+# That first one is also why this check cannot run everywhere: a machine that
+# enters its guest at EL1 has no EL2 for the stand-in to leave, and this is a
+# skip there rather than a failure. KVM without nested virtualisation is such a
+# machine, and the rest of the checks are what it is for.
+#
 #   * The plan that decides where a kernel's vectors are comes from a memory
 #     map scan that only a boot manager produces. Nothing here produces one,
 #     so the check runs with the switch that takes the vectors over at load
@@ -66,6 +71,16 @@ ESP="$ESP" SERIAL_LOG="$SERIAL_LOG" STOP_PATTERN="FAKEK: PASS" WIN_DISK= \
 
 checkNote "the fake kernel's report:"
 tests/deploy/plain.sh "$SERIAL_LOG" | grep -a "FAKEK:" || true
+
+# The stand-in leaves EL2 for EL1 itself, so it needs a machine that has EL2 to
+# leave. A machine whose guest is entered at EL1 -- KVM without nested
+# virtualisation, where secure=on is refused -- is one where this check cannot
+# be asked, and the fake kernel says so rather than reporting a pass it did not
+# earn. That is a skip and not a failure: nothing about the handler was tested,
+# and the rest of the checks are what this machine is for
+if tests/deploy/plain.sh "$SERIAL_LOG" | grep -qa "expected EL2, entered at EL"; then
+    checkSkip "the guest is entered below EL2, so the stand-in cannot run"
+fi
 
 # The property that makes the rest mean anything: the vectors were taken
 # over. Without it the run could be succeeding for a reason that has nothing
