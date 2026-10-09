@@ -16,6 +16,7 @@
 #include "core/translate.h"
 #include "payload/fb.h"
 #include "payload/panic.h"
+#include "payload/panelface.h"
 #include "payload/payload.h"
 #include "payload/regs.h"
 #include "payload/uart.h"
@@ -45,32 +46,79 @@ static bool serialReachable(UsPayloadConfig *cfg) {
 }
 
 /*
- * Three pairs on one line, to both channels that are left
+ * The report as a table, one field a line
+ *
+ * A panic is read by looking for one value in it -- the address that faulted,
+ * or the one thing that is not what it should be -- and everything else on the
+ * line is in the way of that. So the values are in a column of their own,
+ * under one another, with the names to their left in a column too: what the
+ * reader does is run a finger down the left edge and stop at the name. What
+ * that shape is is in panic.h, where the face can be told about it
+ */
+static uint32_t widthOf(const char *s) {
+    uint32_t width = 0;
+
+    while (s[width] != '\0') {
+        width++;
+    }
+    return width;
+}
+
+/*
+ * How wide a number comes out, in characters
+ *
+ * The report writes them with usFBHex, which is 0x and as many digits as the
+ * number needs and no more, so the width of a line is a fact about the value
+ * rather than a constant. This is that rule again, kept beside the thing it
+ * describes
+ */
+static uint32_t hexWidth(uint64_t value) {
+    uint32_t digits = 1;
+
+    while (value > 0xFU) {
+        value >>= 4U;
+        digits++;
+    }
+    return 2U + digits;
+}
+
+/*
+ * One field, to both channels that are left
  *
  * The serial port is one of them only when it is actually there, and the frame
  * buffer only when the boot found one and the payload managed to map it. The
  * same text goes to each rather than one being a summary of the other: the two
  * are read at different times by different means, and neither reader can see
  * the other's copy
+ *
+ * The name is padded to the column the values start in, which is what makes
+ * the block read as a table rather than as a list of sentences, and the value
+ * is drawn in the colour the console uses for numbers so that the eye lands on
+ * it: a name longer than that column is the one thing that would spoil it, and
+ * the names here are ours and short
  */
-static void line(bool serial, const char *a, uint64_t aValue, const char *b,
-                 uint64_t bValue, const char *c, uint64_t cValue) {
+static void field(bool serial, const char *name, uint64_t value) {
+    uint32_t width = widthOf(name);
+
     if (serial) {
-        usUARTPuts(a);
-        usUARTPutHex(aValue);
-        usUARTPuts(b);
-        usUARTPutHex(bValue);
-        usUARTPuts(c);
-        usUARTPutHex(cValue);
+        usUARTPuts(name);
+    }
+    usFBInkSet(US_PANIC_INK);
+    usFBText(name);
+    for (; width < US_PANIC_FIELD_NAME; width++) {
+        if (serial) {
+            usUARTPuts(" ");
+        }
+        usFBText(" ");
+    }
+    if (serial) {
+        usUARTPuts("=");
+        usUARTPutHex(value);
         usUARTPuts("\n");
     }
-
-    usFBText(a);
-    usFBHex(aValue);
-    usFBText(b);
-    usFBHex(bValue);
-    usFBText(c);
-    usFBHex(cValue);
+    usFBText("=");
+    usFBInkSet(US_PANIC_VALUE);
+    usFBHex(value);
     usFBText("\n");
 }
 
@@ -112,21 +160,63 @@ _Noreturn void usPanicHalt(uint64_t code, const char *what, uint64_t detail) {
      */
     UsPayloadConfig *cfg = usPayloadConfig();
     bool serial = serialReachable(cfg);
+    const char *site = what != NULL ? what : "?";
+    /*
+     * The heading is the one line whose width is not fixed, so it is measured
+     * rather than assumed: a name longer than the table is a width the face
+     * has to be told about, or the line wraps and the block acquires a line it
+     * was not sized for
+     */
+    uint32_t columns = widthOf("PANIC code=") + hexWidth(code)
+                       + widthOf(" what=") + widthOf(site);
+
+    if (columns < US_PANIC_REPORT_COLUMNS) {
+        columns = US_PANIC_REPORT_COLUMNS;
+    }
 
     if (serial) {
         usUARTPuts("PANIC code=");
         usUARTPutHex(code);
         usUARTPuts(" what=");
-        usUARTPuts(what != NULL ? what : "?");
+        usUARTPuts(site);
         usUARTPuts("\n");
     }
 
-    usFBText("PANIC code=");
-    usFBHex(code);
-    usFBText(" what=");
-    usFBText(what != NULL ? what : "?");
-    usFBText("\n");
+    /*
+     * The screen is given a face before it is given the report: white paper,
+     * the picture, and the pen put where the text begins
+     *
+     * This is the one place the two channels are not the same text, and that
+     * is because they are read differently. The serial port is a stream of
+     * characters read by a machine, which gets the report and nothing else;
+     * the screen is looked at in a photograph of a machine lying any way up,
+     * with whatever the kernel and the desktop had drawn still on it
+     *
+     * The sizes the face works out are told to the frame buffer, so that the
+     * text written after it is drawn the same way the picture was
+     */
+    {
+        UsSurface surface;
 
+        if (usFBSurface(&surface)) {
+            UsPanicFace face =
+                usPanicFaceDraw(&surface, columns, US_PANIC_REPORT_LINES);
+
+            usFBScaleSet(face.textScale);
+            usFBPenSet(face.column, face.row);
+        }
+    }
+
+    usFBInkSet(US_PANIC_ALERT);
+    usFBText("PANIC");
+    usFBInkSet(US_PANIC_INK);
+    usFBText(" code=");
+    usFBInkSet(US_PANIC_VALUE);
+    usFBHex(code);
+    usFBInkSet(US_PANIC_INK);
+    usFBText(" what=");
+    usFBText(site);
+    usFBText("\n");
     /*
      * The registers that describe the exception, then where the two moving
      * parts of this project were. The addresses on their own say nothing:
@@ -134,12 +224,15 @@ _Noreturn void usPanicHalt(uint64_t code, const char *what, uint64_t detail) {
      * only becomes a place in a source file once those two are subtracted
      * from it
      */
-    line(serial, "elr=", currentELR(), " esr=", currentESR(), " far=",
-         currentFAR());
-    line(serial, "spsr=", currentSPSR(), " detail=", detail, " vbar=",
-         currentVBAR());
-    line(serial, "payload=", usVAMapRecord.payloadAfter, " pool=",
-         usVAMapRecord.poolAfter, " self=", usVAMapRecord.payloadBefore);
+    field(serial, "elr", currentELR());
+    field(serial, "esr", currentESR());
+    field(serial, "far", currentFAR());
+    field(serial, "spsr", currentSPSR());
+    field(serial, "detail", detail);
+    field(serial, "vbar", currentVBAR());
+    field(serial, "payload", usVAMapRecord.payloadAfter);
+    field(serial, "pool", usVAMapRecord.poolAfter);
+    field(serial, "self", usVAMapRecord.payloadBefore);
 
     /*
      * And a line that says the report ended, written last and followed by
@@ -150,6 +243,7 @@ _Noreturn void usPanicHalt(uint64_t code, const char *what, uint64_t detail) {
     if (serial) {
         usUARTPuts("PANIC-END\n");
     }
+    usFBInkSet(US_PANIC_ALERT);
     usFBText("PANIC-END");
 
     /*

@@ -49,6 +49,7 @@ PAYLOAD_SRCS := $(PAYLOAD_DIR)/payload.c $(PAYLOAD_DIR)/uart.c $(PAYLOAD_DIR)/us
                 $(PAYLOAD_DIR)/selfmap.c $(PAYLOAD_DIR)/transfer.c $(PAYLOAD_DIR)/vamap.c \
                 $(PAYLOAD_DIR)/early.c $(PAYLOAD_DIR)/rewrite.c $(PAYLOAD_DIR)/drvhook.c \
                 $(PAYLOAD_DIR)/fb.c $(PAYLOAD_DIR)/panic.c \
+                $(PAYLOAD_DIR)/panelface.c \
                 core/cache.c core/thunk.c \
                 core/pgtable.c core/par.c core/ldapr.c core/ldr.c core/stackgen.c core/translate.c \
                 core/pool.c

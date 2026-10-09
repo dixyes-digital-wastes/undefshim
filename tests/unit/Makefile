@@ -20,13 +20,24 @@ CFG_CFLAGS := -std=gnu23 -O2 -Wall -Wextra -I$(ROOT) -I$(TOML) $(TOML_DEFS)
 .PHONY: all check clean
 all: test_cfg test_layout test_scan_images test_rva_patch test_plan test_pgtable test_par \
      test_thunk test_stackgen test_payload_place test_early test_ldapr test_acpi test_ldr \
-     test_patchlist test_screen test_driver_hook test_drvhook test_panic test_fb
+     test_patchlist test_screen test_driver_hook test_drvhook test_panic test_panic_face test_fb
+
+# The face of a panic report, drawn on the host over the primitives the
+# payload draws with. The picture is the one the payload carries, so what is
+# looked at is what a machine would show, and what is checked is where the
+# paper, the picture and the text are
+test_panic_face: test_panic_face.c $(ROOT)/payload/panelface.c \
+                 $(ROOT)/payload/panelface.h $(ROOT)/payload/panicimage.h \
+                 $(ROOT)/core/pixel.h $(ROOT)/common/font.h
+	$(CC) -std=gnu23 -O2 -Wall -Wextra -I. -I$(ROOT) \
+	    test_panic_face.c $(ROOT)/payload/panelface.c -o $@
 
 # How many two megabyte entries the frame buffer's mapping takes. The
 # mapping itself needs page tables and a machine; this is the arithmetic it
 # is worked out from, which is the part that was wrong once and left the last
 # rows of a screen unmapped
-test_fb: test_fb.c $(ROOT)/payload/fb.h $(ROOT)/core/pgtable.h
+test_fb: test_fb.c $(ROOT)/payload/fb.h $(ROOT)/core/pgtable.h \
+         $(ROOT)/core/pixel.h
 	$(CC) -std=gnu23 -O2 -Wall -Wextra -I$(ROOT) test_fb.c -o $@
 
 # The name a stop is asked for by, compared the way the configuration hands it
@@ -146,6 +157,7 @@ check: all
 	@./test_patchlist
 	@./test_screen
 	@./test_panic
+	@./test_panic_face
 	@./test_fb
 	@./test_acpi
 	@./test_ldr

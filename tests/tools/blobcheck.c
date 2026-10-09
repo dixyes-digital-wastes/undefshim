@@ -73,12 +73,16 @@ static uint8_t *readWhole(const char *path, size_t *len) {
  * its rows are values below the blob's size. Those are bit patterns, not
  * addresses, and no amount of care in the code would make them anything else
  *
+ * The panic picture is the same claim on a larger scale: it is thousands of
+ * bytes of levels generated from a PNG, and a word of it that happens to fall
+ * under the blob's size is a run of grey and not a pointer
+ *
  * Naming the region here is the honest answer rather than weakening the test:
  * what is claimed is narrow and checkable -- nothing inside these symbols is
  * ever an address -- and everything outside them is still looked at. Adding a
  * symbol to this list is a claim, and it should be read as one
  */
-static const char *const kDataOnly[] = { "kFont" };
+static const char *const kDataOnly[] = { "kFont", "kPanicImage" };
 #define DATA_ONLY_COUNT (sizeof(kDataOnly) / sizeof(kDataOnly[0]))
 
 /* The range a symbol covers in the blob, or false when it is not there */

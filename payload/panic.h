@@ -37,6 +37,23 @@
 #define US_PANIC_INJECTED 0xF000U /* a stop the configuration asked for */
 
 /*
+ * The shape of the report: how wide its widest line can be, and how long it is
+ *
+ * The report is a table, so its width is a column of names, the mark between
+ * them and their values, and a column of values; its length is the heading, a
+ * line for each field, and the line that says it ended. Both are claims about
+ * the text that is written where they are used, and they are here because the
+ * face is sized from them and the face is not the side that writes it
+ *
+ * The longest value is a 64 bit address, which is what the field column is the
+ * width of: eighteen characters of 0x and sixteen digits
+ */
+#define US_PANIC_FIELD_NAME 8U   /* a name is padded to this many characters */
+#define US_PANIC_FIELD_VALUE 18U /* 0x and sixteen digits, which is the most */
+#define US_PANIC_REPORT_COLUMNS (US_PANIC_FIELD_NAME + 1U + US_PANIC_FIELD_VALUE)
+#define US_PANIC_REPORT_LINES 11U
+
+/*
  * Stops the machine, having said what it knew
  *
  * Never returns, and that is the interface rather than a detail: every caller

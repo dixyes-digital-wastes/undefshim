@@ -42,8 +42,16 @@
  */
 #define US_FB_MAX_BLOCKS 32U
 
-static uint32_t gFBRow;
-static uint32_t gFBColumn;
+/*
+ * The pen the report is written with, which is the shared one in core/pixel.h
+ *
+ * Where a line returns to, how large the text is and what colour it is are all
+ * told rather than worked out here: the face is what knows how wide the report
+ * is and how large it may be, and this side only draws the fragments it is
+ * handed. It starts at zero, which is the pen's own answer for everything it
+ * was not told -- black, and the size the font already is
+ */
+static UsPen gFBPen;
 
 /*
  * A descriptor, read the way this path reads anything that may not be there
@@ -395,11 +403,11 @@ static bool ensureMapped(UsPool *pool) {
     return true;
 }
 
-bool usFBAvailable(void) {
+bool usFBSurface(UsSurface *out) {
     UsPayloadConfig *cfg = usPayloadConfig();
     UsPool *pool = poolOf(cfg);
 
-    if (pool == NULL || pool->fb.pa == 0) {
+    if (pool == NULL || out == NULL || pool->fb.pa == 0) {
         return false;
     }
     if (!ensureMapped(pool)) {
@@ -421,11 +429,11 @@ bool usFBAvailable(void) {
     }
     /*
      * The far end of the screen, and not just its first entry: the kernel may
-     * have taken back any part of the mapping, and a screen that is drawn on
-     * while its last rows are not there is a fault in the middle of a report --
-     * which is the one thing this path may not do. Asking about the last row is
-     * asking about the whole of it, because a mapping is a run and what is
-     * between two of its addresses is mapped too
+     * have taken back any part of the mapping, and a surface that is handed
+     * out as whole while its last rows are not there is a fault in the middle
+     * of a report -- which is the one thing this path may not do. Asking about
+     * the last row is asking about the whole of it, because a mapping is a run
+     * and what is between two of its addresses is mapped too
      */
     if (!mapsTo(pool->fb.aliasVA
                     + (uint64_t)(pool->fb.height - 1U) * pool->fb.stride * 4U,
@@ -435,116 +443,78 @@ bool usFBAvailable(void) {
         pool->fb.aliasVA = 0;
         return false;
     }
+    /*
+     * A row narrower than the picture is one where the rows overlap, which is
+     * not a frame buffer however it was described: the drawing below walks the
+     * buffer by the stride and would write over what it had already drawn
+     */
+    if (pool->fb.stride < pool->fb.width || pool->fb.width == 0
+        || pool->fb.height == 0) {
+        return false;
+    }
+    *out = (UsSurface){
+        .base = (volatile uint32_t *)(uintptr_t)pool->fb.aliasVA,
+        .width = pool->fb.width,
+        .height = pool->fb.height,
+        .stride = pool->fb.stride,
+        .blueFirst = pool->fb.blueFirst != 0,
+    };
     return true;
 }
 
-/* The bytes of one pixel of a row, or NULL when the row is not drawable */
-static volatile uint32_t *rowAt(const UsPoolFB *fb, uint32_t row) {
-    if (row >= fb->height || fb->stride < fb->width) {
-        return NULL;
-    }
-    return (volatile uint32_t *)(uintptr_t)(fb->aliasVA
-                                            + (uint64_t)row * fb->stride * 4U);
+void usFBPenSet(uint32_t column, uint32_t row) {
+    usPenAt(&gFBPen, column, row);
 }
 
-static void putGlyph(const UsPoolFB *fb, uint32_t x, const uint8_t *glyph,
-                     uint32_t ink, uint32_t paper) {
-    for (uint32_t r = 0; r < US_FONT_HEIGHT; r++) {
-        volatile uint32_t *row = rowAt(fb, gFBRow + r);
-
-        if (row == NULL) {
-            return;
-        }
-        for (uint32_t c = 0; c < US_FONT_WIDTH; c++) {
-            if (x + c >= fb->width) {
-                break;
-            }
-            row[x + c] = (glyph[r] & (0x80U >> c)) != 0 ? ink : paper;
-        }
-    }
+void usFBScaleSet(uint32_t scale) {
+    usPenSize(&gFBPen, scale);
 }
 
+void usFBInkSet(uint32_t rgb) {
+    usPenInk(&gFBPen, rgb);
+}
+
+/*
+ * Drawing, which is the pen and the mapping and nothing else
+ *
+ * Which line a character goes on, where a line returns to and what colour it
+ * is drawn in are the pen's, and they are shared with the host test that draws
+ * the same report to be looked at. What is here is what only the payload can
+ * ask: whether the frame buffer is still mapped, which is a question about the
+ * kernel's tables and has to be asked again for every fragment -- the kernel
+ * may take the address back between two of them, and a remembered yes would
+ * make this the draw that faults on a path with nothing left to recover with
+ */
 void usFBText(const char *text) {
     UsPayloadConfig *cfg = usPayloadConfig();
     UsPool *pool = poolOf(cfg);
-    uint32_t ink;
-    uint32_t paper;
+    UsSurface surface;
 
-    if (pool == NULL || text == NULL || !usFBAvailable()) {
+    if (pool == NULL || text == NULL || !usFBSurface(&surface)) {
         return;
     }
     pool->fb.drawn++;
-    /*
-     * Black on white, which is what the boot's own screen is: a photograph of
-     * a machine that has stopped is read by a person, and the two are the
-     * colours that read at the widest range of exposures
-     */
-    ink = usPixelColour(0, 0, 0, pool->fb.blueFirst != 0);
-    paper = usPixelColour(0xFF, 0xFF, 0xFF, pool->fb.blueFirst != 0);
-
-    /*
-     * Where the pen is is state and not a local
-     *
-     * A report is written a fragment at a time -- a label, then a number, then
-     * the next label -- and each call has to carry on where the one before it
-     * stopped. A column that started at zero every time would draw every
-     * fragment on top of the last, which is a report that reads as the few
-     * characters they all had in common
-     */
-    for (const char *p = text; *p != '\0'; p++) {
-        const uint8_t *glyph;
-        char c = *p;
-
-        if (c == '\n'
-            || gFBColumn * US_FONT_WIDTH + US_FONT_WIDTH > pool->fb.width) {
-            /*
-             * A newline, and a line that has reached the edge. Both end the
-             * line, and a character that would run off is what ends it rather
-             * than being drawn in the margin
-             */
-            if (c != '\n') {
-                p--;
-            }
-            gFBColumn = 0;
-            gFBRow += US_FONT_HEIGHT;
-            continue;
-        }
-        if (c < US_FONT_FIRST || c > US_FONT_LAST) {
-            c = '?';
-        }
-        glyph = kFont[(int)c - US_FONT_FIRST];
-        putGlyph(&pool->fb, gFBColumn * US_FONT_WIDTH, glyph, ink, paper);
-        gFBColumn++;
-    }
+    usPenText(&surface, &gFBPen, text);
 }
 
 void usFBHex(uint64_t value) {
-    char out[19];
-    size_t at = 0;
-    bool started = false;
+    UsPayloadConfig *cfg = usPayloadConfig();
+    UsPool *pool = poolOf(cfg);
+    UsSurface surface;
 
-    out[at++] = '0';
-    out[at++] = 'x';
-    for (int nibble = 15; nibble >= 0; nibble--) {
-        unsigned digit = (unsigned)((value >> (nibble * 4)) & 0xFU);
-
-        if (digit != 0 || started || nibble == 0) {
-            started = true;
-            out[at++] = (char)(digit < 10 ? '0' + digit : 'a' + digit - 10);
-        }
+    if (pool == NULL || !usFBSurface(&surface)) {
+        return;
     }
-    out[at] = '\0';
-    usFBText(out);
+    usPenHex(&surface, &gFBPen, value);
 }
 
 void usFBDec(uint64_t value) {
-    char out[21];
-    size_t at = sizeof(out) - 1U;
+    UsPayloadConfig *cfg = usPayloadConfig();
+    UsPool *pool = poolOf(cfg);
+    UsSurface surface;
 
-    out[at] = '\0';
-    do {
-        out[--at] = (char)('0' + (value % 10U));
-        value /= 10U;
-    } while (value != 0);
-    usFBText(&out[at]);
+    if (pool == NULL || !usFBSurface(&surface)) {
+        return;
+    }
+    usPenDec(&surface, &gFBPen, value);
 }
