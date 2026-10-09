@@ -222,11 +222,49 @@ static void testMPIDRMask(void) {
     }
 }
 
+/*
+ * Rounding an address down to its page, at addresses the machine actually uses
+ *
+ * A payload is placed wherever the firmware's allocator puts it, and on the
+ * machines this runs on that is above 4G: the pool was at 0x1380e0000 and the
+ * payload at 0x13bc00000 in the run this was written from. A page mask that
+ * loses those bits is therefore not a corner case, and it is silent -- the
+ * answer is a page-aligned address either way, just four gigabytes lower
+ */
+static void testPageAlign(void) {
+    /* The addresses that were measured on the machine this came from */
+    eqU64("a page address is its own page", usPageAlignDown(0x13bc00000ULL),
+          0x13bc00000ULL);
+    eqU64("an offset inside a page is cleared",
+          usPageAlignDown(0x13bc00818ULL), 0x13bc00000ULL);
+    eqU64("the pool's page", usPageAlignDown(0x1380e2000ULL), 0x1380e2000ULL);
+    eqU64("a kernel address", usPageAlignDown(0xfffff8023a3c1abcULL),
+          0xfffff8023a3c1000ULL);
+    /* Both ends of the width, so a mask narrower than the address shows up */
+    eqU64("the top of the space", usPageAlignDown(0xffffffffffffffffULL),
+          0xfffffffffffff000ULL);
+    eqU64("zero", usPageAlignDown(0), 0);
+    /* And the property rather than the examples: clearing the offset of a page
+     * aligned address changes nothing, at any alignment of the address */
+    for (uint64_t bits = 12; bits < 64; bits += 7) {
+        uint64_t address = (UINT64_C(1) << bits) | 0xfffULL;
+
+        if (usPageAlignDown(address) != (UINT64_C(1) << bits)) {
+            failures++;
+            checks++;
+            usCheckFail("bit %llu does not survive the page mask\n",
+                        (unsigned long long)bits);
+        }
+        checks++;
+    }
+}
+
 int main(void) {
     testShape();
     testInit();
     testValidation();
     testMPIDRMask();
+    testPageAlign();
 
     return usCheckSummary(checks, failures);
 }

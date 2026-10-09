@@ -51,7 +51,7 @@ UsSelfMap usSelfMapFind(uint64_t targetPA, uint64_t targetBytes, uint64_t nearVA
      * sweep at block granularity that compared exact addresses would only
      * match when the mapping is aligned the same way at both ends
      */
-    base = (nearVA & ~(US_PAGE_SIZE - 1)) - US_SELFMAP_WINDOW;
+    base = usPageAlignDown(nearVA) - US_SELFMAP_WINDOW;
 
     for (va = base; va <= base + 2 * US_SELFMAP_WINDOW; va += US_PAGE_SIZE) {
         uint64_t pa;
@@ -66,7 +66,7 @@ UsSelfMap usSelfMapFind(uint64_t targetPA, uint64_t targetBytes, uint64_t nearVA
             out.faulted = true;
             continue;
         }
-        if (pa != (targetPA & ~(US_PAGE_SIZE - 1))) {
+        if (pa != usPageAlignDown(targetPA)) {
             continue;
         }
 
@@ -77,7 +77,7 @@ UsSelfMap usSelfMapFind(uint64_t targetPA, uint64_t targetBytes, uint64_t nearVA
          */
         out.found = true;
         out.va = va;
-        out.pa = targetPA & ~(US_PAGE_SIZE - 1);
+        out.pa = usPageAlignDown(targetPA);
         out.size = US_PAGE_SIZE;
         return out;
     }

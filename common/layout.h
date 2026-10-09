@@ -27,6 +27,21 @@
 #define US_PAGE_SIZE 4096U
 
 /*
+ * An address with the offset inside its page cleared
+ *
+ * The cast is the whole of what this is for. US_PAGE_SIZE is a count and fits
+ * in the int it is written as, so `~(US_PAGE_SIZE - 1)` is 0x00000000fffff000
+ * -- a 32 bit value that zero extends, which drops every bit of an address
+ * above 4G. A payload is placed wherever the firmware's allocator puts it, and
+ * on the machines this runs on that is above 4G, so the difference is not
+ * academic: it is the difference between finding the page a thing is on and
+ * finding a page 4G lower
+ */
+static inline uint64_t usPageAlignDown(uint64_t address) {
+    return address & ~(uint64_t)(US_PAGE_SIZE - 1U);
+}
+
+/*
  * The bits of MPIDR_EL1 that identify a processor
  *
  * The register also carries a bit saying whether the value is multiprocessor
