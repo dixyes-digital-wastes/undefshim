@@ -361,22 +361,32 @@ size_t usCollectSites(UsSiteList *list, UsImage *img, UsImageKind kind);
  * the same replacement can be done here
  *
  * Nothing about it is at a fixed address, so it is found by name. The anchor
- * is the exported MmLoadSystemImage, a wrapper whose body is one call to the
- * worker that does the work; the worker's body is a sequence of calls, and
- * its identity is that the image exports the name one entry of the sequence
- * goes to
+ * is the exported MmLoadSystemImage, a wrapper whose body is one handover to
+ * the worker that does the work - a call on some builds and a tail branch on
+ * others, and the two mean the same thing here. The worker's body is a
+ * sequence of calls, and its identity is that the image exports the name one
+ * entry of the sequence goes to
  *
  * That entry is the whole of the search. Every other entry is an address that
  * means nothing on its own - a helper, another wrapper, a function whose name
  * is not exported - so one entry with a name attached is what turns a list of
  * addresses into a shape, and it is checked rather than assumed
  *
- * Two builds have been verified this way, 26100pe and 24h2, and both agree on
- * the position. The older builds fail before this: their MmLoadSystemImage is
- * not a wrapper, so there is no worker to walk
+ * The position of that entry belongs to the build and not to the shape, so two
+ * builds that agree on it say nothing about a third. The search below checks
+ * the position it finds rather than assuming it, and refuses a build whose
+ * sequence does not match at that position instead of arming the wrong call,
+ * which is the failure it exists to prevent
  */
 #define US_DRIVER_LOAD_ANCHOR "MmLoadSystemImage"
 #define US_DRIVER_LOAD_WITNESS "RtlImageNtHeader"
+/*
+ * Which call of the worker's body is the driver load, as a position in the
+ * sequence. The position belongs to the build and not to the shape: it is 19
+ * on the builds the locator serves, and a build that puts it elsewhere is
+ * refused for that reason alone. The refusal does not separate such a build
+ * from one whose body is not a wrapper at all
+ */
 #define US_DRIVER_LOAD_CALL_INDEX 19U
 
 typedef struct UsDriverLoadHook_t {

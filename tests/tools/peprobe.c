@@ -84,7 +84,8 @@ static const Gap *findGap(const char *version, const char *file) {
  * 24h2 on it is used thousands of times
  */
 static bool versionUsesLDAPR(const char *version) {
-    static const char *withLDAPR[] = { "21h2", "22h2", "23h2", "24h2", "26100pe", "26h1" };
+    static const char *withLDAPR[] = { "21h2", "22h2", "23h2", "24h2",
+                                       "26100pe", "26h1", "28000pe" };
 
     for (size_t i = 0; i < sizeof(withLDAPR) / sizeof(withLDAPR[0]); i++) {
         if (strcmp(version, withLDAPR[i]) == 0) {
@@ -106,7 +107,8 @@ static bool versionUsesLDAPR(const char *version) {
  * way
  */
 static bool versionHasTransferLeaf(const char *version) {
-    static const char *withLeaf[] = { "23h2", "24h2", "26100pe", "26h1" };
+    static const char *withLeaf[] = { "23h2", "24h2", "26100pe", "26h1",
+                                      "28000pe" };
 
     for (size_t i = 0; i < sizeof(withLeaf) / sizeof(withLeaf[0]); i++) {
         if (strcmp(version, withLeaf[i]) == 0) {
@@ -117,16 +119,25 @@ static bool versionHasTransferLeaf(const char *version) {
 }
 
 /*
- * Which kernels load a driver through a wrapper this can walk
+ * Which kernels this locator finds a driver load hook in
  *
- * The chain starts at the exported MmLoadSystemImage and needs that name to be
- * a thin wrapper around the function that does the work. The two builds that
- * have been checked are the two this project runs on; the older ones export the
- * name but their body is not a wrapper, so there is nothing to walk and the
- * locator refuses rather than answering
+ * The walk starts at the exported MmLoadSystemImage and takes the call of the
+ * worker's body that goes to the exported RtlImageNtHeader. Where that call
+ * sits in the body is a property of the build and not of the shape. The
+ * locator takes only the position the builds it serves agree on, so a build
+ * that puts the call elsewhere is refused, and the refusal says nothing
+ * about whether its wrapper is a wrapper. A build whose body carries no
+ * such call at all is refused the same way, and each predicate below
+ * states which of the two it expects
+ *
+ * The expected set is therefore the builds whose call is at 19, which is five
+ * of the ten here. For each of them the call the locator takes and the name it
+ * resolves at the target are checked against the image, which is what the
+ * witness in the search is for
  */
 static bool versionHasDriverLoadHook(const char *version) {
-    static const char *withHook[] = { "24h2", "26100pe" };
+    static const char *withHook[] = { "10_20h2", "24h2", "26100pe", "26h1",
+                                      "28000pe" };
 
     for (size_t i = 0; i < sizeof(withHook) / sizeof(withHook[0]); i++) {
         if (strcmp(version, withHook[i]) == 0) {

@@ -437,9 +437,10 @@ UsSpareSlot usLocateSpareSlot(UsImage *img, uint32_t minBytes) {
 /*
  * The target of a branch at an RVA, as an RVA
  *
- * link selects BL from B, and the distinction is the whole value of this
- * scan: a function's tail branches outnumber its calls, and a sequence that
- * counted them would be a different sequence in every build
+ * link selects BL from B. The chain of calls depends on the distinction: a
+ * function's tail branches outnumber its calls, and a sequence that counted
+ * them would be a different sequence in every build. The handover out of the
+ * anchor is the one hop where either will do, and its caller asks for both
  *
  * False when the word is not that branch, and false when the target leaves
  * the image: a branch out of the image is not one this can follow, and an
@@ -485,21 +486,39 @@ UsDriverLoadHook usLocateDriverLoadHook(UsImage *img) {
         return hook;
     }
     hook.anchorRVA = anchor;
-    if (!usImageFunctionRange(img, anchor, &hook.anchorStart, &anchorEnd)
-        || hook.anchorStart != anchor) {
+    /*
+     * The wrapper's body runs from the exported address to whatever the table
+     * says comes next. The anchor is not required to have an entry of its own:
+     * some wrappers carry no frame of their own, so the table says nothing
+     * about them and their body would otherwise read as part of the function
+     * before them. Where the export points is the fact, and the scan starts
+     * there
+     */
+    if (!usImageFunctionRange(img, anchor, &hook.anchorStart, &anchorEnd)) {
         return hook;
     }
     /*
-     * Its body is the call to the worker. A tail call would be a branch
-     * rather than a call and is not followed: the two builds this is for both
-     * call, and one that did not would fail here rather than be guessed at
+     * Its body is the handover to the worker, and the handover is a call on
+     * some builds and a tail branch on others. Both are followed, because
+     * the two say the same thing here: the wrapper's own body is over and
+     * the worker runs in its place. Which form a build uses is a property
+     * of that build and not of the shape
+     *
+     * What is not followed is a branch back into the anchor, which is how the
+     * wrapper reaches its own return, and a target that is not a function in
+     * its own right. That second test is what keeps this honest: a call into
+     * the middle of another function is not the entry the worker has
      */
     for (uint32_t at = anchor; at + 4 <= anchorEnd; at += 4) {
         uint32_t target = 0;
         uint32_t start = 0;
         uint32_t end = 0;
 
-        if (!branchTargetRVA(img, at, true, &target) || target == anchor) {
+        if (!branchTargetRVA(img, at, true, &target)
+            && !branchTargetRVA(img, at, false, &target)) {
+            continue;
+        }
+        if (target == anchor) {
             continue;
         }
         /* The worker is a function in its own right, entered at its start */

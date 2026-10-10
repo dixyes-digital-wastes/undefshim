@@ -61,6 +61,9 @@ static void eqSize(const char *name, size_t got, size_t want) {
 
 #define IMAGE_BYTES (64 * 4096)
 
+/* A function the table describes that the anchor sits inside the end of,
+ * which is what the unframed wrappers of the newer builds are */
+#define OUTER_RVA 0x800U
 #define TEXT_RVA 0x1000U
 #define ANCHOR_RVA 0x1000U
 #define WORKER_RVA 0x2000U
@@ -109,7 +112,13 @@ static uint32_t bTo(uint32_t from, uint32_t to) {
 typedef struct Shape_t {
     bool     anchorExported;
     bool     witnessExported;
-    bool     anchorUsesBranch;  /* a tail call rather than a call */
+    bool     anchorUsesBranch;  /* a tail branch rather than a call */
+    /* The table describes no function at the anchor, so the anchor reads as
+     * part of the function before it */
+    bool     anchorHasNoOwnEntry;
+    /* The handover lands past the worker's entry, inside the function but not
+     * at its start */
+    bool     anchorBranchesIntoFunction;
     /* Which call of the worker's body goes to the witness, and whether there
      * is a second one as well */
     uint32_t witnessAt;
@@ -196,7 +205,8 @@ static void buildImage(const Shape *shape) {
     /* The exception table: five functions, in order, eight bytes an entry.
      * The count of entries is the count that were written; a declaration of
      * entries that are all zero would not be a table */
-    put32(gImage + PDATA_RVA + 0, ANCHOR_RVA);
+    put32(gImage + PDATA_RVA + 0,
+          shape->anchorHasNoOwnEntry ? OUTER_RVA : ANCHOR_RVA);
     put32(gImage + PDATA_RVA + 8, WORKER_RVA);
     put32(gImage + PDATA_RVA + 16, WITNESS_RVA);
     put32(gImage + PDATA_RVA + 24, FILLER_RVA);
@@ -208,9 +218,12 @@ static void buildImage(const Shape *shape) {
     put32(gImage + optOff + 112 + 3 * 8, PDATA_RVA);
     put32(gImage + optOff + 112 + 3 * 8 + 4, PDATA_BYTES);
 
-    /* The anchor: one call to the worker, which is what makes it a wrapper */
-    putInsn(ANCHOR_RVA, shape->anchorUsesBranch ? bTo(ANCHOR_RVA, WORKER_RVA)
-                                                : blTo(ANCHOR_RVA, WORKER_RVA));
+    /* The anchor: one handover to the worker, which is what makes it a
+     * wrapper. It is a call on some builds and a tail branch on others, and
+     * both have to be followed */
+    target = shape->anchorBranchesIntoFunction ? WORKER_RVA + 4U : WORKER_RVA;
+    putInsn(ANCHOR_RVA, shape->anchorUsesBranch ? bTo(ANCHOR_RVA, target)
+                                                : blTo(ANCHOR_RVA, target));
     putInsn(ANCHOR_RVA + 4, 0xD65F03C0U);   /* ret */
 
     /* The worker's body: 44 calls, one of which goes to the witness */
@@ -365,6 +378,57 @@ static void testFindsTheCall(void) {
 }
 
 /*
+ * The same shape with a tail branch in place of the call, which is what the
+ * newer wrappers do. The hop says the same thing either way, so the
+ * answer has to be the same, down to the call that is taken over
+ */
+static void testTailCallShape(void) {
+    UsImage img;
+    UsDriverLoadHook hook;
+
+    buildImage(&(Shape){ .anchorExported = true, .witnessExported = true,
+                         .anchorUsesBranch = true, .witnessAt = 19U });
+    imageOf(&img);
+    hook = usLocateDriverLoadHook(&img);
+
+    ok("a tail branch to the worker is found", hook.found);
+    eqHex("the worker is where it branches", hook.functionRVA, WORKER_RVA);
+    eqHex("the worker's extent is the next entry", hook.functionEnd,
+          WITNESS_RVA);
+    eqSize("the body's calls are all counted", hook.calls, 44U);
+    eqHex("and the call taken over is the same one", hook.callRVA,
+          WORKER_RVA + 19U * 4U);
+}
+
+/*
+ * The shape a wrapper with no frame has: the table says nothing about it,
+ * and the handover is a tail branch rather than a call.
+ * Each of the two is a separate way the locator used to refuse, and the table
+ * said nothing before the branch was ever read
+ */
+static void testUnframedWrapper(void) {
+    UsImage img;
+    UsDriverLoadHook hook;
+
+    buildImage(&(Shape){ .anchorExported = true, .witnessExported = true,
+                         .anchorHasNoOwnEntry = true,
+                         .anchorUsesBranch = true, .witnessAt = 19U });
+    imageOf(&img);
+    hook = usLocateDriverLoadHook(&img);
+
+    ok("a wrapper the table does not describe is found", hook.found);
+    eqHex("the anchor is where its name says", hook.anchorRVA, ANCHOR_RVA);
+    /* What the name resolved into, which is the function before it and not
+     * the anchor: the field says so, and the scan starts at the anchor */
+    eqHex("the name resolves into the function before it", hook.anchorStart,
+          OUTER_RVA);
+    eqHex("the worker is where it branches", hook.functionRVA, WORKER_RVA);
+    eqSize("the body's calls are all counted", hook.calls, 44U);
+    eqHex("and the call taken over is the same one", hook.callRVA,
+          WORKER_RVA + 19U * 4U);
+}
+
+/*
  * Every refusal. Each is one property of the shape, and a locator that
  * answered anyway would arm the machine at an address that does no such thing
  */
@@ -372,13 +436,16 @@ static void testRefusals(void) {
     UsImage img;
     UsDriverLoadHook hook;
 
-    /* The anchor is a tail call: nothing follows it, so there is no return
-     * and the shape is not the wrapper this looks for */
+    /* The handover lands inside the worker rather than at its start. A call
+     * into the middle of a function is not the entry the worker has, and a
+     * locator that took it would count a chain that is not the one it is
+     * looking for */
     buildImage(&(Shape){ .anchorExported = true, .witnessExported = true,
-                         .anchorUsesBranch = true, .witnessAt = 19U });
+                         .anchorBranchesIntoFunction = true,
+                         .witnessAt = 19U });
     imageOf(&img);
     hook = usLocateDriverLoadHook(&img);
-    ok("a tail call is not the wrapper", !hook.found);
+    ok("a handover past the worker's start is refused", !hook.found);
     eqHex("and what was learned before the refusal is kept", hook.anchorRVA,
           ANCHOR_RVA);
 
@@ -435,6 +502,8 @@ int main(void) {
     testExports();
     testFunctionRange();
     testFindsTheCall();
+    testTailCallShape();
+    testUnframedWrapper();
     testRefusals();
 
     return usCheckSummary(checks, failures);
