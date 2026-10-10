@@ -20,9 +20,8 @@ both](https://learn.microsoft.com/en-us/windows-hardware/get-started/adk-install
 on the machine that builds the image. Start an administrative prompt for the
 build.
 
-The commands below use the build 26100. Change the number for another build.
-`winpe-image.ps1` reads the build from the image instead, with
-`/Get-WimInfo`.
+The commands below use the build 26100. Change the number for another build,
+and for `-Build` on the script.
 
 The optional components land in:
 
@@ -32,13 +31,10 @@ C:\Program Files (x86)\Windows Kits\10\Assessment and Deployment Kit\Windows Pre
 
 ## Working files
 
-One build lives in the working directory at a time, because the build is not
-known until `copype` has run: it is a property of the image `copype` makes.
-
 Set the paths once. Every step below uses them.
 
 ```pwsh
-$root  = 'C:\winpe\arm64'
+$root  = 'C:\winpe\26100\arm64'
 $media = "$root\media"
 $mount = "$root\mount"
 $wim   = "$media\sources\boot.wim"
@@ -57,21 +53,6 @@ same file. Copy it under the name `copype` wants:
 $src = Get-ChildItem $media -Filter efisys.bin -Recurse | Select-Object -First 1
 Copy-Item $src.FullName (Join-Path $src.DirectoryName 'efisys_EX.bin')
 ```
-
-Ask the image which build it is. The optional components are matched to the
-image by build, so a disk named after the wrong one is a disk that cannot be
-made again:
-
-```pwsh
-$info  = dism /Get-WimInfo /WimFile:$wim /Index:1 /English
-$hit   = $info | Select-String '^\s*Version\s*:\s*\d+\.\d+\.(\d+)'
-$build = $hit.Matches[0].Groups[1].Value
-$build
-```
-
-`/English` holds the field names to English. Without it `dism` answers in the
-locale of the machine that built the image, and the field to read has another
-name.
 
 ## Mount the image
 
@@ -218,7 +199,7 @@ system partition on it.
 `New-VHD` and `Mount-VHD` come from the Hyper-V module.
 
 ```pwsh
-$vhdx = "$root\winpe_$build.vhdx"
+$vhdx = "$root\winpe_26100.vhdx"
 
 $vhd  = New-VHD -Path $vhdx -SizeBytes 10GB -Dynamic
 $vhd  = Mount-VHD -Path $vhdx -PassThru
@@ -249,7 +230,5 @@ QEMU reads raw and qcow2 images, not VHDX. Convert it on the machine with
 ```bash
 qemu-img convert -f vhdx -O qcow2 winpe_26100.vhdx winpe_26100.qcow2
 ```
-
-The name is the build the image reported, which for the ADK 26100 is 26100.
 
 Point the runs at the result with `WIN_DISK=`.

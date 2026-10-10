@@ -5,10 +5,15 @@ Build the WinPE image the QEMU runs boot, and turn it into a disk.
 Run this in the Deployment and Imaging Tools Environment, so that copype and
 dism are on PATH.
 
-    .\winpe-image.ps1 -DriverRoot E:\
-    .\winpe-image.ps1 -DriverRoot E:\ -NoDisk
+    .\winpe-image.ps1 -Build 26100 -DriverRoot E:\
+    .\winpe-image.ps1 -Build 26100 -DriverRoot E:\ -NoDisk
 #>
 param(
+    # The ADK build. It names the working directory and the disk, and it has
+    # to be the build of the ADK that is installed.
+    [Parameter(Mandatory)]
+    [string] $Build,
+
     # The root of the mounted virtio-win ISO. The driver step is skipped
     # when this is empty.
     [string] $DriverRoot,
@@ -19,12 +24,11 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-# The working directory holds one build at a time, because the build is not
-# known until copype has run: it is a property of the image copype makes.
-$root  = 'C:\winpe\arm64'
+$root  = "C:\winpe\$Build\arm64"
 $media = "$root\media"
 $mount = "$root\mount"
 $wim   = "$media\sources\boot.wim"
+$vhdx  = "$root\winpe_$Build.vhdx"
 $ocs   = "${env:ProgramFiles(x86)}\Windows Kits\10\Assessment and " +
          "Deployment Kit\Windows Preinstallation Environment\arm64\WinPE_OCs"
 
@@ -35,23 +39,6 @@ function Invoke-Dism {
     if ($LASTEXITCODE -ne 0) {
         throw "dism $($args -join ' ') failed with $LASTEXITCODE"
     }
-}
-
-# The build of the image, for the name of the disk. The optional components
-# are matched to the image by build, so a disk named after the wrong one is a
-# disk that cannot be reproduced.
-#
-# /English pins the field names. Without it dism answers in the locale of the
-# machine that built the image, and the parse below reads whatever the
-# translated name happens to be.
-function Get-ImageBuild {
-    $info = dism /Get-WimInfo /WimFile:$wim /Index:1 /English 2>$null
-    $hit = $info | Select-String '^\s*Version\s*:\s*\d+\.\d+\.(\d+)'
-    if (-not $hit) {
-        Write-Host ($info -join "`n")
-        throw "no Version field in the image info above"
-    }
-    return $hit.Matches[0].Groups[1].Value
 }
 
 # copype looks for efisys_EX.bin and does not always find it. efisys.bin
@@ -89,9 +76,7 @@ function Write-StartNet {
 }
 
 function New-BootDisk {
-    param([string] $Path)
-
-    $vhd  = New-VHD -Path $Path -SizeBytes 10GB -Dynamic
+    $vhd  = New-VHD -Path $vhdx -SizeBytes 10GB -Dynamic
     $vhd  = Mount-VHD -Path $vhd -PassThru
     $disk = Initialize-Disk -Number $vhd.DiskNumber -PartitionStyle GPT -PassThru
     $part = New-Partition -DiskNumber $disk.Number -UseMaximumSize `
@@ -111,7 +96,7 @@ function New-BootDisk {
         New-Item -ItemType Directory -Force $item.To | Out-Null
         Copy-Item $item.From $item.To
     }
-    Dismount-VHD -Path $Path
+    Dismount-VHD -Path $vhdx
 }
 
 # The optional components in the order they go in. Several need one of the
@@ -130,11 +115,6 @@ $packages = @(
 if (Test-Path $media) { Remove-Item -Recurse -Force $root }
 copype arm64 $root
 Fix-Efisys
-
-# The image exists now, so it can say which build it is.
-$build = Get-ImageBuild
-$vhdx  = "$root\winpe_$build.vhdx"
-Write-Host "the image is build $build"
 
 New-Item -ItemType Directory -Force $mount | Out-Null
 Invoke-Dism /Mount-Image /ImageFile:$wim /Index:1 /MountDir:$mount
@@ -178,8 +158,8 @@ if ($NoDisk) {
     return
 }
 
-New-BootDisk -Path $vhdx
+New-BootDisk
 
 Write-Host "the disk is $vhdx"
 Write-Host "QEMU does not read VHDX, so convert it where qemu-img is:"
-Write-Host "    qemu-img convert -f vhdx -O qcow2 winpe_$build.vhdx winpe_$build.qcow2"
+Write-Host "    qemu-img convert -f vhdx -O qcow2 winpe_$Build.vhdx winpe_$Build.qcow2"
