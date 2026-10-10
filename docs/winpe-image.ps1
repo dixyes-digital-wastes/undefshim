@@ -9,9 +9,6 @@ dism are on PATH.
     .\winpe-image.ps1 -DriverRoot E:\ -NoDisk
 #>
 param(
-    # The ADK build. It names the working directory.
-    [string] $Build = '26100',
-
     # The root of the mounted virtio-win ISO. The driver step is skipped
     # when this is empty.
     [string] $DriverRoot,
@@ -22,11 +19,23 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-$root  = "C:\winpe\$Build\arm64"
+# The build of the ADK, which is also the build of the WinPE it makes and of
+# the packages it ships. dism prints its own version on every run, and no
+# switch reports it on its own, so it is called with no arguments. That call
+# exits nonzero, which does not matter: the version line is the point.
+# The pattern allows the space that some versions put before the colon.
+$banner = dism 2>$null |
+          Select-String 'Version\s*:\s*\d+\.\d+\.(\d+)' |
+          Select-Object -First 1
+if (-not $banner) { throw 'dism did not report a version' }
+$build = $banner.Matches[0].Groups[1].Value
+Write-Host "ADK build $build"
+
+$root  = "C:\winpe\$build\arm64"
 $media = "$root\media"
 $mount = "$root\mount"
 $wim   = "$media\sources\boot.wim"
-$vhdx  = "$root\winpe_$Build.vhdx"
+$vhdx  = "$root\winpe_$build.vhdx"
 $ocs   = "${env:ProgramFiles(x86)}\Windows Kits\10\Assessment and " +
          "Deployment Kit\Windows Preinstallation Environment\arm64\WinPE_OCs"
 
@@ -160,4 +169,4 @@ New-BootDisk
 
 Write-Host "the disk is $vhdx"
 Write-Host "QEMU does not read VHDX, so convert it where qemu-img is:"
-Write-Host "    qemu-img convert -f vhdx -O qcow2 winpe_$Build.vhdx winpe_$Build.qcow2"
+Write-Host "    qemu-img convert -f vhdx -O qcow2 winpe_$build.vhdx winpe_$build.qcow2"

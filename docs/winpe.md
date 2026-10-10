@@ -21,6 +21,8 @@ on the machine that builds the image. Start an administrative prompt for the
 build.
 
 The commands below use the build 26100. Change the number for another build.
+`winpe-image.ps1` reads the build from dism, so its paths follow the ADK that
+is installed.
 
 The optional components land in:
 
