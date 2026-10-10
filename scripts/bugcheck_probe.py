@@ -335,6 +335,22 @@ def main():
                          "the kernel with")
     ap.add_argument("--spx-stack", default="false",
                     help="whether the stub may push on the SPx vector too")
+    # Where this runs. tcg is the local default and works everywhere; kvm is
+    # the machine whose CPU is the real one, and it is the only place the
+    # stale-fetch path can be reached at all: tcg re-translates every trap, so
+    # a processor never runs an instruction the rewrite has already replaced.
+    ap.add_argument("--accel", default="tcg", choices=("tcg", "kvm"),
+                    help="which accelerator the machine runs under")
+    ap.add_argument("--el", default=None, choices=("2", "1"),
+                    help="the level the firmware is entered at: 2 gives it"
+                         " EL2 and EL3 and it hands EL2 down, 1 gives it"
+                         " neither and the guest is already at EL1. This is"
+                         " the machine, not the accelerator")
+    ap.add_argument("--cpu", default=None,
+                    help="the CPU model, when it differs from the default"
+                         " for the accelerator")
+    ap.add_argument("--stats", default="false",
+                    help="count where traps are taken, at a lookup per trap")
     ap.add_argument("--descriptor-base-rva", default="",
                     help="the RVA of the kernel's page table base variable, for the build under test")
     ap.add_argument("--spin-rva", type=lambda value: int(value, 0),
@@ -372,6 +388,9 @@ width = 32
 [log]
 level = "info"
 
+[stats]
+enabled = %s
+
 [ldapr]
 imageInplaceRewrite = %s
 el0InplaceRewrite = %s
@@ -384,7 +403,7 @@ notArmHandover = %s
 notVamap = %s
 armOnLoad = %s
 spxStack = %s
-""" % (args.image_rewrite, args.el0_rewrite, args.driver_rewrite,
+""" % (args.stats, args.image_rewrite, args.el0_rewrite, args.driver_rewrite,
        str(args.arm == "false").lower(),
        str(args.arm_slot0 == "false").lower(),
        str(args.handover == "false").lower(),
@@ -424,12 +443,27 @@ tag = "spin probe"
 
     log("starting the machine")
     extra = [a.replace("%WORK%", work) for a in args.qemu_extra.split() if a]
+    # The accelerator and the machine are two decisions and not one. kvm needs
+    # the host CPU and refuses secure=on (there is no EL2 below the guest for
+    # it to keep), so the machine loses the virtualization and secure flags as
+    # well and the guest is entered at EL1 instead. The frame buffer, the
+    # monitor and the serial line are the same either way.
+    el = args.el or ("1" if args.accel == "kvm" else "2")
+    if args.accel == "kvm":
+        accel = "kvm"
+        machine = "virt,gic-version=3"
+        cpu = args.cpu or "host"
+    else:
+        accel = "tcg,thread=multi,tb-size=2048"
+        machine = "virt,gic-version=3,virtualization=on,secure=on"
+        cpu = args.cpu or "cortex-a76-nolrcpc"
+
     qemu = subprocess.Popen([
         QEMU,
-        "-no-reboot", "-accel", "tcg,thread=multi,tb-size=2048",
-        "-M", "virt,gic-version=3,virtualization=on,secure=on",
+        "-no-reboot", "-accel", accel,
+        "-M", machine,
         "-m", "4096", "-smp", "8,sockets=1,clusters=2,cores=4,threads=1",
-        "-cpu", os.environ.get("QEMU_CPU", "cortex-a76-nolrcpc"),
+        "-cpu", cpu,
         "-kernel", FIRMWARE,
         "-device", "ramfb", "-vnc", "none" if args.no_screen
         else os.environ.get("QEMU_VNC", "0.0.0.0:0"),

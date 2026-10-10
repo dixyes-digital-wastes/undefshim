@@ -16,6 +16,7 @@ tests/unit/test_*
 tests/tools/peprobe
 tests/tools/planprobe
 tests/tools/holes
+tests/tools/blobcheck
 
 # The same in the third party trees.
 third_party/posix-uefi/tests/test_printf
