@@ -76,6 +76,8 @@ dism /Add-Package /Image:$mount /PackagePath:"$ocs\WinPE-Scripting.cab"
 dism /Add-Package /Image:$mount /PackagePath:"$ocs\en-us\WinPE-Scripting_en-us.cab"
 dism /Add-Package /Image:$mount /PackagePath:"$ocs\WinPE-PowerShell.cab"
 dism /Add-Package /Image:$mount /PackagePath:"$ocs\en-us\WinPE-PowerShell_en-us.cab"
+dism /Add-Package /Image:$mount /PackagePath:"$ocs\WinPE-SecureStartup.cab"
+dism /Add-Package /Image:$mount /PackagePath:"$ocs\en-us\WinPE-SecureStartup_en-us.cab"
 dism /Add-Package /Image:$mount /PackagePath:"$ocs\WinPE-PlatformID.cab"
 dism /Add-Package /Image:$mount /PackagePath:"$ocs\en-us\WinPE-PlatformID_en-us.cab"
 dism /Add-Package /Image:$mount /PackagePath:"$ocs\WinPE-x64-Support.cab"
@@ -89,11 +91,11 @@ the image first:
 |---|---|
 | `WinPE-NetFX` | `WinPE-WMI` |
 | `WinPE-PowerShell` | `WinPE-WMI`, `WinPE-NetFX`, `WinPE-Scripting` |
+| `WinPE-SecureStartup` | `WinPE-WMI` |
 | `WinPE-PlatformID` | `WinPE-WMI`, `WinPE-SecureStartup` |
 
-`WinPE-PlatformID` needs `WinPE-SecureStartup`, which this list does not add.
-Add `WinPE-SecureStartup.cab` before `WinPE-PlatformID` to use that component.
-`WinPE-SecureStartup` brings the BitLocker and TPM tools with it.
+`WinPE-SecureStartup` brings the BitLocker and TPM tools with it. The image
+needs it only because `WinPE-PlatformID` requires it.
 
 Most components come in two parts: a language-neutral `.cab` in `WinPE_OCs\`,
 and a language-specific one in a locale directory below it. Add both. A
