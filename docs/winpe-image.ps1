@@ -19,23 +19,12 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-# The build of the ADK, which is also the build of the WinPE it makes and of
-# the packages it ships. dism prints its own version on every run, and no
-# switch reports it on its own, so it is called with no arguments. That call
-# exits nonzero, which does not matter: the version line is the point.
-# The pattern allows the space that some versions put before the colon.
-$banner = dism 2>$null |
-          Select-String 'Version\s*:\s*\d+\.\d+\.(\d+)' |
-          Select-Object -First 1
-if (-not $banner) { throw 'dism did not report a version' }
-$build = $banner.Matches[0].Groups[1].Value
-Write-Host "ADK build $build"
-
-$root  = "C:\winpe\$build\arm64"
+# The working directory holds one build at a time, because the build is not
+# known until copype has run: it is a property of the image copype makes.
+$root  = 'C:\winpe\arm64'
 $media = "$root\media"
 $mount = "$root\mount"
 $wim   = "$media\sources\boot.wim"
-$vhdx  = "$root\winpe_$build.vhdx"
 $ocs   = "${env:ProgramFiles(x86)}\Windows Kits\10\Assessment and " +
          "Deployment Kit\Windows Preinstallation Environment\arm64\WinPE_OCs"
 
@@ -46,6 +35,23 @@ function Invoke-Dism {
     if ($LASTEXITCODE -ne 0) {
         throw "dism $($args -join ' ') failed with $LASTEXITCODE"
     }
+}
+
+# The build of the image, for the name of the disk. The optional components
+# are matched to the image by build, so a disk named after the wrong one is a
+# disk that cannot be reproduced.
+#
+# /English pins the field names. Without it dism answers in the locale of the
+# machine that built the image, and the parse below reads whatever the
+# translated name happens to be.
+function Get-ImageBuild {
+    $info = dism /Get-WimInfo /WimFile:$wim /Index:1 /English 2>$null
+    $hit = $info | Select-String '^\s*Version\s*:\s*\d+\.\d+\.(\d+)'
+    if (-not $hit) {
+        Write-Host ($info -join "`n")
+        throw "no Version field in the image info above"
+    }
+    return $hit.Matches[0].Groups[1].Value
 }
 
 # copype looks for efisys_EX.bin and does not always find it. efisys.bin
@@ -83,7 +89,9 @@ function Write-StartNet {
 }
 
 function New-BootDisk {
-    $vhd  = New-VHD -Path $vhdx -SizeBytes 10GB -Dynamic
+    param([string] $Path)
+
+    $vhd  = New-VHD -Path $Path -SizeBytes 10GB -Dynamic
     $vhd  = Mount-VHD -Path $vhd -PassThru
     $disk = Initialize-Disk -Number $vhd.DiskNumber -PartitionStyle GPT -PassThru
     $part = New-Partition -DiskNumber $disk.Number -UseMaximumSize `
@@ -103,7 +111,7 @@ function New-BootDisk {
         New-Item -ItemType Directory -Force $item.To | Out-Null
         Copy-Item $item.From $item.To
     }
-    Dismount-VHD -Path $vhdx
+    Dismount-VHD -Path $Path
 }
 
 # The optional components in the order they go in. Several need one of the
@@ -122,6 +130,11 @@ $packages = @(
 if (Test-Path $media) { Remove-Item -Recurse -Force $root }
 copype arm64 $root
 Fix-Efisys
+
+# The image exists now, so it can say which build it is.
+$build = Get-ImageBuild
+$vhdx  = "$root\winpe_$build.vhdx"
+Write-Host "the image is build $build"
 
 New-Item -ItemType Directory -Force $mount | Out-Null
 Invoke-Dism /Mount-Image /ImageFile:$wim /Index:1 /MountDir:$mount
@@ -165,7 +178,7 @@ if ($NoDisk) {
     return
 }
 
-New-BootDisk
+New-BootDisk -Path $vhdx
 
 Write-Host "the disk is $vhdx"
 Write-Host "QEMU does not read VHDX, so convert it where qemu-img is:"
