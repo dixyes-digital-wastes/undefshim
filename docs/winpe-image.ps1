@@ -19,7 +19,12 @@ param(
     [string] $DriverRoot,
 
     # Stop after the image is committed, for a disk that is built elsewhere.
-    [switch] $NoDisk
+    [switch] $NoDisk,
+
+    # Add WinPE-PlatformID, which is what a PowerShell script reads the
+    # machine's platform identifier with. The image does not need it. It
+    # brings WinPE-SecureStartup, and with it the BitLocker and TPM tools.
+    [switch] $WithPlatformId
 )
 
 $ErrorActionPreference = 'Stop'
@@ -107,10 +112,18 @@ $packages = @(
     'WinPE-NetFX'         # needs WinPE-WMI
     'WinPE-Scripting'
     'WinPE-PowerShell'    # needs WinPE-WMI, WinPE-NetFX, WinPE-Scripting
-    'WinPE-SecureStartup' # needs WinPE-WMI
-    'WinPE-PlatformID'    # needs WinPE-WMI, WinPE-SecureStartup
     'WinPE-x64-Support'
 )
+
+# WinPE-PlatformID is what a PowerShell script reads the machine's platform
+# identifier with, and nothing in this image does that. It is the only
+# reason WinPE-SecureStartup is here, and SecureStartup brings the BitLocker
+# and TPM tools with it. Both go in only when they are asked for, in the
+# order the prerequisite requires.
+if ($WithPlatformId) {
+    $packages += 'WinPE-SecureStartup' # needs WinPE-WMI
+    $packages += 'WinPE-PlatformID'    # needs WinPE-WMI, WinPE-SecureStartup
+}
 
 if (Test-Path $media) { Remove-Item -Recurse -Force $root }
 copype arm64 $root
@@ -122,10 +135,16 @@ Invoke-Dism /Mount-Image /ImageFile:$wim /Index:1 /MountDir:$mount
 $mounted = $true
 try {
     foreach ($name in $packages) {
+        $neutral = "$ocs\$name.cab"
+        if (-not (Test-Path $neutral)) { throw "$neutral is not there" }
+
         # Most components are two packages, and the second one carries the
-        # language. A component with only the first does not work.
-        foreach ($cab in @("$ocs\$name.cab", "$ocs\en-us\${name}_en-us.cab")) {
-            if (-not (Test-Path $cab)) { throw "$cab is not there" }
+        # language. Not every component has one: WinPE-PlatformID has none,
+        # and the part that is there is a component that works.
+        $cabs = @($neutral, "$ocs\en-us\${name}_en-us.cab") |
+                Where-Object { Test-Path $_ }
+
+        foreach ($cab in $cabs) {
             Invoke-Dism /Add-Package /Image:$mount /PackagePath:$cab
         }
     }
