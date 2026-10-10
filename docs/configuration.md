@@ -111,6 +111,7 @@ A key that has to be turned on for the machine to work does not belong here. Tha
 | `notArmHandover` | `false` | Take over the branch winload jumps into the kernel with. That branch is what tells the other stubs where the payload ended up. |
 | `notVamap` | `false` | Register the notification that runs during `SetVirtualAddressMap`, which is when the payload learns the addresses it will have once the kernel's page tables are in force. The handover stub publishes them earlier; this is for a machine where that turns out not to be enough. |
 | `spxStack` | `false` | Let the stub push on the SPx vector as well, which is how to find out which vector Windows arrives on. |
+| `armOnLoad` | `false` | Arm as soon as a kernel is loaded, rather than when the plan that says which image the kernel is has been built. The one key here that turns something on. The stand-in kernel the fast test runs produces no plan, so the test needs this to exercise the exception path at all. Leave it off: arming on a name alone takes over the vectors of whatever image happens to be called that. |
 | `panicAfter` | absent | Stop after the named milestone, printing a panic first. The name is compared whole against what the boot prints, so `M6.5 armed` and `M6.5 arm failed` are different keys. |
 | `panicAfterTraps` | `0` | Stop on the exception with this number. Reached only once the kernel is running. |
 | `panicAfterRewrites` | `0` | Stop on the rewrite attempt with this number, whether it succeeded or not. |

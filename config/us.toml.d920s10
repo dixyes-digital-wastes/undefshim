@@ -59,3 +59,6 @@ notArmVectorsEl1t = false    # do not take the EL1t slot; false is known to bugc
 notArmHandover = false       # do not take the winload-to-kernel branch over
 notVamap = false             # do not register the runtime VA notification
 spxStack = false             # do not let the stub push on the SPx vector too
+# The one key here that is not a "not". Arm as soon as a kernel is loaded,
+# rather than when the plan says which image the kernel is
+armOnLoad = false
