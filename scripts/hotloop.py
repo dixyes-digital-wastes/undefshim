@@ -22,10 +22,13 @@ import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
+    os.path.abspath(__file__))), "tests", "deploy"))
 import bugcheck_probe  # noqa: E402
 import logtext
 
-ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
+ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                    ".."))
 DRIVER = "build/rwClean/undefshim_driver.efi"
 SAMPLES = 24
 INTERVAL = 0.5
@@ -59,7 +62,7 @@ def readList(path):
 
 
 def writeList(path, digest, sites):
-    lines = ["# Written by tests/deploy/hotloop.py: the sites the machine was",
+    lines = ["# Written by scripts/hotloop.py: the sites the machine was",
              "# measured trapping on, one per line. LDAPR to LDAR keeps the base",
              "# and target register and drops the acquire-RCpc ordering field.",
              "USPATCHV1",
@@ -88,7 +91,7 @@ def round_(args, roundIndex, sites):
     env["PATCHLIST_DIR"] = lists if roundIndex > 0 else ""
     env["QEMU_VNC"] = "0.0.0.0:%d" % args.vnc
     probe = subprocess.run(
-        [sys.executable, "-u", os.path.join(ROOT, "tests/deploy/bugcheck_probe.py"),
+        [sys.executable, "-u", os.path.join(ROOT, "scripts/bugcheck_probe.py"),
          "--arm", "true", "--rewrite", "false", "--vamap", "true", "--keep",
          "--find-timeout", "240", "--catch-timeout", "2",
          "--qmp-port", str(args.qmp_port), "--gdb-port", str(args.gdb_port),

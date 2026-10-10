@@ -16,7 +16,7 @@
 # Runs are also serialised, because two guests at once would share the same
 # serial socket and gdb port.
 #
-# Usage: tests/deploy/variant.sh <variant-file> <name>
+# Usage: scripts/variant.sh <variant-file> <name>
 #
 set -uo pipefail
 

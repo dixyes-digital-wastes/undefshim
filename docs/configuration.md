@@ -94,7 +94,7 @@ This is per build. A value from another build is checked against the hardware be
 |---|---|---|
 | `dir` | `"usPatch"` | Directory of patch list files, relative to the volume `us.toml` was read from. An empty string turns the feature off. |
 
-Each `.txt` in the directory is a list of places to write bytes, with the bytes already there, so a file that does not match its image is refused rather than applied. `tests/deploy/enumerate_sites.py` writes one from an image. The lists are not kept in the project tree.
+Each `.txt` in the directory is a list of places to write bytes, with the bytes already there, so a file that does not match its image is refused rather than applied. `scripts/enumerate_sites.py` writes one from an image. The lists are not kept in the project tree.
 
 The volume root is refused as a directory.
 

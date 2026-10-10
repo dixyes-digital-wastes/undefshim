@@ -24,10 +24,13 @@ import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
+    os.path.abspath(__file__))), "tests", "deploy"))
 import bugcheck_probe  # noqa: E402
 import logtext
 
-ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
+ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                    ".."))
 DRIVER = "build/rwClean/undefshim_driver.efi"
 
 
@@ -63,7 +66,7 @@ def boots(work, lists, port, vnc, gdb, wait):
     env["DRIVER"] = os.path.join(ROOT, DRIVER)
     env["PATCHLIST_DIR"] = lists
     env["QEMU_VNC"] = "0.0.0.0:%d" % vnc
-    subprocess.run([sys.executable, "-u", os.path.join(ROOT, "tests/deploy/bugcheck_probe.py"),
+    subprocess.run([sys.executable, "-u", os.path.join(ROOT, "scripts/bugcheck_probe.py"),
                     "--arm", "true", "--rewrite", "false", "--vamap", "true", "--keep",
                     "--find-timeout", "240", "--catch-timeout", "2",
                     "--qmp-port", str(port), "--gdb-port", str(gdb),

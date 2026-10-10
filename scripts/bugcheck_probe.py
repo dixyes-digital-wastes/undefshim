@@ -38,11 +38,14 @@ import signal
 import socket
 import subprocess
 import sys
-import logtext
 import threading
 import time
 
-ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
+    os.path.abspath(__file__))), "tests", "deploy"))
+import logtext
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 VECTOR_TABLE_RVA = 0x604800       # where the kernel puts its vector table
 KI_BUGCHECK_DATA_RVA = 0xdba5e0   # checked against the image before use
@@ -533,7 +536,7 @@ tag = "spin probe"
         if verdict != 0:
             log("no bugcheck; waiting for the machine to halt or keep going")
             verdict = subprocess.call(
-                [sys.executable, "-u", "tests/deploy/watch.py",
+                [sys.executable, "-u", "scripts/watch.py",
                  "--qmp-port", str(args.qmp_port),
                  "--timeout", str(args.catch_timeout)])
         if verdict == 2:

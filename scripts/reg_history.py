@@ -21,9 +21,12 @@ import socket
 import subprocess
 import sys
 import time
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
+    os.path.abspath(__file__))), "tests", "deploy"))
 import logtext
 
-ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 PUBLIC_WORDS = 15
 TRACE_SLOTS = 8
@@ -109,7 +112,7 @@ def main():
     args = ap.parse_args()
 
     os.chdir(ROOT)
-    probe = ["python3", "-u", "tests/deploy/bugcheck_probe.py",
+    probe = ["python3", "-u", "scripts/bugcheck_probe.py",
              "--arm", "true", "--rewrite", "false",
              "--find-timeout", str(args.find_timeout),
              "--catch-timeout", str(args.catch_timeout),

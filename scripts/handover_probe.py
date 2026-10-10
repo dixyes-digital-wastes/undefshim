@@ -25,7 +25,7 @@ import subprocess
 import sys
 import time
 
-ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # Where winload branches to the kernel. The walk here only needs to be right
 # about that one address; everything else is read out of the structure.

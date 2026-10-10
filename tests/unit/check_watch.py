@@ -17,7 +17,11 @@ import sys
 import tempfile
 from unittest.mock import patch
 
+# The tools under test live outside this directory: the watcher and the
+# probe are things to run at a machine, and the readers they use live with
+# the checks.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "deploy"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1].parent / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import check as checklib  # noqa: E402
 import bugcheck_probe  # noqa: E402
