@@ -146,8 +146,8 @@ pflash)
     ;;
 esac
 
-[ -f "$ESP" ] || fail "no image at $ESP (run make esp first)"
-[ -f "$QEMU_FW" ] || fail "no firmware at $QEMU_FW"
+[ -f "$ESP" ] || checkFail "no image at $ESP (run make esp first)"
+[ -f "$QEMU_FW" ] || checkFail "no firmware at $QEMU_FW"
 if [ -n "$QEMU_FW_VARS" ] && [ ! -f "$QEMU_FW_VARS" ]; then
     checkFail "no variable store at $QEMU_FW_VARS"
 fi
