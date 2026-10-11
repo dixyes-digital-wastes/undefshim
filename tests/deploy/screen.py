@@ -141,6 +141,15 @@ BLUE_THRESHOLD = 0.5
 # A run of rows this tall at the top of the frame is a title bar. The console's
 # is 85; a boot screen has nothing like it
 TITLE_BAR_MIN_ROWS = 20
+# How much of a light frame has to be the window colour for it to be a page
+# Windows drew rather than the firmware's own console. Both are a light field
+# with dark text on it, and the colours alone cannot tell one from the other:
+# what separates them is that Windows draws with its own blue. The firmware's
+# console has none of it, and a Windows page has several percent of it: the
+# driver's console 0.0% of the frame, the OOBE region page 4.2%. The
+# watermark the firmware draws in the middle is not that colour, so it does
+# not move the reading
+UI_COLOUR_MIN = 0.03
 # How much of a row has to be off the background for it to be part of a bar
 ROW_FULL = 0.8
 # How much of a row has to carry something for it to be a line of text
@@ -150,11 +159,12 @@ ROW_TEXT = 0.03
 BLANK = "blank"
 BUGCHECK = "bugcheck"
 FIRMWARE = "firmware"
+WINDOWS = "windows"
 BOOT = "boot"
 CONSOLE = "console"
 UNKNOWN = "unknown"
 
-STATES = (BLANK, BUGCHECK, FIRMWARE, BOOT, CONSOLE, UNKNOWN)
+STATES = (BLANK, BUGCHECK, FIRMWARE, WINDOWS, BOOT, CONSOLE, UNKNOWN)
 
 # What the text can add to a state the colours could only place. A failure is
 # ahead of a success and both are ahead of the prompt, which is what a console
@@ -353,6 +363,13 @@ class Frame:
             return BUGCHECK, colours, "%.0f%% of it is the bugcheck blue" % (
                 100 * colours["bugcheck"])
         if colours["light"] >= 0.3:
+            # A light frame is the firmware's console, unless Windows drew it:
+            # the pages Windows shows in a light theme carry its own blue, and
+            # calling one of those the firmware says "Windows never started"
+            # about a machine that got all the way to its own interface
+            if colours["console"] >= UI_COLOUR_MIN:
+                return WINDOWS, colours, "%.0f%% of it is the window colour" % (
+                    100 * colours["console"])
             return FIRMWARE, colours, "%.0f%% of it is light" % (
                 100 * colours["light"])
         if self.titleBarRows() >= TITLE_BAR_MIN_ROWS:
