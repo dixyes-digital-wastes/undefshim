@@ -143,7 +143,7 @@ patch:   the list asks for 1713aa50-9114-c4c6-99d3-46f086029846-1
 patch:   this image is b5833c9b-5780-715e-9d55-92619e29c053-1, which a debugger writes 9B3C83B5-8057-5E71-9D55-92619E29C053-1
 ```
 
-`scripts/enumerate_sites.py` writes a list of the RCpc loads in an image. **No list is kept in the project tree.** The directory a list lives in ignores every file in it, because a list belongs to the run that made it and names one build. Two lists used during development are `no-ci-break-<build>.txt`, which quiets both code integrity front ends, and `no-ci-page-<build>.txt`, which quiets only the per-page one. Neither is in the tree. Put at most one list for a given site in the directory. A second list that names the same site sees the bytes the first one wrote, and leaves the site alone.
+`scripts/enumerate_sites.py` writes a list of the RCpc loads in an image. Two lists ship with the project. `config/usPatch/no-ci-break-<build>.txt` quiets both code integrity front ends. `config/usPatch-modes/no-ci-page-<build>.txt` quiets only the per-page one. Put at most one list for a given site in the directory. A second list that names the same site sees the bytes the first one wrote, and leaves the site alone.
 
 ## `[debug]`
 
@@ -157,6 +157,7 @@ A key that has to be turned on for the machine to work does not belong here. Tha
 | `notArmVectorsEl1t` | `false` | Also take the EL1t synchronous slot. Needed because Windows takes synchronous exceptions with SP_EL0 selected, which arrives at a different offset of the table; off is known to bugcheck very early. |
 | `notArmHandover` | `false` | Take over the branch winload jumps into the kernel with. That branch is what tells the other stubs where the payload ended up. |
 | `notVamap` | `false` | Register the notification that runs during `SetVirtualAddressMap`, which is when the payload learns the addresses it will have once the kernel's page tables are in force. The handover stub publishes them earlier; this is for a machine where that turns out not to be enough. |
+| `el0RewriteReadOnlyPages` | `false` | Let the replacement of an EL0 load edit the descriptor of a read-only page to get into it. Such a page is an image's, and the edit reaches a page the integrity check hashes. Leave it off to boot a signed Windows: the site then keeps its RCpc load and the exception path carries the load out. |
 | `spxStack` | `false` | Let the stub push on the SPx vector as well, which is how to find out which vector Windows arrives on. |
 | `armOnLoad` | `false` | Arm as soon as a kernel is loaded, rather than when the plan that says which image the kernel is has been built. The one key here that turns something on. The stand-in kernel the fast test runs produces no plan, so the test needs this to exercise the exception path at all. Leave it off: arming on a name alone takes over the vectors of whatever image happens to be called that. |
 | `panicAfter` | absent | Stop after the named milestone, printing a panic first. The name is compared whole against what the boot prints, so `M6.5 armed` and `M6.5 arm failed` are different keys. |

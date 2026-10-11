@@ -123,6 +123,8 @@ static void writeConfig(const UsPayloadPlace *place, const UsSession *session) {
     cfg->el0InPlace = 0;
     cfg->statsEnabled = session->config != NULL && session->config->statsEnabled ? 1U : 0U;
     cfg->driverRewrite = session->driverInplaceRewrite ? 1U : 0U;
+    cfg->el0RewriteReadOnlyPages = session->config != NULL
+                                   && session->config->el0RewriteReadOnlyPages ? 1U : 0U;
 
     /*
      * The injected stops, which are counters rather than a name: a milestone

@@ -276,6 +276,16 @@ typedef struct UsPayloadConfig_t {
      */
     uint64_t el0InPlace;
 
+    /*
+     * Whether the replacement of an EL0 load may edit the descriptor of a
+     * read-only page to get into it
+     *
+     * A page of an image belongs to the kernel's section and is mapped
+     * read-only. Without this, such a site is left as it is and the trap path
+     * carries its load out
+     */
+    uint64_t el0RewriteReadOnlyPages;
+
     /* Whether to count where traps are taken; see [stats] enabled */
     uint64_t statsEnabled;
 

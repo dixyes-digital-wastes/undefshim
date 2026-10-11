@@ -577,6 +577,11 @@ UsConfig *usConfigParse(const char *text, size_t len, char *err, size_t errLen) 
             return NULL;
         }
         cfg->panicAfterRewrites = (uint64_t)count;
+        if (!cfgBool(dbg, "el0RewriteReadOnlyPages", &cfg->el0RewriteReadOnlyPages,
+                     err, errLen)) {
+            usConfigFree(cfg);
+            return NULL;
+        }
     }
 
     return cfg;

@@ -45,6 +45,9 @@ typedef enum UsRewriteResult_e {
     UsRewriteStoring = 14,
     UsRewritePublishing = 15,
     UsRewriteRestoring = 16,
+
+    /* The site is in an image page this configuration leaves alone */
+    UsRewriteLeftReadOnly = 17,
 } UsRewriteResult;
 
 /*

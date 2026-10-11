@@ -341,6 +341,35 @@ static void record(uint64_t site, uint64_t insn, const UsLeaf *leaf, uint64_t re
     usPanicCountRewrite();
 }
 
+/*
+ * Image pages a rewrite was left alone on, held as page numbers
+ *
+ * An attempt costs a walk of the tables and two faults, so the answer is kept:
+ * the first attempt at a page pays for it and the rest are skipped. A read or
+ * a write here is not locked, which can only cost an attempt - a hit skips a
+ * rewrite whose load the trap path carries out anyway, and a miss adds one
+ * attempt to a page already known. Slots collide, and a collision only means
+ * the page is attempted again
+ */
+#define US_LEFT_ALONE_SLOTS 512U
+#define US_LEFT_ALONE_SHIFT 55U
+
+static uint64_t leftAlonePages[US_LEFT_ALONE_SLOTS];
+
+static bool leftAlone(const void *origin) {
+    uint64_t page = (uint64_t)origin >> 12;
+    uint64_t slot = (page * 0x9E3779B97F4A7C15ULL) >> US_LEFT_ALONE_SHIFT;
+
+    return leftAlonePages[slot & (US_LEFT_ALONE_SLOTS - 1U)] == page;
+}
+
+static void leftAloneAdd(const void *origin) {
+    uint64_t page = (uint64_t)origin >> 12;
+    uint64_t slot = (page * 0x9E3779B97F4A7C15ULL) >> US_LEFT_ALONE_SHIFT;
+
+    leftAlonePages[slot & (US_LEFT_ALONE_SLOTS - 1U)] = page;
+}
+
 static UsRewriteResult rewriteOne(uint64_t site, UsLDAPRKind kind,
                                   uint64_t address, bool addressKnown) {
     UsRead state = { false };
@@ -432,6 +461,13 @@ static UsRewriteResult rewriteOne(uint64_t site, UsLDAPRKind kind,
         record(site, insn, NULL, UsRewriteNotRcpc);
         return UsRewriteNotRcpc;
     }
+    if (addressKnown && cfg->el0RewriteReadOnlyPages == 0 && leftAlone((const void *)site)) {
+        usPANRestore(panWasOn);
+        probeBankLeave(&bank);
+        record(site, insn, NULL, UsRewriteLeftReadOnly);
+        return UsRewriteLeftReadOnly;
+    }
+
     step(site, insn, UsRewriteReadingBase);
 
     base = descriptorBase(&baseTried, &baseValue);
@@ -494,6 +530,21 @@ static UsRewriteResult rewriteOne(uint64_t site, UsLDAPRKind kind,
      */
     step(site, insn, UsRewriteStoring);
     written = usPayloadProbeWriteWord(site, replacement);
+
+    if (!written && (original & US_PTE_AP2) != 0
+        && addressKnown && cfg->el0RewriteReadOnlyPages == 0) {
+        /*
+         * The site is in an image page, which the kernel holds read-only. An
+         * edit here is visible to the integrity check that hashes the page,
+         * and every processor running the page sees the translation go away
+         * and come back. The load is carried out by the trap path instead
+         */
+        leftAloneAdd((const void *)site);
+        usPANRestore(panWasOn);
+        probeBankLeave(&bank);
+        record(site, insn, &leaf, UsRewriteLeftReadOnly);
+        return UsRewriteLeftReadOnly;
+    }
 
     if (!written && (original & US_PTE_AP2) != 0) {
         /*

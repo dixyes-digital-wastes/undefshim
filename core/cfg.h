@@ -171,6 +171,12 @@ typedef struct UsConfig_t {
      * same way round as the rest of this table
      */
     bool          spxStack;
+    /*
+     * Whether the replacement of an EL0 load may edit the descriptor of a
+     * read-only page to get into it. Those pages are an image's, and the edit
+     * reaches a page the integrity check hashes
+     */
+    bool          el0RewriteReadOnlyPages;
 
     /*
      * Where to stop on purpose, for checking that the report works
