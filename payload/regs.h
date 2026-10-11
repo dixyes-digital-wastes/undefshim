@@ -56,4 +56,23 @@ static inline void usSetELR(uint64_t elr) {
     __asm__ volatile("msr elr_el1, %0" ::"r"(elr));
 }
 
+/*
+ * The platform register, which the kernel keeps its per-processor block in and
+ * the compiler is told not to allocate. What the entry gives back there is
+ * checked against TPIDR_EL1, so both are read here
+ */
+static inline uint64_t currentTPIDR(void) {
+    uint64_t value;
+
+    __asm__ volatile("mrs %0, tpidr_el1" : "=r"(value));
+    return value;
+}
+
+static inline uint64_t usReadX18(void) {
+    uint64_t value;
+
+    __asm__ volatile("mov %0, x18" : "=r"(value));
+    return value;
+}
+
 #endif

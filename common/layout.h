@@ -440,6 +440,18 @@ typedef struct UsPoolEntry_t {
     uint64_t panicSPSR;
     uint64_t panicEntries;
 
+    /*
+     * The probes a load time rewrite carries out. An access the mapping refuses
+     * faults on purpose, and the answer to it returns into the payload, so what
+     * that answer gives back in x18 is checked here: the kernel keeps its
+     * per-processor block in that register, and the entry spends it to find its
+     * own stack. A call into the kernel below reads it immediately, which is
+     * what makes a wrong value there the 0x7E
+     */
+    uint64_t probeAnswers;
+    uint64_t probeX18Wrong;
+    uint64_t probeX18Seen;
+    uint64_t probeX18Expected;
 } UsPoolEntry;
 
 /*

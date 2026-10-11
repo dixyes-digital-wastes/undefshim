@@ -101,6 +101,13 @@ def entryOffsets():
         "panicFar": panic + 40,
         "panicSpsr": panic + 48,
         "panicEntries": panic + 56,
+        # The probes a load time rewrite carries out, and the register the
+        # answer to one gives back: the count is the judge for the 0x7E that a
+        # driver load could otherwise cause, and it has to stay at zero
+        "probeAnswers": panic + 64,
+        "probeX18Wrong": panic + 72,
+        "probeX18Seen": panic + 80,
+        "probeX18Expected": panic + 88,
     }
 
 
@@ -112,7 +119,7 @@ def entryOffsets():
 # plausible number rather than nothing
 FB_FIELDS = ["magic", "pa", "bytes", "aliasVA", "blocks", "attrIndex", "drawn",
              "reason", "detail", "kernelBase", "mpteBase"]
-FB_AT = 7480
+FB_AT = 7512
 
 # The four 32 bit fields, in order, right after the 64 bit ones
 FB_TAIL_FIELDS = ["width", "height", "stride", "blueFirst"]

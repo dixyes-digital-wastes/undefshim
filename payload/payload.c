@@ -847,6 +847,26 @@ UsFrame *usPayloadFault(void) {
      */
     if (gActive[cpu].probing
         && usAccessCovers(far, gActive[cpu].probeAt, gActive[cpu].probeBytes)) {
+        UsPayloadConfig *cfg = usPayloadConfig();
+
+        if (cfg->poolBase != 0) {
+            UsPoolEntry *entry = &((UsPool *)(uintptr_t)cfg->poolBase)->entry;
+            uint64_t seen = usReadX18();
+            uint64_t expected = currentTPIDR() & ~0xFFFULL;
+
+            /* What the entry is about to give back, against the value the
+             * kernel keeps there. The answer returns into the payload, whose
+             * own code does not read that register, so a difference here stays
+             * invisible until the payload calls back into the kernel */
+            entry->probeAnswers++;
+            if (seen != expected) {
+                if (entry->probeX18Wrong == 0) {
+                    entry->probeX18Seen = seen;
+                    entry->probeX18Expected = expected;
+                }
+                entry->probeX18Wrong++;
+            }
+        }
         usSetELR(currentELR() + 4);
         gActive[cpu].probeRefused = true;
         gActive[cpu].probing = false;
