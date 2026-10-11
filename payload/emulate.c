@@ -16,6 +16,7 @@
 #include "common/layout.h"
 #include "core/ldapr.h"
 #include "core/pan.h"
+#include "core/translate.h"
 #include "payload/payload.h"
 #include "payload/rewrite.h"
 #include "payload/state.h"
@@ -128,12 +129,28 @@ static uint64_t loadUserAcquire(UsLDAPRKind kind, uint64_t address) {
 }
 
 bool usPayloadEmulate(UsFrame *frame, int cpu) {
-    uint32_t insn = *(const volatile uint32_t *)(uintptr_t)frame->elr;
-    UsLDAPRInsn decoded = usLDAPRDecode(insn);
+    uint64_t pa;
     uint64_t address;
     uint64_t value;
+    uint32_t insn;
+    UsLDAPRInsn decoded;
     bool pan;
     bool user = (frame->spsr & 0xFU) == 0U;
+
+    /*
+     * The instruction comes out of the address the exception names, and that
+     * address belongs to the interrupted code. A user page can be taken away
+     * between the trap and this read, and a read that faults here arrives as a
+     * fault of the payload's own with nothing to say which access it was. So
+     * the translation is asked for first. An address that has none is not ours
+     * to answer for, and the entry hands the exception to the handler the slot
+     * originally held, which is what a page that went away needs
+     */
+    if (!usTranslateAddress(frame->elr, false, &pa)) {
+        return false;
+    }
+    insn = *(const volatile uint32_t *)(uintptr_t)frame->elr;
+    decoded = usLDAPRDecode(insn);
     /*
      * A site that has already been replaced still traps on a processor whose
      * caches have not caught up with the write. The exception is the old
