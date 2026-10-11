@@ -17,6 +17,7 @@
 #include "uefi/registry.h"
 #include "uefi/rewrite.h"
 #include "uefi/service_hook.h"
+#include "uefi/stage.h"
 #include "uefi/stack.h"
 
 static UsSession *gSession;
@@ -188,7 +189,7 @@ static efi_status_t EFIAPI loadImageHook(boolean_t bootPolicy, efi_handle_t pare
         usStackRunOn(gSession->bootStackTop, armOnOwnStack, &areq);
         gArmed = areq.armed;
         if (areq.armed) {
-            usConsoleMilestone("M6.5 armed");
+            usStageMilestone(UsStageM6Armed);
         }
     }
 

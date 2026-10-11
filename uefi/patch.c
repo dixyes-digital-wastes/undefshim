@@ -9,8 +9,9 @@
 #include <uefi.h>
 
 #include "core/rva_patch.h"
-#include "uefi/cache.h"
+#include "core/cache.h"
 #include "uefi/console.h"
+#include "uefi/stage.h"
 #include "uefi/patch.h"
 
 static bool isApplied(const UsSession *s, uint32_t i) {
@@ -37,9 +38,9 @@ int usPatchApplyPending(UsSession *s) {
 
     for (uint32_t i = 0; i < cfg->patchCount; i++) {
         const UsPatch *p;
-        UsPatchSpec spec;
-        UsPatchRange range;
-        UsPatchResult r;
+        UsRvaPatchSpec spec;
+        UsRvaPatchRange range;
+        UsRvaPatchResult r;
         UsImage *img;
 
         if (i >= US_PATCH_MAX) {
@@ -65,9 +66,9 @@ int usPatchApplyPending(UsSession *s) {
         spec.width = p->width;
         spec.tag = p->tag;
 
-        r = usPatchApply(img, &spec, &range);
-        if (r != UsPatchOk) {
-            usLogE("patch", "%s failed: %s\n", patchName(p), usPatchResultName(r));
+        r = usRvaPatchApply(img, &spec, &range);
+        if (r != UsRvaPatchOk) {
+            usLogE("patch", "%s failed: %s\n", patchName(p), usRvaPatchResultName(r));
             /* The image is here, so retrying would fail the same way */
             markApplied(s, i);
             continue;
@@ -94,7 +95,7 @@ int usPatchApplyPending(UsSession *s) {
      * would cut the report in half
      */
     if (applied > 0) {
-        usConsoleMilestone("M4 patched");
+        usStageMilestone(UsStageM4Patched);
     }
 
     return applied;

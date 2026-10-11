@@ -31,6 +31,7 @@
 #include "uefi/registry.h"
 #include "uefi/session.h"
 #include "uefi/uart.h"
+#include "uefi/stage.h"
 #include "uefi/vamap.h"
 
 /* The driver's state. One instance, because there is one driver */
@@ -158,7 +159,7 @@ int main(int argc, char **argv) {
      */
     if (!usSessionInit(&gSession)) {
         usLogE("session", "no pool\n");
-        usConsoleMilestone("M4 failed");
+        usStageMilestone(UsStageM4Failed);
         return 0;
     }
 
@@ -213,12 +214,12 @@ int main(int argc, char **argv) {
     case UsConfigBroken:
         usLogE("config", "broken: %s\n", msg);
         usLogE("config", "not arming\n");
-        usConsoleMilestone("M2 failed");
+        usStageMilestone(UsStageM2Failed);
         return 0;
     }
 
     printConfig(cfg);
-    usConsoleMilestone("M2 done");
+    usStageMilestone(UsStageM2);
 
     /*
      * What this binary carries, after the milestone rather than before it: a
@@ -275,7 +276,7 @@ int main(int argc, char **argv) {
 
         if (!usPayloadPlace(&gSession, &place)) {
             usLogE("payload", "no executable memory\n");
-            usConsoleMilestone("M6 failed");
+            usStageMilestone(UsStageM6Failed);
             return 0;
         }
         usPayloadReport(&gSession);
@@ -283,7 +284,7 @@ int main(int argc, char **argv) {
 
     if (!usLoadImageHookInstall(&gSession)) {
         usLogE("loadimage", "hook failed\n");
-        usConsoleMilestone("M4 failed");
+        usStageMilestone(UsStageM4Failed);
         return 0;
     }
     usLogI("loadimage", "hooked\n");
@@ -292,7 +293,7 @@ int main(int argc, char **argv) {
      * boot where they are both in memory has to be waited for */
     if (!usGmmHookInstall(&gSession)) {
         usLogE("gmm", "hook failed\n");
-        usConsoleMilestone("M4 failed");
+        usStageMilestone(UsStageM4Failed);
         return 0;
     }
     usLogI("gmm", "armed\n");
@@ -300,10 +301,10 @@ int main(int argc, char **argv) {
     /* The notification publishes high-VA exception targets before low VAs retire */
     if (gSession.vamap && !usVAMapArm(&gSession)) {
         usLogE("vamap", "cannot arm\n");
-        usConsoleMilestone("M6 failed");
+        usStageMilestone(UsStageM6Failed);
         return 0;
     }
 
-    usConsoleMilestone("M4 setup");
+    usStageMilestone(UsStageM4);
     return 0;
 }

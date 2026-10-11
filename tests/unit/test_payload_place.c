@@ -15,7 +15,7 @@
 #include "core/stackgen.h"
 #include "payload/payload.h"
 #include "payload_blob.h"
-#include "uefi/cache.h"
+#include "core/cache.h"
 #include "uefi/console.h"
 #include "uefi/session.h"
 

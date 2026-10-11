@@ -13,6 +13,7 @@
 #include "uefi/console.h"
 #include "uefi/rewrite.h"
 #include "uefi/stack.h"
+#include "uefi/stage.h"
 #include "uefi/work.h"
 
 /*
@@ -72,7 +73,7 @@ void usWorkCollect(UsSession *session) {
     usLogI("work", "collecting\n");
     usStackRunOn(session->bootStackTop, collectOnOwnStack, &req);
 
-    usConsoleMilestone(req.complete ? "M5 planned" : "M5 incomplete");
+    usStageMilestone(req.complete ? UsStageM5Planned : UsStageM5Incomplete);
 
     /*
      * Taking over the handover comes first: it is the branch the loader jumps
@@ -81,11 +82,11 @@ void usWorkCollect(UsSession *session) {
      */
     if (req.complete) {
         if (!session->stubHandover) {
-            usConsoleMilestone("M6.5 transfer skipped");
+            usStageMilestone(UsStageM6TransferSkipped);
         } else if (usArmTransfer(session)) {
-            usConsoleMilestone("M6.5 transfer done");
+            usStageMilestone(UsStageM6TransferDone);
         } else {
-            usConsoleMilestone("M6.5 transfer failed");
+            usStageMilestone(UsStageM6TransferFailed);
         }
     }
     /*
@@ -97,11 +98,11 @@ void usWorkCollect(UsSession *session) {
      */
     if (req.complete) {
         if (!session->stubVectors) {
-            usConsoleMilestone("M6.5 armed skipped");
+            usStageMilestone(UsStageM6ArmedSkipped);
         } else if (usArmVectorTable(session)) {
-            usConsoleMilestone("M6.5 armed");
+            usStageMilestone(UsStageM6Armed);
         } else {
-            usConsoleMilestone("M6.5 arm failed");
+            usStageMilestone(UsStageM6ArmFailed);
         }
     }
     /*
@@ -113,11 +114,11 @@ void usWorkCollect(UsSession *session) {
      */
     if (req.complete) {
         if (!session->driverInplaceRewrite) {
-            usConsoleMilestone("M6.5 driver hook skipped");
+            usStageMilestone(UsStageM6DriverHookSkipped);
         } else if (usArmDriverLoadHook(session)) {
-            usConsoleMilestone("M6.5 driver hook done");
+            usStageMilestone(UsStageM6DriverHookDone);
         } else {
-            usConsoleMilestone("M6.5 driver hook failed");
+            usStageMilestone(UsStageM6DriverHookFailed);
         }
     }
     /*
@@ -132,9 +133,9 @@ void usWorkCollect(UsSession *session) {
         if (session->imageInplaceRewrite) {
             size_t replaced = usRewriteLDAPR(session);
 
-            usConsoleMilestone(replaced != 0 ? "M7 rewritten" : "M7 nothing to rewrite");
+            usStageMilestone(replaced != 0 ? UsStageM7Rewritten : UsStageM7Nothing);
         } else {
-            usConsoleMilestone("M7 skip rewrite");
+            usStageMilestone(UsStageM7Skipped);
         }
     }
 }

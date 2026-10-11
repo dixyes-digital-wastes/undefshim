@@ -20,7 +20,8 @@ CFG_CFLAGS := -std=gnu23 -O2 -Wall -Wextra -I$(ROOT) -I$(TOML) $(TOML_DEFS)
 .PHONY: all check clean
 all: test_cfg test_layout test_scan_images test_rva_patch test_plan test_pgtable test_par \
      test_thunk test_stackgen test_payload_place test_early test_ldapr test_acpi test_ldr \
-     test_patchlist test_screen test_driver_hook test_drvhook test_panic test_panic_face test_fb
+     test_patchlist test_screen test_driver_hook test_drvhook test_panic test_panic_face test_fb \
+     test_stage
 
 # The face of a panic report, drawn on the host over the primitives the
 # payload draws with. The picture is the one the payload carries, so what is
@@ -50,16 +51,38 @@ test_early: test_early.c $(ROOT)/payload/early.c $(ROOT)/payload/vamap.c \
             $(ROOT)/core/thunk.c
 	$(CC) -std=gnu23 -O2 -Wall -Wextra -I$(ROOT) $^ -o $@
 
+# The stage names, with the console they are said through stood in for: what
+# is checked is the table, and linking the firmware library for a real console
+# would need a screen and a port to go with it. The firmware headers are on the
+# path because stage.c reaches the console's declaration through them
+test_stage: test_stage.c $(ROOT)/uefi/stage.c $(ROOT)/uefi/stage.h
+	$(CC) -std=gnu23 -O2 -Wall -Wextra -Wno-incompatible-library-redeclaration \
+	    -Wno-builtin-requires-header -I. -I$(ROOT) \
+	    -I$(ROOT)/third_party/posix-uefi/uefi \
+	    -I$(ROOT)/third_party/posix-uefi/uefi/freestanding \
+	    test_stage.c $(ROOT)/uefi/stage.c -o $@
+
 # The screen drawer is built for the host with the firmware headers, and the
 # frame buffer it draws into is an array in the test.
 # The console is linked in as well: the preview drives the real one into the
 # real drawer, so what is looked at is what a machine would draw
+# uart_hw.c is linked in as well: the console is one file's worth of
+# formatting over a port, and the port the driver uses is the one under test.
+# Leaving it out left the test linking the stand-in definitions console.c
+# carries for a build with no port at all, which is a different program
 test_screen: test_screen.c $(ROOT)/uefi/screen.c $(ROOT)/uefi/screen.h \
+             $(ROOT)/uefi/gop.c $(ROOT)/uefi/gop.h \
              $(ROOT)/uefi/console.c $(ROOT)/uefi/console.h $(ROOT)/common/font.h \
+             $(ROOT)/uefi/ansi.c $(ROOT)/uefi/ansi.h \
+             $(ROOT)/uefi/log.c $(ROOT)/uefi/log.h \
+             $(ROOT)/uefi/uart_hw.c $(ROOT)/uefi/uart_hw.h \
              $(ROOT)/uefi/panic.c $(ROOT)/uefi/panic.h $(ROOT)/common/log.h
-	$(CC) -std=gnu23 -O2 -Wall -Wextra -I. -I$(ROOT) \
+	$(CC) -std=gnu23 -O2 -Wall -Wextra -Wno-incompatible-library-redeclaration \
+	    -I. -I$(ROOT) \
 	    -I$(ROOT)/third_party/posix-uefi/uefi \
-	    test_screen.c $(ROOT)/uefi/screen.c $(ROOT)/uefi/console.c \
+	    test_screen.c $(ROOT)/uefi/screen.c $(ROOT)/uefi/gop.c \
+	    $(ROOT)/uefi/console.c $(ROOT)/uefi/ansi.c $(ROOT)/uefi/log.c \
+	    $(ROOT)/uefi/uart_hw.c \
 	    $(ROOT)/uefi/panic.c -o $@
 
 test_patchlist: test_patchlist.c $(ROOT)/core/patchlist.c $(ROOT)/core/patchapply.c \
@@ -86,9 +109,10 @@ test_stackgen: test_stackgen.c $(ROOT)/core/stackgen.c
 BUILD_DIR ?= build
 PLACEMENT_PAYLOAD_DIR := $(ROOT)/$(BUILD_DIR)/payload
 PLACEMENT_SRCS := test_payload_place.c $(ROOT)/uefi/payload_place.c \
-                  $(ROOT)/core/stackgen.c
+                  $(ROOT)/uefi/stage.c $(ROOT)/core/stackgen.c
 PLACEMENT_HEADERS := payload_place_host/stdio.h \
                      $(ROOT)/common/layout.h $(ROOT)/core/stackgen.h \
+                     $(ROOT)/uefi/stage.h \
                      $(ROOT)/payload/payload.h $(ROOT)/uefi/session.h \
                      $(ROOT)/uefi/payload_place.h
 
@@ -112,7 +136,8 @@ test_layout: test_layout.c $(ROOT)/core/pool.c
 
 # The region scan, and the descriptor base under it. Both are shape and
 # content only, so the images are built here and no Windows binary is needed
-test_scan_images: test_scan_images.c $(ROOT)/core/pe.c $(ROOT)/core/scan.c
+test_scan_images: test_scan_images.c $(ROOT)/core/pe.c $(ROOT)/core/scan.c \
+                  $(ROOT)/core/locate.c $(ROOT)/core/site.c
 	$(CC) -std=gnu23 -O2 -Wall -Wextra -I$(ROOT) $^ -o $@
 
 # The locator and the two PE facts under it: the export table and the
@@ -120,19 +145,21 @@ test_scan_images: test_scan_images.c $(ROOT)/core/pe.c $(ROOT)/core/scan.c
 # needed and the test states exactly which property makes the shape
 # recognizable
 test_driver_hook: test_driver_hook.c $(ROOT)/core/pe.c $(ROOT)/core/scan.c \
-                 $(ROOT)/core/thunk.c
+                 $(ROOT)/core/locate.c $(ROOT)/core/site.c $(ROOT)/core/thunk.c
 	$(CC) -std=gnu23 -O2 -Wall -Wextra -I$(ROOT) $^ -o $@
 
 # The entry a diverted kernel call arrives at. It reads no register state, so
 # it runs on the host with a configuration of the test's own making and a stand
 # -in for the function it calls through to
-test_drvhook: test_drvhook.c $(ROOT)/payload/drvhook.c $(ROOT)/core/ldapr.c
+test_drvhook: test_drvhook.c $(ROOT)/payload/drvhook.c $(ROOT)/core/rcpc_scan.c \
+              $(ROOT)/core/ldapr.c
 	$(CC) -std=gnu23 -O2 -Wall -Wextra -I$(ROOT) $^ -o $@
 
 test_rva_patch: test_rva_patch.c $(ROOT)/core/pe.c $(ROOT)/core/rva_patch.c
 	$(CC) -std=gnu23 -O2 -Wall -Wextra -I$(ROOT) $^ -o $@
 
-test_plan: test_plan.c $(ROOT)/core/pe.c $(ROOT)/core/scan.c $(ROOT)/core/plan.c
+test_plan: test_plan.c $(ROOT)/core/pe.c $(ROOT)/core/scan.c \
+           $(ROOT)/core/locate.c $(ROOT)/core/site.c $(ROOT)/core/plan.c
 	$(CC) -std=gnu23 -O2 -Wall -Wextra -I$(ROOT) $^ -o $@
 
 test_pgtable: test_pgtable.c $(ROOT)/core/pgtable.c
@@ -158,6 +185,7 @@ check: all
 	@./test_screen
 	@./test_panic
 	@./test_panic_face
+	@./test_stage
 	@./test_fb
 	@./test_acpi
 	@./test_ldr
