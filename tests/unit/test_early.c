@@ -134,8 +134,7 @@ void usCacheFlushRange(const void *address, size_t bytes) {
     }
     unsigned index = 4;
     for (unsigned i = 0; i < 4; i++) {
-        if (address == stubs[i] + US_SLOT_STUB_WORDS
-            || address == stubs[i] + cfg.stubs[i].targetIndex) {
+        if (address == stubs[i] || address == stubs[i] + cfg.stubs[i].targetIndex) {
             index = i;
             break;
         }
@@ -144,11 +143,30 @@ void usCacheFlushRange(const void *address, size_t bytes) {
     unsigned targetIndex = cfg.stubs[index].targetIndex;
     assert(cfg.selfVA == PAYLOAD_VA && cfg.poolBase == POOL_VA);
     assert(cfg.stackTop[0] == POOL_VA + US_POOL_STACK_OFFSET(0) + US_STACK_SIZE);
-    if (bytes == US_SLOT_TARGET_BYTES) {
+    if (bytes == US_SLOT_RUNTIME_BYTES) {
+        /*
+         * The whole stub, body and destination together. The body's own word
+         * that reaches the destination is still the placeholder the publisher
+         * put there: the branch replaces it after this flush, so a processor
+         * that reads the stub while it is being written finds the trap and not
+         * half of a branch
+         */
         uint32_t expected[US_SLOT_TARGET_WORDS];
-        assert(address == stubs[index] + US_SLOT_STUB_WORDS);
-        assert(stubs[index][targetIndex] == original[index][targetIndex]);
+
+        assert(address == stubs[index]);
+        assert(stubs[index][targetIndex] == US_NOP);
         usEncodeSlotTarget(expected, PAYLOAD_VA + cfg.entryOffset);
+        if (memcmp(expected, stubs[index] + US_SLOT_STUB_WORDS,
+                   sizeof(expected)) != 0) {
+            fprintf(stderr, "stub %u target: 0x%08x 0x%08x 0x%08x 0x%08x 0x%08x\n"
+                    "            want: 0x%08x 0x%08x 0x%08x 0x%08x 0x%08x\n",
+                    index, stubs[index][US_SLOT_STUB_WORDS],
+                    stubs[index][US_SLOT_STUB_WORDS + 1],
+                    stubs[index][US_SLOT_STUB_WORDS + 2],
+                    stubs[index][US_SLOT_STUB_WORDS + 3],
+                    stubs[index][US_SLOT_STUB_WORDS + 4],
+                    expected[0], expected[1], expected[2], expected[3], expected[4]);
+        }
         assert(memcmp(expected, stubs[index] + US_SLOT_STUB_WORDS,
                       sizeof(expected)) == 0);
     } else {
@@ -183,7 +201,7 @@ static void init(void) {
     }
     for (unsigned i = 0; i < 4; i++) {
         usEncodeSlotStub(stubs[i], PAYLOAD_PA + cfg.entryOffset, US_NOP,
-                         US_BRANCH_OPCODE, kinds[i] != UsStubSlotEL1t);
+                         US_BRANCH_OPCODE, kinds[i]);
         usEncodeSlotTarget(stubs[i] + US_SLOT_STUB_WORDS, PAYLOAD_PA + cfg.entryOffset);
         cfg.stubs[i] = (UsPayloadStub){
             /*
@@ -199,6 +217,11 @@ static void init(void) {
             .tablePA = 0x50000800 + i * 0x800,
             .addressPA = 0x60001000 + i * US_SLOT_RUNTIME_BYTES,
             .targetIndex = usSlotStubTargetIndex(kinds[i]),
+            /* The publisher encodes the body again from these two, so the
+             * fixture has to state the kind it built the original with */
+            .tail0 = US_NOP,
+            .tail1 = US_BRANCH_OPCODE,
+            .stubSlot = (uint32_t)kinds[i],
         };
     }
     memcpy(original, stubs, sizeof(original));
@@ -406,9 +429,26 @@ int main(void) {
     assert(flushes == 8);
     for (unsigned i = 0; i < 4; i++) {
         assert(cfg.stubs[i].published == 1 && writeChecks[i] == 2);
-        for (unsigned word = 0; word < US_SLOT_STUB_WORDS; word++) {
-            if (word != cfg.stubs[i].targetIndex) {
-                assert(stubs[i][word] == original[i][word]);
+        /*
+         * The publisher writes the stub again for the address the payload runs
+         * at, so what is there is what the encoder produces for that address,
+         * not the copy the boot left behind. The word that reaches the
+         * destination is the branch, which the encoder does not write
+         */
+        uint32_t expectedBody[US_SLOT_RUNTIME_WORDS];
+
+        usEncodeSlotStub(expectedBody, PAYLOAD_VA + cfg.entryOffset, US_NOP,
+                         US_BRANCH_OPCODE, kinds[i]);
+        usEncodeSlotTarget(expectedBody + US_SLOT_STUB_WORDS,
+                           PAYLOAD_VA + cfg.entryOffset);
+        for (unsigned word = 0; word < US_SLOT_RUNTIME_WORDS; word++) {
+            if (word == cfg.stubs[i].targetIndex) {
+                continue;
+            }
+            if (stubs[i][word] != expectedBody[word]) {
+                fprintf(stderr, "stub %u word %u: 0x%08x, want 0x%08x\n", i, word,
+                        stubs[i][word], expectedBody[word]);
+                assert(stubs[i][word] == expectedBody[word]);
             }
         }
     }

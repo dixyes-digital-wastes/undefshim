@@ -90,7 +90,7 @@ static bool mapsStub(const UsPayloadStub *stub, uint64_t address) {
 static bool publishStub(UsPayloadStub *stub, uint64_t address, uint64_t target) {
     uint32_t expected = 0;
     uint32_t branch;
-    uint32_t body[US_SLOT_STUB_WORDS];
+    uint32_t body[US_SLOT_RUNTIME_WORDS];
     uint32_t *words;
 
     if (!__atomic_compare_exchange_n(&stub->published, &expected, 2, false,
@@ -114,13 +114,16 @@ static bool publishStub(UsPayloadStub *stub, uint64_t address, uint64_t target) 
      * runs finds the trap until the whole stub is there
      */
     usEncodeBranch(stub->targetIndex * 4U, US_SLOT_STUB_WORDS * 4U, &branch);
+    /* The encoder lays out the body and leaves room for the destination; the
+     * destination words are written here, into the same buffer, so one copy
+     * puts the whole stub in place */
     usEncodeSlotStub(body, target, stub->tail0, stub->tail1,
                      (UsStubSlot)stub->stubSlot);
+    usEncodeSlotTarget(body + US_SLOT_STUB_WORDS, target);
     body[stub->targetIndex] = US_NOP;
-    for (uint32_t i = 0; i < US_SLOT_STUB_WORDS; i++) {
+    for (uint32_t i = 0; i < US_SLOT_RUNTIME_WORDS; i++) {
         words[i] = body[i];
     }
-    usEncodeSlotTarget(words + US_SLOT_STUB_WORDS, target);
     usCacheFlushRange(words, US_SLOT_RUNTIME_BYTES);
     __atomic_store_n(words + stub->targetIndex, branch, __ATOMIC_RELEASE);
     usCacheFlushRange(words + stub->targetIndex, sizeof(branch));
