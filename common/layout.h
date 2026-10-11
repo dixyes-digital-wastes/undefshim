@@ -199,6 +199,16 @@ typedef struct UsPoolRewrite_t {
 
 #define US_POOL_REWRITE_SLOTS 8U
 
+/* How many recent driver loads the record keeps, see UsPoolEntry.loadRing */
+#define US_POOL_LOAD_SLOTS 32U
+
+typedef struct UsPoolDriver_t {
+    uint64_t image;        /* where the image was mapped */
+    uint64_t sizeOfImage;  /* from its own header, zero when it was not one */
+    uint64_t sites;        /* RCpc loads the walk found in it */
+    uint64_t written;      /* and how many now hold the substitute */
+} UsPoolDriver;
+
 /* How many distinct trapping addresses are remembered */
 #define US_STATS_SLOTS 96U
 
@@ -452,6 +462,17 @@ typedef struct UsPoolEntry_t {
     uint64_t probeX18Wrong;
     uint64_t probeX18Seen;
     uint64_t probeX18Expected;
+
+    /*
+     * The recent driver loads, one record each, in the order they arrived
+     *
+     * The last image alone cannot say which one a page belonged to when a
+     * machine stops later: by then more have been loaded, and the question is
+     * which of them a rewritten page was in. The ring answers it: every load
+     * writes its own record, and the image a faulting address falls inside is
+     * the one to look at
+     */
+    UsPoolDriver loadRing[US_POOL_LOAD_SLOTS];
 } UsPoolEntry;
 
 /*

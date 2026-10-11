@@ -82,7 +82,7 @@ def entryOffsets():
     rewrite = at + 16
     driver = rewrite + REWRITE_SLOTS * REWRITE_WORDS * 8
     panic = driver + 56
-    return {
+    out = {
         "rewriteCount": at,
         "rewriteWritten": at + 8,
         "rewrite": rewrite,
@@ -108,7 +108,19 @@ def entryOffsets():
         "probeX18Wrong": panic + 72,
         "probeX18Seen": panic + 80,
         "probeX18Expected": panic + 88,
+        # The recent driver loads, after the probe counters
+        "loadRing": panic + 96,
     }
+    # A machine that stops later has to be able to name the image a faulting
+    # address was in, and the last image alone cannot: more have been loaded by
+    # then. One record per load, thirty two of them
+    for k in range(32):
+        base = panic + 96 + k * 32
+        out["loadImage%d" % k] = base
+        out["loadSize%d" % k] = base + 8
+        out["loadSites%d" % k] = base + 16
+        out["loadWritten%d" % k] = base + 24
+    return out
 
 
 # The frame buffer record, UsPoolFB
@@ -119,7 +131,7 @@ def entryOffsets():
 # plausible number rather than nothing
 FB_FIELDS = ["magic", "pa", "bytes", "aliasVA", "blocks", "attrIndex", "drawn",
              "reason", "detail", "kernelBase", "mpteBase"]
-FB_AT = 7512
+FB_AT = 8536
 
 # The four 32 bit fields, in order, right after the 64 bit ones
 FB_TAIL_FIELDS = ["width", "height", "stride", "blueFirst"]
@@ -198,6 +210,14 @@ def fbOffsets():
     for i, name in enumerate(FB_TAIL_FIELDS):
         out[name] = tail + i * 4
     return out
+    # The recent loads: a machine that stops later has to be able to name the
+    # image a faulting address was in
+    for k in range(32):
+        base = panic + 96 + k * 32
+        out["loadImage%d" % k] = base
+        out["loadSize%d" % k] = base + 8
+        out["loadSites%d" % k] = base + 16
+        out["loadWritten%d" % k] = base + 24
 
 
 def cmd(f, obj):

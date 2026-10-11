@@ -89,15 +89,28 @@ void *usDriverLoadEntry(void *imageBase) {
         UsPoolEntry *entry = &((UsPool *)(uintptr_t)cfg->poolBase)->entry;
         UsRcpcImage image = { 0 };
 
+        UsPoolDriver *at;
+
         /*
          * Counted without an atomic. Two processors can be loading a driver at
          * the same time, so the count can be a little short, and what it is for
          * is "did anything arrive at all" rather than an exact tally
          */
+        at = &entry->loadRing[entry->driverLoads % US_POOL_LOAD_SLOTS];
         entry->driverLoads++;
         entry->driverImage = (uint64_t)(uintptr_t)imageBase;
+        /*
+         * One record per load, so a machine that stops later can name the image
+         * a faulting address was in. The scan below fills in what it did to
+         * this image; a load that is never scanned keeps the zeroes
+         */
+        at->image = (uint64_t)(uintptr_t)imageBase;
+        at->sizeOfImage = 0;
+        at->sites = 0;
+        at->written = 0;
         if (usRcpcDescribeImage(imageBase, &image)) {
             entry->driverSize = image.sizeOfImage;
+            at->sizeOfImage = image.sizeOfImage;
             entry->driverEntry = image.entryRVA;
             if (cfg->driverRewrite != 0) {
                 /* Every site in the image and not one of them: none of it has
@@ -113,6 +126,8 @@ void *usDriverLoadEntry(void *imageBase) {
                 entry->driverSites += found.sites;
                 entry->driverWritten += found.written;
                 entry->driverSkipped += found.skipped;
+                at->sites = found.sites;
+                at->written = found.written;
             }
         }
     }
