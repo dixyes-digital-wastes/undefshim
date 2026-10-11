@@ -108,14 +108,23 @@ def entryOffsets():
         "probeX18Wrong": panic + 72,
         "probeX18Seen": panic + 80,
         "probeX18Expected": panic + 88,
-        # The recent driver loads, after the probe counters
-        "loadRing": panic + 96,
     }
-    # A machine that stops later has to be able to name the image a faulting
-    # address was in, and the last image alone cannot: more have been loaded by
-    # then. One record per load, thirty two of them
+    return out
+
+
+# The recent driver loads, which sit after the fields above
+#
+# Kept out of entryOffsets: check_layout builds a C file that names every key
+# of that dictionary as a member of the structure, and these are elements of
+# an array rather than members
+def loadRingOffsets():
+    """Where each record of the recent driver loads starts, and its fields."""
+    # The ring follows the last field entryOffsets() names, which is the last
+    # of the four probe counters
+    ring = entryOffsets()["probeX18Expected"] + 8
+    out = {"loadRing": ring}
     for k in range(32):
-        base = panic + 96 + k * 32
+        base = ring + k * 32
         out["loadImage%d" % k] = base
         out["loadSize%d" % k] = base + 8
         out["loadSites%d" % k] = base + 16
