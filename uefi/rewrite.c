@@ -11,11 +11,58 @@
 #include "core/ldapr.h"
 #include "core/pe.h"
 #include "core/scan.h"
-#include "uefi/cache.h"
+#include "core/cache.h"
+#include "core/rcpc_scan.h"
 #include "uefi/console.h"
 #include "uefi/registry.h"
 #include "uefi/rewrite.h"
 #include "uefi/session.h"
+
+/*
+ * The sections of a placed image, one at a time
+ *
+ * The walk does not read a section table, because where an RVA points is a
+ * property of the view and this is the view that knows
+ */
+static bool sectionAt(void *context, uint16_t index, UsRcpcSection *out) {
+    const UsImage *img = context;
+    const UsPESection *s = &img->sections[index];
+
+    out->base = usImageRVAToPtr(img, s->virtualAddress);
+    out->virtualAddress = s->virtualAddress;
+    out->virtualSize = s->virtualSize;
+    out->rawSize = s->rawSize;
+    out->characteristics = s->characteristics;
+    return true;
+}
+
+/* An image that has not started is writable where it lies, so a site is four
+ * bytes written over four bytes: the same length, the same registers, and an
+ * ordering that cannot be weaker than the load it replaces */
+static bool replaceSite(const UsRcpcSite *site, void *context) {
+    uint8_t *at = (uint8_t *)(uintptr_t)site->at;
+    uint32_t replacement = 0;
+
+    if (!usLDAPRToLDAR(site->insn, &replacement)) {
+        return false;
+    }
+    at[0] = (uint8_t)replacement;
+    at[1] = (uint8_t)(replacement >> 8);
+    at[2] = (uint8_t)(replacement >> 16);
+    at[3] = (uint8_t)(replacement >> 24);
+    (*(size_t *)context)++;
+    return true;
+}
+
+/*
+ * The whole section is flushed once rather than each instruction: this is a
+ * boot time pass over a large image, and per-instruction flushes would spend
+ * all of their time on barrier overhead
+ */
+static void publishSection(const UsRcpcSection *section, uint32_t span, void *context) {
+    (void)context;
+    usCacheFlushRange(section->base, span);
+}
 
 /*
  * Walks the executable sections of one image and replaces each RCpc load
@@ -23,64 +70,19 @@
  * The scan is over sections that carry data, for the same reason the other
  * locators use that rule: a section that is only an entry in the section table
  * is not mapped, and reading it produces zeros rather than code
- *
- * The whole section is flushed once rather than each instruction: this is a
- * boot time pass over a large image, and per-instruction flushes would spend
- * all of their time on barrier overhead
  */
 static size_t rewriteImage(UsImage *img) {
     size_t changed = 0;
+    UsRcpcScan scan = { 0 };
 
     if (img == NULL || !img->valid) {
         return 0;
     }
-
-    for (uint16_t i = 0; i < img->sectionCount; i++) {
-        const UsPESection *s = &img->sections[i];
-        uint8_t *base;
-        uint32_t span;
-        bool touched = false;
-
-        if ((s->characteristics & US_PE_SECTION_EXECUTABLE) == 0 || s->virtualSize == 0
-            || s->rawSize == 0) {
-            continue;
-        }
-
-        base = (uint8_t *)(uintptr_t)usImageRVAToPtr(img, s->virtualAddress);
-        if (base == NULL) {
-            continue;
-        }
-
-        span = s->virtualSize;
-        /* Anything past the file's own bytes is zero fill, which cannot be an
-         * instruction, but it is still inside the section and the read has to
-         * be bounded by the image rather than by the section */
-        if (s->rawSize < span) {
-            span = s->rawSize;
-        }
-
-        for (uint32_t off = 0; off + 4 <= span; off += 4) {
-            uint32_t insn = (uint32_t)base[off] | ((uint32_t)base[off + 1] << 8)
-                            | ((uint32_t)base[off + 2] << 16)
-                            | ((uint32_t)base[off + 3] << 24);
-            uint32_t replacement;
-
-            if (!usLDAPRToLDAR(insn, &replacement)) {
-                continue;
-            }
-            base[off] = (uint8_t)replacement;
-            base[off + 1] = (uint8_t)(replacement >> 8);
-            base[off + 2] = (uint8_t)(replacement >> 16);
-            base[off + 3] = (uint8_t)(replacement >> 24);
-            changed++;
-            touched = true;
-        }
-
-        if (touched) {
-            usCacheFlushRange(base, span);
-        }
-    }
-
+    /* One field at a time, never as one aggregate: see UsRcpcScan */
+    scan.visit = replaceSite;
+    scan.visitContext = &changed;
+    scan.spanDone = publishSection;
+    usRcpcScanImage(img->sectionCount, sectionAt, img, &scan);
     return changed;
 }
 

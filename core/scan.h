@@ -55,6 +55,13 @@ void usScanRegion(const uint8_t *buf, size_t len, uint32_t rvaAt,
 /* Searches every executable section of an image */
 UsMatchList usScanImage(UsImage *img, const UsPattern *pat);
 
+/*
+ * Whether a pattern matches at one place. A locator that walks a section
+ * itself, rather than through usScanImage, needs the test without the walk,
+ * and one idea of what a match is rather than two
+ */
+bool patMatchAt(const uint8_t *at, const UsPattern *pat);
+
 /* --- the signatures this project knows about ---------------------------- */
 
 /*
@@ -72,25 +79,11 @@ extern const UsPattern usPatMsrVBAREL1;
  */
 extern const UsPattern usPatTransferLeaf;
 
-/*
- * The sequence in winload that loads the final page tables and turns the MMU
- * on. This is the handoff to the kernel, and the point at which a mapping we
- * added earlier would otherwise be lost
- *
- * It does not survive every version: some images restructured this code
- * and the sequence is gone. Locators are therefore tried in order and the
- * caller is told which one answered
- */
-extern const UsPattern usPatTTBRHandoff;
-
 /* LDAPR and friends: the instructions the shim exists to emulate */
 extern const UsPattern usPatLDAPRW;
 extern const UsPattern usPatLDAPRX;
 extern const UsPattern usPatLDAPRB;
 extern const UsPattern usPatLDAPRH;
-
-/* The load option string that only winload carries, in UTF-16 */
-extern const UsPattern usPatOsloaderXsl;
 
 typedef struct UsLeafSite_t {
     bool     found;
@@ -98,12 +91,6 @@ typedef struct UsLeafSite_t {
     uint32_t patchRVA;     /* first sixteen bytes of it, the patch point */
     size_t   matches;      /* how many the locator saw; only 1 is usable */
 } UsLeafSite;
-
-/*
- * Locates the transfer leaf. Reports the count so the caller can refuse a
- * result that is not unique
- */
-UsLeafSite usLocateTransferLeaf(UsImage *img);
 
 /*
  * Locates the page table handoff in winload
@@ -141,8 +128,6 @@ typedef struct UsHandoffSite_t {
     size_t        candidates;   /* how many the shape matched before narrowing */
 } UsHandoffSite;
 
-UsHandoffSite usLocateTTBRHandoff(UsImage *img);
-
 /*
  * A hole in a mapped, executable section, large enough to hold something
  *
@@ -171,8 +156,6 @@ typedef struct UsSpareSlot_t {
     size_t   matches;  /* how many runs were long enough */
 } UsSpareSlot;
 
-UsSpareSlot usLocateSpareSlot(UsImage *img, uint32_t minBytes);
-
 /*
  * MmPteBase, the base of the kernel's mapping of its own page descriptors
  *
@@ -195,8 +178,6 @@ typedef struct UsPteBaseSite_t {
     size_t   helpers;    /* bodies seen; only one is usable */
     size_t   candidates; /* loads that named the literal */
 } UsPteBaseSite;
-
-UsPteBaseSite usLocatePteBase(UsImage *img);
 
 /*
  * The tables an image actually installs, found by following the register that
@@ -231,8 +212,6 @@ typedef struct UsVBARTables_t {
     bool     overflow;    /* more distinct tables than this can hold */
 } UsVBARTables;
 
-UsVBARTables usFindVBARTables(UsImage *img);
-
 /*
  * The slots that can matter, as the architecture orders them
  *
@@ -255,17 +234,6 @@ typedef enum UsVectorSlot_e {
     UsVectorSlotEL0Sync32 = 8, /* +0x400, the kernel's lower EL entry */
 } UsVectorSlot;
 
-/*
- * Whether a slot holds a branch, and if so where it goes
- *
- * A slot holding a branch can be taken over whatever the branch does, because
- * the stub that replaces it keeps the branch and only diverts the exceptions
- * this project exists for. A slot holding anything else cannot: those bytes
- * are the handler, and there is nothing to keep
- */
-bool usVectorSlotBranch(UsImage *img, uint32_t tableRVA, UsVectorSlot slot,
-                        int32_t *displacement);
-
 /* Counts of the instructions the shim has to emulate, per image */
 typedef struct UsLDAPRCounts_t {
     size_t word;
@@ -274,8 +242,6 @@ typedef struct UsLDAPRCounts_t {
     size_t half;
     size_t total;
 } UsLDAPRCounts;
-
-UsLDAPRCounts usCountLDAPR(UsImage *img);
 
 /* --- the sites a boot has to act on ------------------------------------- */
 
@@ -327,29 +293,6 @@ typedef struct UsSiteList_t {
     size_t count;   /* stored, capped at US_SITE_MAX */
     size_t total;   /* seen, which may be larger */
 } UsSiteList;
-
-void usSiteListInit(UsSiteList *list);
-
-/* Appends one site. Returns false when the list is full, in which case the
- * count of seen sites still goes up */
-bool usSiteAdd(UsSiteList *list, UsSiteKind kind, UsImageKind image, uint32_t rva,
-               uint32_t auxiliary);
-
-/*
- * Sorts by image and then by RVA, so that the same image always produces the
- * same order. The order sites are found in depends on the section table, and
- * comparing two dumps is the whole point of having them
- */
-void usSiteListSort(UsSiteList *list);
-
-const char *usSiteKindName(UsSiteKind kind);
-
-/*
- * Collects every site in one image. Locators that are not unique are not
- * reported as sites: a match that could be one of several places is not a
- * place to act on, and the count of what was seen is what says so
- */
-size_t usCollectSites(UsSiteList *list, UsImage *img, UsImageKind kind);
 
 /*
  * Where the kernel loads a driver
@@ -406,6 +349,13 @@ typedef struct UsDriverLoadHook_t {
  * that could not be armed can say how far it got. Only a found answer may be
  * used
  */
-UsDriverLoadHook usLocateDriverLoadHook(UsImage *img);
+
+/*
+ * The two headers below declare the functions that work on these types. They
+ * are included here because this is the header the tree includes: which of the
+ * three files a declaration is in is the reader's business, not the caller's
+ */
+#include "core/locate.h"
+#include "core/site.h"
 
 #endif

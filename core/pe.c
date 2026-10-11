@@ -6,6 +6,8 @@
  * ARM64 PE images, see pe.h for the contract
  */
 
+// us-build: both
+
 #include "core/pe.h"
 
 /* File offsets of the few header fields that have to be read before the

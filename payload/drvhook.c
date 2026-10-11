@@ -25,169 +25,45 @@
  * its drivers exactly as it did before
  */
 
-#include "core/ldapr.h"
 #include "payload/drvhook.h"
 #include "payload/payload.h"
+#include "core/rcpc_scan.h"
 #include "payload/rewrite.h"
-
-/* The header of an image the kernel has already mapped, read the way a loader
- * reads it. Everything past the DOS stub is checked against the image's own
- * header, so a pointer that is not one fails rather than running off */
-#define US_PE_DOS_MAGIC 0x5A4DU   /* "MZ" */
-#define US_PE_MAGIC 0x00004550U   /* "PE\0\0" */
-#define US_PE_OPTIONAL_MAGIC_64 0x20BU
-
-static uint16_t rd16(const uint8_t *p) {
-    return (uint16_t)(p[0] | ((uint16_t)p[1] << 8));
-}
-
-static uint32_t rd32(const uint8_t *p) {
-    return (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16)
-           | ((uint32_t)p[3] << 24);
-}
-
-/*
- * What the image says it is: how big it is and where it starts executing
- *
- * This is the report, and it is worth its few loads. An address that names a PE
- * header with a size in the megabytes is an image being loaded; anything else
- * would mean the call that was diverted is not the one that was meant, and the
- * difference between those two is what nothing else here can see
- */
-typedef struct DriverImage_t {
-    uint32_t sizeOfImage;
-    uint32_t entryRVA;
-    /* Into the image: the section table, and how many entries it has */
-    uint32_t sectionTable;
-    uint16_t sectionCount;
-} DriverImage;
-
-static bool describeImage(const void *base, DriverImage *out) {
-    const uint8_t *p = base;
-    uint32_t lfanew;
-    const uint8_t *coff;
-
-    if (rd16(p) != US_PE_DOS_MAGIC) {
-        return false;
-    }
-    lfanew = rd32(p + 0x3CU);
-    coff = p + lfanew;
-    if (rd32(coff) != US_PE_MAGIC) {
-        return false;
-    }
-    /*
-     * The optional header's magic says which form this is, and the two fields
-     * wanted sit at different offsets in the two. This is a report and not a
-     * loader: an image of a shape this does not know is said to be unreadable
-     * rather than guessed at
-     */
-    if (rd16(coff + 24) != US_PE_OPTIONAL_MAGIC_64) {
-        return false;
-    }
-    out->entryRVA = rd32(coff + 24 + 16);
-    out->sizeOfImage = rd32(coff + 24 + 56);
-    out->sectionCount = rd16(coff + 6);
-    out->sectionTable = lfanew + 24 + rd16(coff + 20);
-    return out->sizeOfImage != 0;
-}
-
-/*
- * Replacing the RCpc loads in an image that has been mapped and not yet run
- *
- * This is the whole reason the entry exists. Every load left unreplaced is one
- * the machine has to trap on, and a trap is orders of magnitude more expensive
- * than the load: a driver with a few hundred of them turns a boot into
- * something that looks stopped. Doing it here is what the boot does for the
- * kernel, at the same kind of moment - the image is complete and none of it
- * has run - and it is the last such moment there is, because once it runs, its
- * text is the kernel's and writing to it is what the integrity check reports
- *
- * Alignment is the one thing this cannot know. The acquire load that stands in
- * for an RCpc load has to be naturally aligned and the instruction it replaces
- * does not, and the address a load will read is only known when it runs. So a
- * site is taken on unless the rewrite itself refuses it, and a site that is
- * refused keeps trapping - see usRewriteSiteAtLoad
- *
- * Returns how many were found, and how many of those were written
- */
-typedef struct RewriteTally_t {
-    uint64_t sites;
-    uint64_t written;
-    uint64_t skipped;   /* pages that could not be read, and so were left alone */
-} RewriteTally;
-
-#define US_SECTION_EXECUTABLE 0x20000000U
-#define US_SECTION_HEADER_BYTES 40U
 
 /*
  * Whether a page of the image can be read at all, which is not the same
  * question as whether it is mapped
  *
  * The image has been mapped and not yet run, and its pages are brought in as
- * they are touched - so some of what this walk reaches is not there yet, and
- * the kernel is the only thing that can bring it in. Reading such a page
- * anyway is what a fault is, and faults here are expensive in the one way that
- * matters: the walk would take one per word and never finish.
- *
- * So one word per page is read through the probe, and the page is skipped when
- * it could not be read. What is skipped keeps trapping, which is slower and
- * correct - the same answer the machine gives when this whole pass is off.
+ * they are touched - so some of what the walk reaches is not there yet, and
+ * the kernel is the only thing that can bring it in. The walk asks this about
+ * one word of each page and leaves the whole page alone when the answer is no,
+ * because a fault taken here would be taken once per word
  */
-static bool pageReadable(const uint8_t *page) {
+static bool pageReadable(const uint8_t *page, void *context) {
     uint32_t word = 0;
 
+    (void)context;
     return usPayloadProbeReadWord((uint64_t)(uintptr_t)page, &word);
 }
 
-static void rewriteImage(const uint8_t *base, const DriverImage *image,
-                         RewriteTally *tally) {
-    const uint8_t *sh = base + image->sectionTable;
-
-    for (uint16_t i = 0; i < image->sectionCount; i++, sh += US_SECTION_HEADER_BYTES) {
-        uint32_t virtualSize = rd32(sh + 8);
-        uint32_t virtualAddress = rd32(sh + 12);
-        const uint8_t *code;
-
-        if ((rd32(sh + 36) & US_SECTION_EXECUTABLE) == 0 || virtualSize == 0) {
-            continue;
-        }
-        /*
-         * A section that is executable but has no contents is one the loader
-         * does not map; there is nothing there to read, let alone replace
-         */
-        if (rd32(sh + 16) == 0 || virtualAddress + 4U > image->sizeOfImage) {
-            continue;
-        }
-        code = base + virtualAddress;
-        for (uint32_t page = 0; page < virtualSize; page += US_PAGE_SIZE) {
-            uint32_t end = virtualSize - page;
-
-            if (!pageReadable(code + page)) {
-                tally->skipped++;
-                continue;
-            }
-            if (end > US_PAGE_SIZE) {
-                end = US_PAGE_SIZE;
-            }
-            for (uint32_t off = 0; off + 4U <= end
-                                   && virtualAddress + page + off + 4U <= image->sizeOfImage;
-                 off += 4U) {
-                const uint8_t *at = code + page + off;
-                uint32_t insn = (uint32_t)at[0] | ((uint32_t)at[1] << 8)
-                                | ((uint32_t)at[2] << 16) | ((uint32_t)at[3] << 24);
-                UsLDAPRInsn decoded = usLDAPRDecode(insn);
-
-                if (decoded.kind == UsLDAPRNone) {
-                    continue;
-                }
-                tally->sites++;
-                if (usRewriteSiteAtLoad((uint64_t)(uintptr_t)at,
-                                        decoded.kind) == UsRewriteWritten) {
-                    tally->written++;
-                }
-            }
-        }
-    }
+/*
+ * What becomes of a site the walk found
+ *
+ * The image is the kernel's text by the time this runs, so a site cannot be
+ * written where it lies: the write goes through the descriptor it is under,
+ * and whether that happened is an answer rather than a fault - see
+ * usRewriteSiteAtLoad
+ *
+ * Alignment is the one thing this cannot know. The acquire load that stands in
+ * for an RCpc load has to be naturally aligned and the instruction it replaces
+ * does not, and the address a load will read is only known when it runs. So a
+ * site is taken on unless the rewrite itself refuses it, and a site that is
+ * refused keeps trapping
+ */
+static bool rewriteSite(const UsRcpcSite *site, void *context) {
+    (void)context;
+    return usRewriteSiteAtLoad(site->at, site->kind) == UsRewriteWritten;
 }
 
 /*
@@ -211,7 +87,7 @@ void *usDriverLoadEntry(void *imageBase) {
 
     if (cfg->poolBase != 0) {
         UsPoolEntry *entry = &((UsPool *)(uintptr_t)cfg->poolBase)->entry;
-        DriverImage image = { 0 };
+        UsRcpcImage image = { 0 };
 
         /*
          * Counted without an atomic. Two processors can be loading a driver at
@@ -220,16 +96,23 @@ void *usDriverLoadEntry(void *imageBase) {
          */
         entry->driverLoads++;
         entry->driverImage = (uint64_t)(uintptr_t)imageBase;
-        if (describeImage(imageBase, &image)) {
+        if (usRcpcDescribeImage(imageBase, &image)) {
             entry->driverSize = image.sizeOfImage;
             entry->driverEntry = image.entryRVA;
             if (cfg->driverRewrite != 0) {
-                RewriteTally tally = { 0 };
+                /* Every site in the image and not one of them: none of it has
+                 * run yet, so there is no address to aim the walk at */
+                UsRcpcScan scan = { 0 };
+                UsRcpcScanResult found;
 
-                rewriteImage(imageBase, &image, &tally);
-                entry->driverSites += tally.sites;
-                entry->driverWritten += tally.written;
-                entry->driverSkipped += tally.skipped;
+                /* One field at a time, never as one aggregate: see UsRcpcScan */
+                scan.readable = pageReadable;
+                scan.visit = rewriteSite;
+                found = usRcpcScanMappedImage(&image, &scan);
+
+                entry->driverSites += found.sites;
+                entry->driverWritten += found.written;
+                entry->driverSkipped += found.skipped;
             }
         }
     }

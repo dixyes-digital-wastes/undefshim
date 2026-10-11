@@ -24,13 +24,16 @@ SKIP := 77
 .PHONY: all check clean
 all: peprobe planprobe holes
 
-peprobe: peprobe.c $(ROOT)/core/pe.c $(ROOT)/core/scan.c
+peprobe: peprobe.c $(ROOT)/core/pe.c $(ROOT)/core/scan.c \
+         $(ROOT)/core/locate.c $(ROOT)/core/site.c
 	$(CC) $(CFLAGS) $^ -o $@
 
-planprobe: planprobe.c $(ROOT)/core/pe.c $(ROOT)/core/scan.c $(ROOT)/core/plan.c
+planprobe: planprobe.c $(ROOT)/core/pe.c $(ROOT)/core/scan.c \
+           $(ROOT)/core/locate.c $(ROOT)/core/site.c $(ROOT)/core/plan.c
 	$(CC) $(CFLAGS) $^ -o $@
 
-holes: holes.c $(ROOT)/core/pe.c $(ROOT)/core/scan.c
+holes: holes.c $(ROOT)/core/pe.c $(ROOT)/core/scan.c \
+       $(ROOT)/core/locate.c $(ROOT)/core/site.c
 	$(CC) $(CFLAGS) $^ -o $@
 
 # Without a corpus there is nothing to probe, which is a skip, not a failure.
