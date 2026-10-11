@@ -137,6 +137,17 @@ usSyncHaveSP:
      */
 usSyncFaultInside:
     /*
+     * The payload runs at EL1, so its x18 is the per-processor block, and the
+     * lookup above spent that register on its way here. It is rebuilt before
+     * anything else, because the answer that returns into the payload is not
+     * only read by the payload: a driver load runs inside the kernel's own
+     * code, and the call it makes on the way out reads this register the
+     * moment it is back in that code
+     */
+    mrs     x18, tpidr_el1
+    and     x18, x18, #0xfffffffffffff000
+
+    /*
      * The handler may clobber the caller-saved registers, and one of its
      * answers is "carry on where you were": that answer has to leave the
      * handler's own registers as they were, so they are spilled first. The

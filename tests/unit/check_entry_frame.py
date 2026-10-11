@@ -290,9 +290,15 @@ def roundTrip(code, labels, offsets, mode, destination, ret=1, faulted=False,
                 # spill undone, and the handler's own ELR.
                 assert m.called == "usPayloadFault", "resumed without the fault handler"
                 for register, expected in m.ownGpr.items():
-                    if register == "sp":
+                    if register in ("sp", "x18"):
                         continue
                     assert m.regs[register] == expected, "resume lost " + register
+                # x18 is the one register the entry cannot give back as it found
+                # it: the stack lookup spent it, and what the payload needs back
+                # is the per-processor block, because the kernel's own code
+                # reads it as soon as the payload calls back into the kernel
+                assert m.regs["x18"] == m.system["tpidr_el1"] & ~0xFFF, \
+                    "resume gave back the lookup's leftover, not the per-CPU block"
                 assert m.regs["sp"] == m.faultSp, "the spill was not undone"
                 assert m.system["elr_el1"] == m.originalElr + 4, "ELR not moved past the access"
                 assert m.system["spsr_el1"] == m.expectedSpsr, "resume changed SPSR"
