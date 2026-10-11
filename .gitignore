@@ -6,6 +6,11 @@ build/
 *.o
 *.a
 
+# What the compiler read to build each object, written beside it by -MMD. The
+# ones under build/ are covered by that rule; this is here because the host
+# tests and the tools write their own, next to their sources
+*.d
+
 # Host side test binaries.
 #
 # By pattern rather than by name: a written out list has gone stale three

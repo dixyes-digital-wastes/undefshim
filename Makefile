@@ -41,11 +41,25 @@ PAYLOAD_BUILD := $(BUILD_DIR)/payload
 # and it has already destroyed the value the payload's own code had before a
 # fault inside the payload is answered. Compiled code that kept anything in x18
 # would be resumed with the entry's leftovers; reserving it means nothing does.
-# Every header the sources include. Without this a change to a structure in
-# one of them rebuilds only the files make happens to know depend on it, and a
-# machine can end up running two different ideas of the same layout - which is
-# how a pool that grew a field on one side and not the other reads as garbage.
-US_HEADERS := $(wildcard core/*.h common/*.h payload/*.h uefi/*.h)
+# What each translation unit read, asked of the preprocessor
+#
+# The answer is per object: a header the two halves share is read by the files
+# that use it and by no others, and a list kept by hand is wrong in both
+# directions. What this replaces is a wildcard over every first party header
+# used as a prerequisite of every rule, which rebuilt the whole payload and the
+# whole driver whenever any header at all changed
+#
+# Spelled out at each compile rather than kept in a variable here: $@ is
+# expanded where the variable is written, and at that point make has not
+# decided which target the recipe is for, so the compiler is handed -MT and
+# -MF with nothing after them
+#
+# The three headers the layout generator reads, named rather than guessed:
+# nothing records what a host program read, and a change to the frame's layout
+# or to either size that regenerated nothing would leave entry.S assembled with
+# the old offsets while check_entry_frame.py, which reads the header, agreed
+# with the header rather than with the blob
+US_LAYOUT_HEADERS := $(PAYLOAD_DIR)/payload.h core/thunk.h common/layout.h
 
 PAYLOAD_CFLAGS := --target=aarch64-none-elf -std=gnu23 -ffreestanding \
                   -ffixed-x18 \
@@ -123,6 +137,11 @@ POSIX_CFLAGS := --target=$(TARGET_TRIPLE) -ffreestanding -fshort-wchar \
                 -Wno-builtin-requires-header -Wno-incompatible-library-redeclaration \
                 -Wno-long-long -I.
 
+# The forks are the one place a header change is not seen: their makefile has
+# no include of a .d file, so asking them for one would write files nobody
+# reads. What reaches them is a change to their own sources, which is a fork
+# being upgraded and not a header of ours
+
 POSIX_CRT := $(POSIX_UEFI)/crt_aarch64.o
 POSIX_LIB := $(POSIX_UEFI)/libuefi.a
 
@@ -176,37 +195,31 @@ $(BUILD_DIR)/uefi $(BUILD_DIR)/core $(BUILD_DIR)/$(TOML) $(PAYLOAD_BUILD):
 # --- payload rules -------------------------------------------------------
 
 # The frame offsets, from the structure that defines them. The entry is
-# assembled against this, so the two halves of the payload cannot disagree.
-#
-# US_HEADERS is a prerequisite because the generator reads constants that are
-# not in payload.h at all: the frame's layout comes from the structure, but
-# the stack size and the spill width come from common/layout.h through it.
-# Without this a change to either regenerates nothing, entry.S keeps the
-# window it was assembled with, and check_entry_frame.py -- which reads the
-# header -- agrees with the header rather than with the blob
-$(PAYLOAD_BUILD)/layout_defs.inc: tests/tools/layoutgen.c $(PAYLOAD_DIR)/payload.h $(US_HEADERS) | $(PAYLOAD_BUILD)
+# assembled against this, so the two halves of the payload cannot disagree
+$(PAYLOAD_BUILD)/layout_defs.inc: tests/tools/layoutgen.c $(US_LAYOUT_HEADERS) \
+                                  $(TOOLS_TESTS)/write_if_different.sh | $(PAYLOAD_BUILD)
 	$(CC) -std=gnu23 -O2 -Wall -Wextra -I. $< -o $(PAYLOAD_BUILD)/layoutgen
-	$(PAYLOAD_BUILD)/layoutgen $@
+	@$(TOOLS_TESTS)/write_if_different.sh $@ $(PAYLOAD_BUILD)/layoutgen $@.new
 
-# Every source here includes at least one of these headers, and the ones in
-# common/ are where the structures both halves share are defined. Without the
-# dependency a header change rebuilds the driver and leaves the payload as it
-# was, which is silent: the two halves then disagree about a layout or a
-# constant and the machine runs the older idea of it
-$(PAYLOAD_BUILD)/%.o: $(PAYLOAD_DIR)/%.c $(US_HEADERS) | $(PAYLOAD_BUILD)
-	$(CC) $(PAYLOAD_CFLAGS) -c $< -o $@
+# Every source here includes at least one of the shared headers, and a header
+# change that rebuilt the driver and left the payload as it was would be silent:
+# the two halves would disagree about a layout or a constant and the machine
+# would run the older idea of it. What each object read is in its own .d file,
+# so there is no list here to go stale
+$(PAYLOAD_BUILD)/%.o: $(PAYLOAD_DIR)/%.c | $(PAYLOAD_BUILD)
+	$(CC) $(PAYLOAD_CFLAGS) -MMD -MP -MT $@ -MF $(@:.o=.d) -c $< -o $@
 
 # A core source in the payload: the same file the driver builds, compiled for
 # the blob's world instead. It is freestanding either way, which is the point
 # of keeping it in core.
-$(PAYLOAD_BUILD)/%.o: core/%.c $(US_HEADERS) | $(PAYLOAD_BUILD)
-	$(CC) $(PAYLOAD_CFLAGS) -c $< -o $@
+$(PAYLOAD_BUILD)/%.o: core/%.c | $(PAYLOAD_BUILD)
+	$(CC) $(PAYLOAD_CFLAGS) -MMD -MP -MT $@ -MF $(@:.o=.d) -c $< -o $@
 
-$(PAYLOAD_BUILD)/entry.o: $(PAYLOAD_DIR)/entry.S $(PAYLOAD_BUILD)/layout_defs.inc $(US_HEADERS) | $(PAYLOAD_BUILD)
-	$(CC) $(PAYLOAD_CFLAGS) -c $< -o $@
+$(PAYLOAD_BUILD)/entry.o: $(PAYLOAD_DIR)/entry.S $(PAYLOAD_BUILD)/layout_defs.inc | $(PAYLOAD_BUILD)
+	$(CC) $(PAYLOAD_CFLAGS) -MMD -MP -MT $@ -MF $(@:.o=.d) -c $< -o $@
 
-$(PAYLOAD_BUILD)/%.o: $(PAYLOAD_DIR)/%.S $(US_HEADERS) | $(PAYLOAD_BUILD)
-	$(CC) $(PAYLOAD_CFLAGS) -c $< -o $@
+$(PAYLOAD_BUILD)/%.o: $(PAYLOAD_DIR)/%.S | $(PAYLOAD_BUILD)
+	$(CC) $(PAYLOAD_CFLAGS) -MMD -MP -MT $@ -MF $(@:.o=.d) -c $< -o $@
 
 # Linked at zero with no libraries. --no-relax is not optional: a relaxation
 # that turns a branch into a different one changes the size of the code the
@@ -248,34 +261,29 @@ $(PAYLOAD_BIN): $(PAYLOAD_ELF) $(TOOLS_TESTS)/blobcheck.c | $(PAYLOAD_BUILD)
 	@$(CC) -std=gnu23 -O2 -Wall -Wextra $(TOOLS_TESTS)/blobcheck.c -o $(PAYLOAD_BUILD)/blobcheck
 	@$(PAYLOAD_BUILD)/blobcheck $@ $<
 
-# The blob, as the driver sees it: bytes to copy, and the two offsets the
-# boot needs. They are read out of the linked ELF rather than fixed by the
-# link script, so the layout stays free to change.
-$(PAYLOAD_HDR): $(PAYLOAD_BIN)
-	@printf '/* Generated from %s. */\n' "$<" > $@
-	@printf '#define US_PAYLOAD_BYTES %s\n' "$$(stat -c %s $<)" >> $@
-	@for sym in usSyncEntry:ENTRY usSyncEntrySP0:ENTRYSP0 usPayloadConfigBlock:CONFIG usPayloadSelfTest:SELFTEST \
-	           usPayloadHandle:HANDLE usTransferEntry:TRANSFER usVAMapRecord:VAMAP \
-	           usVAMapHook:VAMAPHOOK usVAMapNotify:VAMAPNOTIFY \
-               usStackLookup:STACKLOOKUP usSyncStackReady:READY usSyncNoStack:NOSTACK \
-               usDriverLoadEntry:DRIVERHOOK; do \
-	    name=$${sym%%:*}; tag=$${sym##*:}; \
-	    off=$$(llvm-nm $(PAYLOAD_ELF) | awk -v w="$$name" \
-	        '$$3==w {v=strtonum("0x"$$1)} $$3=="usPayloadStart" {s=strtonum("0x"$$1)} END{print v-s}'); \
-	    if [ -z "$$off" ]; then echo "ERROR: $${name} is not in the payload"; exit 1; fi; \
-	    if [ "$$off" = "0" ] && [ "$$name" != "usPayloadStart" ]; then \
-	        echo "ERROR: $${name} is at offset zero, which means it was dropped"; \
-	        exit 1; \
-	    fi; \
-	    printf '#define US_PAYLOAD_%s_OFFSET %s\n' "$$tag" "$$off" >> $@; \
-	done
-	@printf 'static const unsigned char kPayloadBlob[US_PAYLOAD_BYTES] = {\n#embed "payload.bin"\n};\n' >> $@
-	@echo "payload header: $$(grep -c '^#define' $@) constants"
+# The blob, as the driver sees it: its bytes, and where each entry point and
+# record sits inside them. The offsets come out of the linked ELF rather than
+# from the link script, so the payload's layout stays free to change, and the
+# file is written only when it differs: it is a prerequisite of every driver
+# object, so a rewrite for nothing would compile the whole driver again
+US_PAYLOAD_SYMBOLS := ENTRY=usSyncEntry ENTRYSP0=usSyncEntrySP0 \
+                      CONFIG=usPayloadConfigBlock SELFTEST=usPayloadSelfTest \
+                      HANDLE=usPayloadHandle TRANSFER=usTransferEntry \
+                      VAMAP=usVAMapRecord VAMAPHOOK=usVAMapHook \
+                      VAMAPNOTIFY=usVAMapNotify STACKLOOKUP=usStackLookup \
+                      READY=usSyncStackReady NOSTACK=usSyncNoStack \
+                      DRIVERHOOK=usDriverLoadEntry
+
+$(PAYLOAD_HDR): $(PAYLOAD_BIN) $(PAYLOAD_ELF) $(TOOLS_TESTS)/gen_payload_header.sh \
+                $(TOOLS_TESTS)/write_if_different.sh
+	@SYMBOLS='$(US_PAYLOAD_SYMBOLS)' $(TOOLS_TESTS)/write_if_different.sh $@ \
+	    $(TOOLS_TESTS)/gen_payload_header.sh $(PAYLOAD_BIN) $(PAYLOAD_ELF) $@.new
+
 
 # --- the handover stub ---------------------------------------------------
 
 $(TRANSFER_OBJ): $(TRANSFER_SRC) | $(PAYLOAD_BUILD)
-	$(CC) $(PAYLOAD_CFLAGS) -c $< -o $@
+	$(CC) $(PAYLOAD_CFLAGS) -MMD -MP -MT $@ -MF $(@:.o=.d) -c $< -o $@
 
 # Linked before it is turned into bytes. The literal load is left as a
 # relocation by the assembler, and objcopy on its own would put a zero where
@@ -310,9 +318,9 @@ $(TRANSFER_HDR): $(TRANSFER_BIN) $(TRANSFER_ELF)
 
 # Named explicitly because the source can come from outside the tree, and
 # because the generated payload header has to exist before it is compiled.
-$(DRIVER_MAIN_OBJ): $(DRIVER_MAIN) $(PAYLOAD_HDR) $(TRANSFER_HDR) $(US_HEADERS) \
+$(DRIVER_MAIN_OBJ): $(DRIVER_MAIN) $(PAYLOAD_HDR) $(TRANSFER_HDR) \
                    $(BUILD_ID_FILE) | $(BUILD_DIR)/uefi
-	$(CC) $(US_DRIVER_CFLAGS) -c $< -o $@
+	$(CC) $(US_DRIVER_CFLAGS) -MMD -MP -MT $@ -MF $(@:.o=.d) -c $< -o $@
 
 # What the id was last time it was compiled. Written only when it differs, so
 # an unchanged id does not touch the file and does not force the rebuild; the
@@ -333,22 +341,27 @@ FORCE:
 # nothing at all. Keeping a list of the units that embed one was tried and
 # forgot a unit three times over, so every unit is rebuilt instead: the
 # objects are small, and the failure mode of the list is silent.
-$(BUILD_DIR)/%.o: %.c $(PAYLOAD_HDR) $(TRANSFER_HDR) $(US_HEADERS) \
+$(BUILD_DIR)/%.o: %.c $(PAYLOAD_HDR) $(TRANSFER_HDR) \
         | $(BUILD_DIR)/uefi $(BUILD_DIR)/core $(BUILD_DIR)/$(TOML)
-	$(CC) $(US_DRIVER_CFLAGS) -c $< -o $@
+	$(CC) $(US_DRIVER_CFLAGS) -MMD -MP -MT $@ -MF $(@:.o=.d) -c $< -o $@
+
+# Read rather than declared, so a first build - when none of them exists yet -
+# is not an error. Each names its object as the target and the sources that
+# object was built from, and make reads them the same way it reads this file
+-include $(DRIVER_OBJS:.o=.d) $(PAYLOAD_OBJS:.o=.d)
 
 # Assembly needs no C dialect flags, but does need the target.
 $(BUILD_DIR)/%.o: %.S | $(BUILD_DIR)/uefi
-	$(CC) --target=$(TARGET_TRIPLE) -ffreestanding -c $< -o $@
+	$(CC) --target=$(TARGET_TRIPLE) -ffreestanding -MMD -MP -MT $@ -MF $(@:.o=.d) -c $< -o $@
 
 # The third party trees. They are compiled with their own flags and their own
 # warnings, and they do not see ours: a fork that is upgraded should not start
 # failing this build because it added a variable this one would warn about
 $(BUILD_DIR)/$(UACPI)/source/%.o: $(UACPI)/source/%.c | $(BUILD_DIR)/$(UACPI)/source
-	$(CC) $(UACPI_CFLAGS) -c $< -o $@
+	$(CC) $(UACPI_CFLAGS) -MMD -MP -MT $@ -MF $(@:.o=.d) -c $< -o $@
 
 $(BUILD_DIR)/third_party/tlsf/%.o: third_party/tlsf/%.c | $(BUILD_DIR)/third_party/tlsf
-	$(CC) $(UACPI_CFLAGS) -c $< -o $@
+	$(CC) $(UACPI_CFLAGS) -MMD -MP -MT $@ -MF $(@:.o=.d) -c $< -o $@
 
 $(BUILD_DIR)/$(UACPI)/source $(BUILD_DIR)/third_party/tlsf:
 	@mkdir -p $@
@@ -406,11 +419,16 @@ run: esp
 
 # Host side checks: pure logic, no firmware involved, seconds to run.
 # The forks carry their own tests, so they are run from their own trees.
+#
+# A corpus is passed on as an absolute path: those tools run from their own
+# directory, so a path that was right here is wrong there, and the tools answer
+# that with "cannot open" rather than with a skip
 check: check-structure
 	@$(MAKE) --no-print-directory -C $(POSIX_UEFI_TESTS) check
 	@$(MAKE) --no-print-directory -C $(TOML_TESTS) check
 	@$(MAKE) --no-print-directory -C tests/unit check BUILD_DIR=$(BUILD_DIR)
-	@$(MAKE) --no-print-directory -C $(TOOLS_TESTS) check CORPUS=$(CORPUS) PLAN_CORPUS=$(PLAN_CORPUS)
+	@$(MAKE) --no-print-directory -C $(TOOLS_TESTS) check \
+	    CORPUS=$(abspath $(CORPUS)) PLAN_CORPUS=$(abspath $(PLAN_CORPUS))
 
 # The shape of the tree rather than the behaviour of the code: one guard per
 # header, core and payload not reaching into the firmware, every core file
