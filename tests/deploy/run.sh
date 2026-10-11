@@ -69,6 +69,8 @@ GRACE="${GRACE:-0}"
 # so that a picture can be taken of it.
 KEEP="${KEEP:-}"
 QMP_PORT="${QMP_PORT:-4444}"
+# The screen, as a VNC display number rather than a port: display 0 is 5900
+VNC_PORT="${VNC_PORT:-0}"
 # Where the monitor listens. The default keeps it to this machine, which is
 # what a run beside the one looking at it wants; a run on another machine is
 # read over the network instead, and names the address to bind there. The
@@ -156,7 +158,32 @@ if [ -n "$WIN_DISK" ] && [ ! -f "$WIN_DISK" ]; then
     exit 1
 fi
 
+# A guest left behind by an earlier run holds this run's ports, and QEMU
+# refuses to start rather than sharing them. That refusal arrives as a machine
+# that never booted: an empty log, no marker, and a check that reports on the
+# wrong thing entirely. A guest whose image is this build's own is one of ours
+# and is stopped; anything else holding the port is said out loud, because
+# killing a machine this script did not start is not its business
+for port in "$QMP_PORT" "$((5900 + VNC_PORT))"; do
+    if ss -ltn 2>/dev/null | grep -q ":$port "; then
+        pkill -f "qemu-system-aarch64.*file=$BUILD_DIR/.*\.img" 2>/dev/null || true
+        sleep 1
+        if ss -ltn 2>/dev/null | grep -q ":$port "; then
+            checkFail "port $port is held by something that is not this build's \
+guest; stop it and run this again"
+        fi
+    fi
+done
+
 rm -f "$SERIAL_SOCK" "$SERIAL_LOG"
+
+# And created at once, empty: the log is written by the monitor below, which
+# starts after QEMU does, and a check that watches for the file to appear
+# would otherwise see it only once the monitor is up. The window is small and
+# it is not the same on every machine - which is what makes a check that looks
+# at the file during it report on a run that had not started rather than on
+# the one it started
+: >"$SERIAL_LOG"
 
 # The Windows volume is attached only when asked for, so the everyday case
 # stays a single device boot. It is given the later boot index: the driver's
@@ -194,7 +221,7 @@ usb_args=(
     -cpu "$qemu_cpu" \
     "${fw_args[@]}" \
     -device ramfb \
-    -vnc 0.0.0.0:0 \
+    -vnc 0.0.0.0:$VNC_PORT \
     -gdb tcp::1234 \
     -qmp tcp:$QMP_HOST:$QMP_PORT,server=on,wait=off \
     "${win_args[@]}" \
@@ -222,7 +249,7 @@ if [ -n "$KEEP" ]; then
     # Leaving it running means leaving it running: the exit trap would
     # otherwise kill the machine this mode exists to keep.
     trap - EXIT INT TERM
-    checkNote "left running: display 5900, qmp $QMP_PORT, serial $SERIAL_LOG"
+    checkNote "left running: display $((5900 + VNC_PORT)), qmp $QMP_PORT, serial $SERIAL_LOG"
     exit 0
 fi
 

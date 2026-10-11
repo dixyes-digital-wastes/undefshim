@@ -36,7 +36,15 @@ WIN_DISK="${WIN_DISK:-}"
 # machine stops here when nothing is armed.
 LOADER_SYNC_SLOT="${LOADER_SYNC_SLOT:-0x1a00}"
 SETTLE="${SETTLE:-90}"
-QMP_PORT="${QMP_PORT:-4444}"
+# A port of this run's own, asked for rather than assumed
+#
+# The monitor's port is the one thing here that outlives the run it belonged
+# to: a run that was interrupted, or a machine left behind on purpose, keeps
+# the listener, and QEMU refuses to start at all when the port it was given is
+# taken. The refusal arrives as an empty log and a machine that never booted,
+# which reads exactly like a check that found nothing. Asking the kernel for a
+# free port costs one line and cannot collide with anything
+QMP_PORT="${QMP_PORT:-$(python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')}"
 
 if [ -z "$WIN_DISK" ]; then
     checkSkip "WIN_DISK is not set"
@@ -134,13 +142,25 @@ if [ "$armed" != "yes" ]; then
 fi
 tests/deploy/plain.sh "$log" | grep -a 'arm: vbar' | tail -2
 
+# What the log says, read once and then answered from
+#
+# Read again for the next question is what this used to do, and it asked that
+# question of a file that run.sh had only just created - the wait above
+# answers as soon as the driver says it is armed, which is the whole of what
+# it is waiting for, and everything else in the log is read here instead of
+# being asked for a second time
+snapshot="$WORK/armed.snapshot"
+tests/deploy/plain.sh "$log" >"$snapshot" 2>/dev/null || true
+
 # The replacement has to be off, or nothing faults and the exception path has
 # nothing to do. A key read from the wrong configuration section looks exactly
 # like a check that found nothing, so it is asserted rather than assumed: that
 # mistake has already been made once.
-if ! tests/deploy/plain.sh "$log" | grep -q '^config: \[ldapr\] imageInplaceRewrite=false'; then
+if ! grep -q '^config: \[ldapr\] imageInplaceRewrite=false' "$snapshot"; then
     checkNote "the replacement is on, so this checks nothing"
-    tests/deploy/plain.sh "$log" | grep -a '^config: ' | head -3
+    grep -a '^config: ' "$snapshot" | head -3
+    snapshotLines="$(wc -l <"$snapshot")"
+    checkNote "the snapshot has $snapshotLines lines"
     exit 1
 fi
 
