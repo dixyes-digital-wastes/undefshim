@@ -5,13 +5,24 @@
  *
  * PAN, the state that keeps EL1 out of the pages EL0 is allowed to touch
  *
- * It matters here because an exception entry to EL1 sets it and nothing about
- * the interrupted code's own value survives that: SCTLR_EL1.SPAN was found to
- * be zero, so every exception to EL1 leaves PAN set, whatever the code that
- * was interrupted had. The emulation of an LDAPR has to run with the
+ * Two questions are answered here and they are not the same one, because the
+ * machine answers the first one itself and the shim has to answer the second:
+ *
+ *   whether an exception to EL1 sets PAN, which is SCTLR_EL1.SPAN and is read
+ *   from the register rather than assumed. It is one on this machine: the
+ *   kernel never writes PAN, and never sets this bit, so an entry leaves PAN
+ *   as it found it and the interrupted code's own value is already in force
+ *
+ *   what the interrupted code's value was, which is SPSR_EL1.PAN, because an
+ *   entry that does set PAN records the value it replaced
+ *
+ * The shim needs both. The emulation of an LDAPR has to run with the
  * interrupted code's PAN, or a load of a user page that the kernel was
- * deliberately making succeeds instead comes back as a permission fault that
- * never happened on the hardware this is standing in for
+ * deliberately making would instead come back as a permission fault that
+ * never happened on the hardware this stands in for. And an exception handed
+ * to the kernel's own handler has to arrive with the PAN that handler would
+ * have seen had the exception never passed through here at all, which the
+ * entry cannot put back itself when it branches rather than erets
  *
  * PAN is readable, by the `MRS Xt, PAN` the architecture defines, and it is
  * read here for the case the SPSR cannot answer: the payload also runs as a
@@ -33,10 +44,14 @@
 #ifndef US_PAN_H
 #define US_PAN_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
 /* SPSR_EL1.PAN: the state the interrupted code was in */
 #define US_SPSR_PAN (UINT64_C(1) << 22)
+
+/* SCTLR_EL1.SPAN: whether an exception to EL1 sets PAN */
+#define US_SCTLR_SPAN (UINT64_C(1) << 23)
 
 static inline void usPANOn(void) {
     __asm__ volatile(".inst " "0xd500419f" ::: "memory");
@@ -44,6 +59,27 @@ static inline void usPANOn(void) {
 
 static inline void usPANOff(void) {
     __asm__ volatile(".inst " "0xd500409f" ::: "memory");
+}
+
+/* Whether an exception to EL1 sets PAN, which is what makes the interrupted
+ * code's value something this code has to put back */
+static inline bool usPANSetOnEntry(void) {
+    uint64_t sctlr;
+
+    __asm__ volatile("mrs %0, sctlr_el1" : "=r"(sctlr));
+    return (sctlr & US_SCTLR_SPAN) == 0;
+}
+
+/* PAN as a real entry to EL1 would have left it for the context spsr
+ * describes. Every path that hands an exception to the kernel's own handler
+ * rather than returning through eret goes through here, because that handler
+ * believes it was entered by the hardware */
+static inline void usPANEnterHandler(uint64_t spsr) {
+    if (usPANSetOnEntry() || (spsr & US_SPSR_PAN) != 0) {
+        usPANOn();
+    } else {
+        usPANOff();
+    }
 }
 
 /* Whether PAN is on, which is the state to leave it in when this is done */

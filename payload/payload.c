@@ -378,13 +378,17 @@ static bool emulateLDAPR(UsFrame *frame, int cpu) {
 
     /*
      * The access is the interrupted instruction's, so it runs with the PAN
-     * that instruction was running with: an exception to EL1 sets PAN, and a
-     * load of a user page from a region that had cleared it would otherwise
-     * come back as a permission fault the hardware would not have raised
+     * that instruction was running with. An entry to EL1 may have replaced
+     * that value with its own, which is what SCTLR_EL1.SPAN decides, and the
+     * SPSR says what to put back; where the entry left PAN alone there is
+     * nothing to do, and putting it back would be the one way to leave the
+     * kernel with a PAN it never set - nothing in it writes PAN at all
      */
     pan = (frame->spsr & US_SPSR_PAN) != 0;
-    if (!pan) {
-        usPANOff();
+    if (usPANSetOnEntry()) {
+        if (!pan) {
+            usPANOff();
+        }
     }
     if (user) {
         value = loadUserAcquire(decoded.kind, address);
@@ -393,7 +397,7 @@ static bool emulateLDAPR(UsFrame *frame, int cpu) {
     } else {
         value = loadAcquireUnaligned(decoded.kind, address);
     }
-    if (!pan) {
+    if (usPANSetOnEntry() && !pan) {
         usPANOn();
     }
     if (cpu >= 0 && cpu < (int)US_MAX_CPUS) {
@@ -678,6 +682,7 @@ int usPayloadHandle(UsFrame *frame) {
             pool->entry.handbackESR = frame->esr;
             pool->entry.handbackELR = frame->elr;
         }
+        usPANEnterHandler(frame->spsr);
         usPayloadLeave(cpu);
         recordHandback(frame);
         return 2;
@@ -826,6 +831,7 @@ UsFrame *usPayloadFault(void) {
     /* What was handed back, like every other way out of the handler. The
      * frame is finished with: the entry branches away from here and never
      * returns to the handler that owned it */
+    usPANEnterHandler(outer->spsr);
     usPayloadLeave(cpu);
     recordHandback(outer);
     return outer;

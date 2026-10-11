@@ -49,7 +49,6 @@ ENCODINGS = [
     ("core/pan.h", "0xd500419f", "msr pan, #1", 0xFFFFFFFF, "msr"),
     ("core/pan.h", "0xd500409f", "msr pan, #0", 0xFFFFFFFF, "msr"),
     ("core/pan.h", "0xd5384260", "mrs x0, pan", 0xFFFFFFFF, "mrs"),
-    ("payload/entry.S", "0xd500419f", "msr pan, #1", 0xFFFFFFFF, "msr"),
 
     ("core/thunk.c", "0xF81F0FF2U", "str x18, [sp, #-16]!", 0xFFFFFFFF, "str"),
     ("core/thunk.c", "0xD5385212U", "mrs x18, esr_el1", 0xFFFFFFFF, "mrs"),
@@ -89,6 +88,16 @@ ENCODINGS = [
 
     ("tests/demo/lrcpc_demo.c", "0xB8BFC000u", "ldapr w0, [x0]", 0xFFFFFFFF,
      "ldapr"),
+]
+
+# (file, the constant the tree must not write, why). PAN is the kernel's state
+# and not this code's: nothing in the kernel writes it, so a value this side
+# leaves behind is one the kernel goes on running with. The entry cannot know
+# what an entry did to it - core/pan.h reads SCTLR_EL1.SPAN and SPSR for that -
+# so it puts none there itself
+ABSENT = [
+    ("payload/entry.S", "0xd500419f", "the handler decides PAN, not the entry"),
+    ("payload/entry.S", "0xd500409f", "the handler decides PAN, not the entry"),
 ]
 
 checks = 0
@@ -165,6 +174,17 @@ def main():
         name = decodes(want)
         check("%s: 0x%08x is a %s, the comment says %s"
               % (where, want, name, mnemonic), name == mnemonic)
+
+    for where, constant, why in ABSENT:
+        where = str(where)
+        if where not in sources:
+            try:
+                sources[where] = (root / where).read_text()
+            except OSError as oops:
+                check("%s: %s" % (where, oops), False)
+                sources[where] = ""
+        check("%s must not carry %s: %s" % (where, constant, why),
+              constant not in sources[where])
 
     return REPORT.summary(checks, failures)
 

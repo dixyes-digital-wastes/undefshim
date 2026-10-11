@@ -9,9 +9,6 @@
 #include "layout_defs.inc"
 #include "core/stackgen.h"
 
-/* The encoding of `msr pan, #1`, for the reason core/pan.h gives */
-#define US_MSR_PAN_ON 0xd500419f
-
     .text
     .balign 16
     .globl usSyncEntry
@@ -166,9 +163,10 @@ usSyncFaultInside:
     add     sp, sp, #US_FAULT_SPILL_BYTES
     cbz     x0, usSyncNoForward
     mov     x19, x0
-    /* A real entry to EL1 leaves PAN set, and the branch below does not go
-     * through eret, where the interrupted state lives */
-    .inst   US_MSR_PAN_ON
+    /* PAN is put where a real entry to EL1 would have left it by the handler,
+     * which is the only side that knows the interrupted state. This path
+     * branches to the kernel's own handler instead of returning through eret,
+     * so nothing else would set it: see usPANEnterHandler */
     cmp     xzr, xzr
     b       usSyncRestore
 
