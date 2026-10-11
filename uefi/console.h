@@ -12,6 +12,12 @@
  * Where it writes is not decided here: the configuration says which port it
  * is and how wide its registers are read, and leaving that out is how a
  * machine asks for no serial output at all
+ *
+ * What is said here is the whole of the console as the rest of the driver
+ * sees it, and it is the only header of the console that is included from
+ * outside: the line and its two channels are in log.c, the port is in
+ * uart_hw.c, the escapes all three of them share are in ansi.c, and what
+ * those declare travels on from here
  */
 
 #ifndef US_CONSOLE_H
@@ -20,6 +26,10 @@
 #include <stdint.h>
 
 #include "common/log.h"
+
+#include "uefi/ansi.h"
+#include "uefi/log.h"
+#include "uefi/uart_hw.h"
 
 typedef enum {
     UsUARTOff = 0,   /* nothing is written */

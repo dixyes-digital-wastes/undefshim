@@ -3,45 +3,17 @@
  *
  * Copyright (C) 2026 Yun Dou <dixyes@gmail.com>
  *
- * Drawing on the screen, see screen.h for why it is not just the serial port
+ * Drawing on the screen, see screen.h for why it is not just the serial port,
+ * gop.h for where the pixels come from and ansi.h for the escapes it reads
  */
 
-#include <uefi.h>
+#include <stddef.h>
 
 #include "common/font.h"
 #include "core/pixel.h"
+#include "uefi/ansi.h"
+#include "uefi/gop.h"
 #include "uefi/screen.h"
-
-/*
- * The graphics output protocol, which the firmware headers here do not
- * declare: they carry the pixel formats and the GUID and say the rest is not
- * used. Only the mode is needed, and only the fields of it that say where the
- * frame buffer is and how wide it is
- */
-typedef struct {
-    uint32_t               Version;
-    uint32_t               HorizontalResolution;
-    uint32_t               VerticalResolution;
-    efi_gop_pixel_format_t PixelFormat;
-    efi_gop_pixel_bitmask_t PixelInformation;
-    uint32_t               PixelsPerScanLine;
-} UsGOPModeInfo;
-
-typedef struct {
-    uint32_t       MaxMode;
-    uint32_t       Mode;
-    UsGOPModeInfo *Info;
-    uint64_t       SizeOfInfo;
-    uint64_t       FrameBufferBase;
-    uint64_t       FrameBufferSize;
-} UsGOPMode;
-
-typedef struct {
-    void *QueryMode;
-    void *SetMode;
-    void *Blt;
-    UsGOPMode *Mode;
-} UsGOP;
 
 /*
  * A glyph is drawn at its own size, so a row of text is as tall as the font
@@ -59,7 +31,6 @@ typedef struct {
 #define US_SCREEN_INK 0x00000000U
 #define US_SCREEN_PAPER 0x00FFFFFFU
 
-static UsGOP *gGOP;
 static uint8_t *gFrame;
 static uint32_t gWidth;
 static uint32_t gHeight;
@@ -70,6 +41,16 @@ static uint32_t gRow;
 static bool gReady;
 static bool gBlueFirst;   /* the frame buffer's channels, blue at the bottom */
 static uint32_t gInk = US_SCREEN_INK;
+
+/*
+ * The colour escapes, read back on this side
+ *
+ * The console writes to two places that do not know about each other and the
+ * same bytes have to make sense at both. A terminal reads them for itself; a
+ * frame buffer does not, so the ones that say what colour to use are parsed
+ * and everything else is drawn as the characters it is
+ */
+static UsANSIScan gANSI;
 
 /* How many characters fit across the frame buffer */
 static uint32_t columns(void) {
@@ -239,186 +220,21 @@ void usScreenFrameBuffer(UsScreenInfo *out) {
 }
 
 bool usScreenInit(void) {
-    efi_guid_t guid = EFI_GRAPHICS_OUTPUT_PROTOCOL_GUID;
+    UsGOPFrame frame;
 
     if (gReady) {
         return true;
     }
-    gGOP = NULL;
-    if (EFI_ERROR(BS->LocateProtocol(&guid, NULL, (void **)&gGOP)) || gGOP == NULL
-        || gGOP->Mode == NULL || gGOP->Mode->Info == NULL) {
+    if (!usGOPFind(&frame)) {
         return false;
     }
-    /* Only the two formats whose channels are eight bits wide are drawn on: a
-     * bit mask or a blt-only mode would need a translation this does not
-     * have, and guessing at one would put unreadable pixels on the screen */
-    if (gGOP->Mode->Info->PixelFormat != PixelRedGreenBlueReserved8BitPerColor
-        && gGOP->Mode->Info->PixelFormat != PixelBlueGreenRedReserved8BitPerColor) {
-        return false;
-    }
-    if (gGOP->Mode->FrameBufferBase == 0 || gGOP->Mode->Info->PixelsPerScanLine == 0
-        || gGOP->Mode->Info->HorizontalResolution == 0
-        || gGOP->Mode->Info->VerticalResolution == 0) {
-        return false;
-    }
-    usScreenUseFrameBuffer((void *)(uintptr_t)gGOP->Mode->FrameBufferBase,
-                           gGOP->Mode->Info->HorizontalResolution,
-                           gGOP->Mode->Info->VerticalResolution,
-                           gGOP->Mode->Info->PixelsPerScanLine,
-                           gGOP->Mode->Info->PixelFormat
-                               == PixelBlueGreenRedReserved8BitPerColor);
+    usScreenUseFrameBuffer(frame.pixels, frame.width, frame.height, frame.stride,
+                           frame.blueFirst);
     return gReady;
 }
 
-/*
- * The colour escapes the console writes, read back on this side
- *
- * The console writes to two places that do not know about each other and the
- * same bytes have to make sense at both. A terminal reads them for itself; a
- * frame buffer does not, so the ones that say what colour to use are parsed
- * here and everything else is drawn as the characters it is
- *
- * The parser is a byte at a time because that is how the text arrives, and it
- * holds what it has not yet decided about. A sequence it does not recognise
- * is drawn as the characters that followed the escape, which is what a
- * terminal that does not understand it does too: the escape byte itself has
- * no glyph and is dropped
- */
-typedef enum UsCSIState_e {
-    UsCsiGround = 0,
-    UsCsiEscape,   /* the byte after ESC */
-    UsCsiParam,    /* inside the brackets, collecting the parameters */
-} UsCSIState;
-
-#define US_CSI_MAX 16U
-
-static struct {
-    uint8_t state;
-    /* Everything that followed the escape, the bracket included: what the
-     * sequence said, which is what is drawn when it turns out not to be one
-     * of ours */
-    char body[US_CSI_MAX];
-    uint32_t length;
-} gCSI;
-
-/* Draws what the sequence held, as the characters it is. The state goes back
- * to ground first, because drawing re-enters the same path */
-static void csiReject(void) {
-    uint32_t length = gCSI.length;
-
-    gCSI.length = 0;
-    gCSI.state = UsCsiGround;
-    for (uint32_t i = 0; i < length; i++) {
-        usScreenPutc(gCSI.body[i]);
-    }
-}
-
-/*
- * Whether the body is a colour's parameter: a bracket and then a number
- *
- * The bracket is kept in the body so that a sequence which turns out not to
- * be a colour can be drawn the way it was written, and so the number starts
- * after it
- */
-static bool csiIsNumber(void) {
-    if (gCSI.length < 1U || gCSI.body[0] != '[') {
-        return false;
-    }
-    for (uint32_t i = 1; i < gCSI.length; i++) {
-        if (gCSI.body[i] < '0' || gCSI.body[i] > '9') {
-            return false;
-        }
-    }
-    return true;
-}
-
-/*
- * The end of a sequence: the colour if it is one, and the characters it was
- * made of if it is not
- *
- * A sequence this does not recognise is drawn rather than swallowed, which is
- * what a terminal that does not understand it does as well. The escape byte
- * itself is dropped, because it has no glyph, so what is left is everything
- * from the bracket on
- */
-static void csiFinish(char final) {
-    bool colour = final == 'm' && csiIsNumber();
-    uint32_t value = 0;
-    uint32_t length = gCSI.length;
-
-    gCSI.length = 0;
-    gCSI.state = UsCsiGround;
-    if (colour) {
-        for (uint32_t i = 1; i < length; i++) {
-            value = value * 10U + (uint32_t)(gCSI.body[i] - '0');
-        }
-        /* No parameter means the default, which is the reset */
-        gInk = value == 0 ? US_SCREEN_INK : screenColour(value);
-        return;
-    }
-    for (uint32_t i = 0; i < length; i++) {
-        usScreenPutc(gCSI.body[i]);
-    }
-    usScreenPutc(final);
-}
-
-/*
- * One byte of an escape sequence, or false when there is none in progress and
- * the caller should draw the byte the ordinary way
- */
-static bool csiFeed(char c) {
-    if (gCSI.state == UsCsiGround) {
-        if (c == '\x1b') {
-            gCSI.state = UsCsiEscape;
-            return true;
-        }
-        return false;
-    }
-    if (gCSI.state == UsCsiEscape) {
-        if (c != '[') {
-            /* An escape of some other kind. It has no glyph and is dropped,
-             * and this byte is drawn, which is what a terminal does too */
-            gCSI.state = UsCsiGround;
-            return false;
-        }
-        gCSI.state = UsCsiParam;
-        gCSI.length = 0;
-        gCSI.body[gCSI.length++] = '[';
-        return true;
-    }
-    if (c == '\x1b') {
-        /* Another sequence starts, so this one is over */
-        csiReject();
-        gCSI.state = UsCsiEscape;
-        return true;
-    }
-    if ((uint8_t)c < 0x20U || (uint8_t)c == 0x7FU) {
-        /* A control character ends a sequence, and is then handled as
-         * itself - a newline in the middle of one still ends the line */
-        csiReject();
-        return false;
-    }
-    if ((uint8_t)c >= 0x40U && (uint8_t)c <= 0x7EU && c != '[') {
-        csiFinish(c);
-        return true;
-    }
-    if (gCSI.length >= US_CSI_MAX) {
-        /* Longer than anything this writes. Draw what there is and stop */
-        csiReject();
-        return true;
-    }
-    gCSI.body[gCSI.length++] = c;
-    return true;
-}
-
-void usScreenPutc(char c) {
-    if (!gReady) {
-        return;
-    }
-    /* A colour escape is not a character and does not take a column */
-    if (csiFeed(c)) {
-        return;
-    }
+/* One byte of text, with the cursor it moves */
+static void putText(char c) {
     if (c == '\n') {
         newline();
         return;
@@ -434,6 +250,40 @@ void usScreenPutc(char c) {
     if (gColumn >= columns()) {
         newline();
     }
+}
+
+void usScreenPutc(char c) {
+    UsANSIVerdict verdict;
+
+    if (!gReady) {
+        return;
+    }
+    /* What the byte is - text, part of a sequence, or the end of one - is the
+     * parser's answer, and an escape never takes a column of its own */
+    verdict = usANSIFeed(&gANSI, c);
+    if (verdict == UsANSITaken) {
+        return;
+    }
+    if (verdict == UsANSIColour) {
+        /* No parameter means the default, which is the reset */
+        gInk = gANSI.param == 0U ? US_SCREEN_INK : screenColour(gANSI.param);
+        return;
+    }
+    /*
+     * A sequence this does not know is drawn rather than swallowed, which is
+     * what a terminal that does not understand it does as well: the escape
+     * byte has no glyph and is dropped, so what is left is everything from
+     * the bracket on
+     */
+    if (verdict == UsANSIUnknown || verdict == UsANSIAbandoned) {
+        for (uint32_t i = 0; i < gANSI.length; i++) {
+            putText(gANSI.text[i]);
+        }
+        if (verdict == UsANSIAbandoned) {
+            return;
+        }
+    }
+    putText(c);
 }
 
 void usScreenPuts(const char *s) {
