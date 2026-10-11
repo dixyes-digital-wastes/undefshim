@@ -150,6 +150,18 @@ TITLE_BAR_MIN_ROWS = 20
 # watermark the firmware draws in the middle is not that colour, so it does
 # not move the reading
 UI_COLOUR_MIN = 0.03
+# The crash screen the newer builds draw, and where its lines are
+#
+# It is the same report on black instead of the bugcheck blue, so the colour
+# test above cannot see it. What it has instead is its shape: three lines of
+# text on a frame that is otherwise one colour, and the last of them - the stop
+# code - is at the very bottom. Nothing else Windows draws on black puts text
+# there: the "getting ready" screen has a logo in the upper third and a spinner
+# and a line of text above the lower fifth
+CRASH_BOTTOM = 0.88
+CRASH_TEXT = 0.1
+CRASH_LINES = 3
+
 # How much of a row has to be off the background for it to be part of a bar
 ROW_FULL = 0.8
 # How much of a row has to carry something for it to be a line of text
@@ -353,6 +365,21 @@ class Frame:
                     return True
         return False
 
+    def crashLines(self):
+        """How many lines of text a black frame carries, the last one low.
+
+        A line is a row that carries enough to be text and not so much that it
+        is a filled block: a logo is the second, and it is one line rather than
+        three. The bottom line has to be there at all: it is where the stop
+        code goes, and no other black screen this project meets has anything
+        down there.
+        """
+        rows = self.rows()
+        bottom = int(len(rows) * CRASH_BOTTOM)
+        if not any(r >= CRASH_TEXT for r in rows[bottom:]):
+            return 0
+        return sum(1 for r in rows if CRASH_TEXT <= r < ROW_FULL)
+
     def classify(self):
         """The state, why, and the measurements it was decided from."""
         colours = self.colours()
@@ -362,6 +389,9 @@ class Frame:
         if colours["bugcheck"] >= BLUE_THRESHOLD:
             return BUGCHECK, colours, "%.0f%% of it is the bugcheck blue" % (
                 100 * colours["bugcheck"])
+        if colours["dark"] >= 0.9 and self.crashLines() >= CRASH_LINES:
+            return BUGCHECK, colours, "black, with %d lines of text and one at " \
+                "the bottom" % self.crashLines()
         if colours["light"] >= 0.3:
             # A light frame is the firmware's console, unless Windows drew it:
             # the pages Windows shows in a light theme carry its own blue, and
