@@ -31,6 +31,7 @@
 #include <stdint.h>
 
 #include "common/font.h"
+#include "common/hex.h"
 
 /* The three bytes of a colour made into a word, red at the bottom */
 static inline uint32_t usPixelPack(uint8_t r, uint8_t g, uint8_t b) {
@@ -297,21 +298,9 @@ static inline void usPenText(const UsSurface *surface, UsPen *pen,
  */
 static inline void usPenHex(const UsSurface *surface, UsPen *pen,
                             uint64_t value) {
-    char out[19];
-    uint32_t at = 0;
-    bool started = false;
+    char out[US_HEX_TEXT + 1U];
 
-    out[at++] = '0';
-    out[at++] = 'x';
-    for (int nibble = 15; nibble >= 0; nibble--) {
-        unsigned digit = (unsigned)((value >> (nibble * 4)) & 0xFU);
-
-        if (digit != 0 || started || nibble == 0) {
-            started = true;
-            out[at++] = (char)(digit < 10 ? '0' + digit : 'a' + digit - 10);
-        }
-    }
-    out[at] = '\0';
+    usHex(out, (uint32_t)sizeof(out), value);
     usPenText(surface, pen, out);
 }
 

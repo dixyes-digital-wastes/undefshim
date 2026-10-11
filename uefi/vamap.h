@@ -25,8 +25,8 @@
  * by the time the notification runs, so only its setup can be here
  */
 
-#ifndef US_VAMAP_H
-#define US_VAMAP_H
+#ifndef US_UEFI_VAMAP_H
+#define US_UEFI_VAMAP_H
 
 #include <stdbool.h>
 

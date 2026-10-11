@@ -6,10 +6,17 @@
  * Runtime configuration, see cfg.h for the contract
  */
 
+// us-build: driver
+
 #include <stdlib.h>
 #include <string.h>
 
 #include "core/cfg.h"
+
+/* The parser's own declarations, which cfg.h deliberately does not carry:
+ * the configuration type is reached through the driver's headers, and only
+ * this file needs to know how the document was parsed */
+#include "toml.h"
 
 #define US_CFG_MAX_TEXT (64 * 1024)
 
@@ -590,9 +597,6 @@ UsConfig *usConfigParse(const char *text, size_t len, char *err, size_t errLen) 
 void usConfigFree(UsConfig *c) {
     if (c == NULL) {
         return;
-    }
-    if (c->root != NULL) {
-        toml_free(c->root);
     }
     free(c->patches);
     free(c->text);

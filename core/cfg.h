@@ -25,7 +25,18 @@
 #include <stdint.h>
 
 #include "common/log.h"
-#include "toml.h"
+
+/*
+ * The parser's own table, held as an incomplete type
+ *
+ * The document's tree belongs to the config and lives as long as it does, but
+ * naming the parser's type here would make this header - and every header that
+ * reaches the configuration through it - need the parser's include path. The
+ * driver's own sources are also compiled for the host by the unit tests, which
+ * is a third set of include paths: a header that only one of the three can
+ * satisfy is a header that stops the others
+ */
+typedef struct toml_table_t toml_table_t;
 
 /*
  * What the [uart] table said the port is

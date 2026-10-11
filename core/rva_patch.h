@@ -25,10 +25,10 @@
 #include "core/pe.h"
 
 /* A byte range that was written, so the caller can flush caches over it */
-typedef struct UsPatchRange_t {
+typedef struct UsRvaPatchRange_t {
     void  *addr;
     size_t bytes;
-} UsPatchRange;
+} UsRvaPatchRange;
 
 /*
  * Describes where a patch goes. The tag is only for messages
@@ -36,23 +36,23 @@ typedef struct UsPatchRange_t {
  * `value` is written little endian and truncated to `width`, which the
  * configuration loader has already checked it fits
  */
-typedef struct UsPatchSpec_t {
+typedef struct UsRvaPatchSpec_t {
     const char *target;
     uint32_t    rva;
     uint64_t    value;
     uint8_t     width;
     const char *tag;
-} UsPatchSpec;
+} UsRvaPatchSpec;
 
-typedef enum UsPatchResult_e {
-    UsPatchOk = 0,
+typedef enum UsRvaPatchResult_e {
+    UsRvaPatchOk = 0,
     /* The RVA does not name a writable place inside this image */
-    UsPatchOutOfRange,
+    UsRvaPatchOutOfRange,
     /* The width is not one of 1, 2, 4 or 8 */
-    UsPatchBadWidth,
-} UsPatchResult;
+    UsRvaPatchBadWidth,
+} UsRvaPatchResult;
 
-const char *usPatchResultName(UsPatchResult r);
+const char *usRvaPatchResultName(UsRvaPatchResult r);
 
 /*
  * Writes one patch, reporting the range that changed so the caller can make
@@ -62,6 +62,6 @@ const char *usPatchResultName(UsPatchResult r);
  * requires before code can be written at all. This function only moves bytes,
  * which is what keeps it testable on a host
  */
-UsPatchResult usPatchApply(UsImage *img, const UsPatchSpec *spec, UsPatchRange *out);
+UsRvaPatchResult usRvaPatchApply(UsImage *img, const UsRvaPatchSpec *spec, UsRvaPatchRange *out);
 
 #endif

@@ -51,6 +51,7 @@ static const char *const kSources[] = {
     "../../uefi/patch.c",
     "../../uefi/payload_place.c",
     "../../uefi/work.c",
+    "../../uefi/stage.c",
 };
 #define SOURCE_COUNT (sizeof(kSources) / sizeof(kSources[0]))
 
@@ -95,7 +96,11 @@ static int readNames(const char *path) {
     while (fgets(line, sizeof(line), f) != NULL) {
         const char *p;
 
-        if (strstr(line, "usConsoleMilestone(") == NULL) {
+        /* Two shapes say a milestone now: a call naming a stage, and the
+         * table in uefi/stage.c that spells it. Both are read, because a name
+         * reaches a machine through either */
+        if (strstr(line, "usStageMilestone(") == NULL
+            && strstr(line, "[UsStage") == NULL) {
             continue;
         }
         for (p = line; (p = strchr(p, '"')) != NULL; p++) {

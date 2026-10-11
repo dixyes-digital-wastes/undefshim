@@ -7,8 +7,8 @@
  * is open
  */
 
-#ifndef US_UART_H
-#define US_UART_H
+#ifndef US_UEFI_UART_H
+#define US_UEFI_UART_H
 
 #include "core/cfg.h"
 #include "uefi/session.h"

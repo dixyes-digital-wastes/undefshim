@@ -6,15 +6,17 @@
  * Writing bytes into a loaded image, see rva_patch.h for the contract
  */
 
+// us-build: driver
+
 #include "core/rva_patch.h"
 
-const char *usPatchResultName(UsPatchResult r) {
+const char *usRvaPatchResultName(UsRvaPatchResult r) {
     switch (r) {
-    case UsPatchOk:
+    case UsRvaPatchOk:
         return "ok";
-    case UsPatchOutOfRange:
+    case UsRvaPatchOutOfRange:
         return "address outside the image";
-    case UsPatchBadWidth:
+    case UsRvaPatchBadWidth:
         return "unsupported width";
     }
     return "unknown";
@@ -33,18 +35,18 @@ static void encodeLittleEndian(uint64_t value, uint8_t width, uint8_t *out) {
     }
 }
 
-UsPatchResult usPatchApply(UsImage *img, const UsPatchSpec *spec, UsPatchRange *out) {
+UsRvaPatchResult usRvaPatchApply(UsImage *img, const UsRvaPatchSpec *spec, UsRvaPatchRange *out) {
     uint8_t bytes[8];
     size_t available = 0;
     uint8_t *at;
 
     if (spec->width != 1 && spec->width != 2 && spec->width != 4 && spec->width != 8) {
-        return UsPatchBadWidth;
+        return UsRvaPatchBadWidth;
     }
 
     at = (uint8_t *)usImageRVASpan(img, spec->rva, &available);
     if (at == NULL || available < spec->width) {
-        return UsPatchOutOfRange;
+        return UsRvaPatchOutOfRange;
     }
 
     encodeLittleEndian(spec->value, spec->width, bytes);
@@ -56,5 +58,5 @@ UsPatchResult usPatchApply(UsImage *img, const UsPatchSpec *spec, UsPatchRange *
         out->addr = at;
         out->bytes = spec->width;
     }
-    return UsPatchOk;
+    return UsRvaPatchOk;
 }

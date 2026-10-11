@@ -26,15 +26,7 @@
 
 #include <stdint.h>
 
-/*
- * What went wrong, as a number
- *
- * The number is what a note or a script matches on, so it is part of the
- * interface and not an implementation detail. Zero is "nothing went wrong",
- * which is what the record holds on a machine that is still running
- */
-#define US_PANIC_NONE 0U
-#define US_PANIC_INJECTED 0xF000U /* a stop the configuration asked for */
+#include "common/abi.h"
 
 /*
  * The shape of the report: how wide its widest line can be, and how long it is

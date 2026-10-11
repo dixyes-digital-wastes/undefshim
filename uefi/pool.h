@@ -15,8 +15,8 @@
  * which is where it can be tested without a firmware
  */
 
-#ifndef US_POOL_ALLOC_H
-#define US_POOL_ALLOC_H
+#ifndef US_UEFI_POOL_H
+#define US_UEFI_POOL_H
 
 #include <stdbool.h>
 #include <stdint.h>

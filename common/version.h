@@ -6,6 +6,9 @@
  * Version and build identity. Single source for the banner
  */
 
+#ifndef US_VERSION_H
+#define US_VERSION_H
+
 #define US_VERSION_STRING "0.1.0"
 
 /*
@@ -13,4 +16,6 @@
  */
 #ifndef US_BUILD_ID
 #define US_BUILD_ID "unknown"
+#endif
+
 #endif

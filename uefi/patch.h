@@ -16,8 +16,8 @@
  * one, and leaves the rest pending
  */
 
-#ifndef US_PATCH_H
-#define US_PATCH_H
+#ifndef US_UEFI_PATCH_H
+#define US_UEFI_PATCH_H
 
 #include <stdint.h>
 

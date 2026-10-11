@@ -84,8 +84,8 @@ static void buildImage(void) {
 
 static void testWrites(void) {
     UsImage img;
-    UsPatchSpec spec = { 0 };
-    UsPatchRange range;
+    UsRvaPatchSpec spec = { 0 };
+    UsRvaPatchRange range;
 
     ok("image is valid", usImageInitMemory(&img, gImage, sizeof(gImage)));
 
@@ -93,7 +93,7 @@ static void testWrites(void) {
     spec.rva = SECTION_RVA;
     spec.value = 0x14000000;  /* b . */
     spec.width = 4;
-    eqU64("four byte patch result", usPatchApply(&img, &spec, &range), UsPatchOk);
+    eqU64("four byte patch result", usRvaPatchApply(&img, &spec, &range), UsRvaPatchOk);
     eqU64("four byte patch address", (uint64_t)(uintptr_t)range.addr,
           (uint64_t)(uintptr_t)(gImage + SECTION_RVA));
     eqU64("four byte patch size", range.bytes, 4);
@@ -106,29 +106,29 @@ static void testWrites(void) {
     spec.rva = SECTION_RVA;
     spec.value = 0x12;
     spec.width = 1;
-    eqU64("one byte patch", usPatchApply(&img, &spec, &range), UsPatchOk);
+    eqU64("one byte patch", usRvaPatchApply(&img, &spec, &range), UsRvaPatchOk);
     eqU64("one byte value", gImage[SECTION_RVA], 0x12);
     eqU64("one byte leaves the rest alone", gImage[SECTION_RVA + 1], 0xAA);
 
     spec.rva = SECTION_RVA + 2;
     spec.value = 0x1234;
     spec.width = 2;
-    eqU64("two byte patch", usPatchApply(&img, &spec, &range), UsPatchOk);
+    eqU64("two byte patch", usRvaPatchApply(&img, &spec, &range), UsRvaPatchOk);
     eqU64("two byte value is little endian",
           (uint64_t)(gImage[SECTION_RVA + 2] | (gImage[SECTION_RVA + 3] << 8)), 0x1234);
 
     spec.rva = SECTION_RVA + 8;
     spec.value = 0x0123456789ABCDEFULL;
     spec.width = 8;
-    eqU64("eight byte patch", usPatchApply(&img, &spec, &range), UsPatchOk);
+    eqU64("eight byte patch", usRvaPatchApply(&img, &spec, &range), UsRvaPatchOk);
     eqU64("eight byte value is little endian",
           *(uint64_t *)(gImage + SECTION_RVA + 8), 0x0123456789ABCDEFULL);
 }
 
 static void testRefusals(void) {
     UsImage img;
-    UsPatchSpec spec = { 0 };
-    UsPatchRange range;
+    UsRvaPatchSpec spec = { 0 };
+    UsRvaPatchRange range;
 
     usImageInitMemory(&img, gImage, sizeof(gImage));
 
@@ -136,29 +136,29 @@ static void testRefusals(void) {
      * guessed at */
     spec.rva = SECTION_RVA;
     spec.width = 3;
-    eqU64("three byte width is refused", usPatchApply(&img, &spec, &range), UsPatchBadWidth);
+    eqU64("three byte width is refused", usRvaPatchApply(&img, &spec, &range), UsRvaPatchBadWidth);
     spec.width = 0;
-    eqU64("zero width is refused", usPatchApply(&img, &spec, &range), UsPatchBadWidth);
+    eqU64("zero width is refused", usRvaPatchApply(&img, &spec, &range), UsRvaPatchBadWidth);
     spec.width = 16;
-    eqU64("sixteen byte width is refused", usPatchApply(&img, &spec, &range), UsPatchBadWidth);
+    eqU64("sixteen byte width is refused", usRvaPatchApply(&img, &spec, &range), UsRvaPatchBadWidth);
 
     /* Past the end of the image, including a patch that would only fit by
      * running over it */
     spec.width = 4;
     spec.rva = IMAGE_SIZE;
-    eqU64("rva past the image is refused", usPatchApply(&img, &spec, &range),
-          UsPatchOutOfRange);
+    eqU64("rva past the image is refused", usRvaPatchApply(&img, &spec, &range),
+          UsRvaPatchOutOfRange);
     spec.rva = IMAGE_SIZE - 2;
-    eqU64("rva without room for the width is refused", usPatchApply(&img, &spec, &range),
-          UsPatchOutOfRange);
+    eqU64("rva without room for the width is refused", usRvaPatchApply(&img, &spec, &range),
+          UsRvaPatchOutOfRange);
     spec.rva = 0xFFFFFFF0U;
-    eqU64("rva that overflows is refused", usPatchApply(&img, &spec, &range),
-          UsPatchOutOfRange);
+    eqU64("rva that overflows is refused", usRvaPatchApply(&img, &spec, &range),
+          UsRvaPatchOutOfRange);
 
     /* A memory view has no header area to speak of: address zero is not a
      * place an image can be written at */
     spec.rva = 0;
-    eqU64("rva zero is refused", usPatchApply(&img, &spec, &range), UsPatchOutOfRange);
+    eqU64("rva zero is refused", usRvaPatchApply(&img, &spec, &range), UsRvaPatchOutOfRange);
 }
 
 int main(void) {

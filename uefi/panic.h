@@ -17,15 +17,13 @@
  * merely slow, and the two are told apart by whether that message is there
  */
 
-#ifndef US_PANIC_H
-#define US_PANIC_H
+#ifndef US_UEFI_PANIC_H
+#define US_UEFI_PANIC_H
 
 #include <stdbool.h>
 #include <stdint.h>
 
-/* The same codes the payload uses, so a reader does not have two tables */
-#define US_PANIC_NONE 0U
-#define US_PANIC_INJECTED 0xF000U
+#include "common/abi.h"
 
 /*
  * Whether a name is the one that was asked for

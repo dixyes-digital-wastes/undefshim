@@ -12,6 +12,7 @@
 
 #include <stddef.h>
 
+#include "common/hex.h"
 #include "payload/uart.h"
 
 /* PL011 registers, as byte offsets */
@@ -53,7 +54,7 @@ void usUARTInit(uint64_t base, uint32_t kind, uint32_t width) {
     gBase = (uintptr_t)base;
     gKind = kind;
     gWidth = width == 8U ? 8U : 32U;
-    gShift = (kind == US_UART_8250 && gWidth == 32U) ? 2U : 0U;
+    gShift = (kind == US_UART_KIND_8250 && gWidth == 32U) ? 2U : 0U;
 }
 
 void usUARTPutc(char c) {
@@ -72,7 +73,7 @@ void usUARTPutc(char c) {
      * and an unbounded wait turns a report into a hang
      */
     for (spins = 0; spins < 1000000U; spins++) {
-        if (gKind == US_UART_8250) {
+        if (gKind == US_UART_KIND_8250) {
             if ((readReg(US_8250_LSR) & US_8250_LSR_THRE) != 0) {
                 break;
             }
@@ -80,7 +81,7 @@ void usUARTPutc(char c) {
             break;
         }
     }
-    writeReg(gKind == US_UART_8250 ? US_8250_THR : US_PL011_DR, (uint32_t)(uint8_t)c);
+    writeReg(gKind == US_UART_KIND_8250 ? US_8250_THR : US_PL011_DR, (uint32_t)(uint8_t)c);
 }
 
 void usUARTPuts(const char *s) {
@@ -93,22 +94,10 @@ void usUARTPuts(const char *s) {
 }
 
 void usUARTPutHex(uint64_t value) {
-    static const char kDigits[] = "0123456789abcdef";
-    char out[16];
-    int n = 0;
+    char out[US_HEX_TEXT + 1U];
 
-    usUARTPuts("0x");
-    if (value == 0) {
-        usUARTPutc('0');
-        return;
-    }
-    while (value != 0 && n < (int)sizeof(out)) {
-        out[n++] = kDigits[value & 0xFU];
-        value >>= 4;
-    }
-    while (n > 0) {
-        usUARTPutc(out[--n]);
-    }
+    usHex(out, (uint32_t)sizeof(out), value);
+    usUARTPuts(out);
 }
 
 void usUARTPutDec(uint64_t value) {

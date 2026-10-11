@@ -2,9 +2,20 @@
 
 include config.mk
 
-# A fresh id every build, so the running image can be matched to the artifact.
-# Override it to name a build: make BUILD_ID=anything
-BUILD_ID ?= $(shell head -c 6 /dev/urandom | base64 | tr -d '+/=' | tr 'A-Z' 'a-z')
+# The name the banner prints, so that a machine can be matched to the artifact
+# it is running.
+#
+# It is a fact about the sources unless it is given: it used to be a fresh
+# random draw on every make, and because it goes into the compile command line
+# that made every make rebuild driver_main.o and relink, so no two builds were
+# ever the same artifact and none of them could be recognized again. A name
+# that changes by itself also names nothing - the thing worth recording about
+# a flashed image is which commit it came from.
+#
+# Name a build with: make BUILD_ID=<what this run is>
+ifeq ($(origin BUILD_ID),undefined)
+BUILD_ID := $(shell git describe --always --dirty 2>/dev/null || echo unknown)
+endif
 
 TOML := third_party/toml-c
 UACPI := third_party/uACPI
@@ -48,10 +59,14 @@ PAYLOAD_CFLAGS := --target=aarch64-none-elf -std=gnu23 -ffreestanding \
 PAYLOAD_SRCS := $(PAYLOAD_DIR)/payload.c $(PAYLOAD_DIR)/uart.c $(PAYLOAD_DIR)/us_mem.c \
                 $(PAYLOAD_DIR)/selfmap.c $(PAYLOAD_DIR)/transfer.c $(PAYLOAD_DIR)/vamap.c \
                 $(PAYLOAD_DIR)/early.c $(PAYLOAD_DIR)/rewrite.c $(PAYLOAD_DIR)/drvhook.c \
+                core/rcpc_scan.c core/pe.c \
                 $(PAYLOAD_DIR)/fb.c $(PAYLOAD_DIR)/panic.c \
                 $(PAYLOAD_DIR)/panelface.c \
+                $(PAYLOAD_DIR)/state.c $(PAYLOAD_DIR)/probe.c \
+                $(PAYLOAD_DIR)/emulate.c $(PAYLOAD_DIR)/dispatch.c \
+                $(PAYLOAD_DIR)/account.c \
                 core/cache.c core/thunk.c \
-                core/pgtable.c core/par.c core/ldapr.c core/ldr.c core/stackgen.c core/translate.c \
+                core/pgtable.c core/par.c core/ldapr.c core/ldr.c core/translate.c \
                 core/pool.c
 PAYLOAD_ASM := $(PAYLOAD_DIR)/entry.S $(PAYLOAD_DIR)/end.S
 PAYLOAD_OBJS := $(patsubst %.c,$(PAYLOAD_BUILD)/%.o,$(notdir $(PAYLOAD_SRCS))) \
@@ -126,10 +141,15 @@ BUILD_ID_FILE := $(BUILD_DIR)/build_id
 DRIVER_SRCS := uefi/config.c uefi/patch_apply.c uefi/registry.c \
                uefi/loadimage_hook.c uefi/console.c uefi/screen.c uefi/pool.c \
                uefi/service_hook.c uefi/gmm_hook.c uefi/patch.c uefi/work.c \
-               uefi/payload_place.c uefi/arm.c uefi/rewrite.c uefi/acpi.c \
+               uefi/payload_place.c uefi/arm.c uefi/arm_transfer.c \
+               uefi/arm_vectors.c uefi/arm_payloadcfg.c \
+               uefi/patch_lists.c uefi/image_identity.c uefi/patch_report.c \
+               uefi/log.c uefi/uart_hw.c uefi/ansi.c uefi/gop.c \
+               uefi/rewrite.c uefi/acpi.c \
                uefi/vamap.c uefi/session.c uefi/uart.c uefi/uacpi_kernel.c \
-               uefi/licenses.c uefi/panic.c \
-               core/cache.c core/cfg.c core/pe.c core/scan.c core/plan.c \
+               uefi/licenses.c uefi/panic.c uefi/stage.c \
+               core/cache.c core/cfg.c core/pe.c core/rcpc_scan.c core/scan.c core/locate.c \
+               core/site.c core/plan.c \
                core/rva_patch.c core/pool.c core/patchlist.c core/patchapply.c \
                core/sha256.c core/thunk.c core/ldapr.c core/acpi.c \
                core/stackgen.c core/translate.c core/par.c \
@@ -157,7 +177,14 @@ $(BUILD_DIR)/uefi $(BUILD_DIR)/core $(BUILD_DIR)/$(TOML) $(PAYLOAD_BUILD):
 
 # The frame offsets, from the structure that defines them. The entry is
 # assembled against this, so the two halves of the payload cannot disagree.
-$(PAYLOAD_BUILD)/layout_defs.inc: tests/tools/layoutgen.c $(PAYLOAD_DIR)/payload.h | $(PAYLOAD_BUILD)
+#
+# US_HEADERS is a prerequisite because the generator reads constants that are
+# not in payload.h at all: the frame's layout comes from the structure, but
+# the stack size and the spill width come from common/layout.h through it.
+# Without this a change to either regenerates nothing, entry.S keeps the
+# window it was assembled with, and check_entry_frame.py -- which reads the
+# header -- agrees with the header rather than with the blob
+$(PAYLOAD_BUILD)/layout_defs.inc: tests/tools/layoutgen.c $(PAYLOAD_DIR)/payload.h $(US_HEADERS) | $(PAYLOAD_BUILD)
 	$(CC) -std=gnu23 -O2 -Wall -Wextra -I. $< -o $(PAYLOAD_BUILD)/layoutgen
 	$(PAYLOAD_BUILD)/layoutgen $@
 
@@ -341,7 +368,7 @@ $(DRIVER): $(DRIVER_OBJS) posix-uefi
 	@echo "built $@"
 
 # Deployment. See tests/deploy for the details.
-.PHONY: esp run demo check check-qemu check-one clean
+.PHONY: esp run demo check check-qemu check-one check-structure clean
 # The fake kernel: an ordinary UEFI application, so it can use the firmware's
 # console, built for a processor that has the instructions at issue.
 FAKE_BUILD := $(BUILD_DIR)/fake
@@ -379,11 +406,25 @@ run: esp
 
 # Host side checks: pure logic, no firmware involved, seconds to run.
 # The forks carry their own tests, so they are run from their own trees.
-check:
+check: check-structure
 	@$(MAKE) --no-print-directory -C $(POSIX_UEFI_TESTS) check
 	@$(MAKE) --no-print-directory -C $(TOML_TESTS) check
 	@$(MAKE) --no-print-directory -C tests/unit check BUILD_DIR=$(BUILD_DIR)
 	@$(MAKE) --no-print-directory -C $(TOOLS_TESTS) check CORPUS=$(CORPUS) PLAN_CORPUS=$(PLAN_CORPUS)
+
+# The shape of the tree rather than the behaviour of the code: one guard per
+# header, core and payload not reaching into the firmware, every core file
+# saying which side it is built into, every configuration key being a key the
+# parser reads, every milestone a script waits for being one the boot prints,
+# and every path the design document lists being there.
+#
+# It runs on the sources as text and needs no compiler, which is the point: it
+# is the check that can run first, and the one whose failures are otherwise
+# silent. The rules and what each is for are in the script's own header.
+.PHONY: check-structure
+check-structure:
+	@python3 tests/unit/check_structure.py $(CURDIR)
+	@python3 tests/unit/check_structure_selftest.py $(CURDIR)
 
 # Checks that boot the image. Slower, but this is the only evidence that
 # anything actually works. The Windows disk is external, so this one is

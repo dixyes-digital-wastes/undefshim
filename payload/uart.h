@@ -15,17 +15,18 @@
 
 #include <stdint.h>
 
+#include "common/abi.h"
+
 /*
  * Sets the port to write to. Everything below is silent until this is done,
  * and a base of zero means it stays silent
  *
- * The kind is 1 for a PL011 and 2 for an 8250; the width is the access size
- * that port needs. Nothing is programmed here - the driver brought the port
- * up before the kernel ran, and the handler runs on someone else's stack with
- * no business writing to a UART's control registers
+ * The kind is one of the US_UART_KIND_* values, which is a number the boot and
+ * the payload both name rather than a type either of them owns; the width is
+ * the access size that port needs. Nothing is programmed here - the driver
+ * brought the port up before the kernel ran, and the handler runs on someone
+ * else's stack with no business writing to a UART's control registers
  */
-#define US_UART_8250 2U
-
 void usUARTInit(uint64_t base, uint32_t kind, uint32_t width);
 
 void usUARTPutc(char c);

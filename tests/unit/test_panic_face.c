@@ -414,7 +414,7 @@ static void drawReport(UsSurface *surface) {
     usPenInk(&pen, US_PANIC_INK);
     usPenText(surface, &pen, " code=");
     usPenInk(&pen, US_PANIC_VALUE);
-    usPenHex(surface, &pen, US_PANIC_INJECTED);
+    usPenHex(surface, &pen, US_PANIC_CODE_INJECTED);
     usPenInk(&pen, US_PANIC_INK);
     usPenText(surface, &pen, " what=trap\n");
     for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) {

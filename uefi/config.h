@@ -15,8 +15,8 @@
  * a bootPhase concern, parsing is not
  */
 
-#ifndef US_CONFIG_H
-#define US_CONFIG_H
+#ifndef US_UEFI_CONFIG_H
+#define US_UEFI_CONFIG_H
 
 #include <uefi.h>
 

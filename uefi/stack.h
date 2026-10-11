@@ -18,8 +18,8 @@
  * exception handler, for the same reason
  */
 
-#ifndef US_STACK_H
-#define US_STACK_H
+#ifndef US_UEFI_STACK_H
+#define US_UEFI_STACK_H
 
 #include <stdint.h>
 

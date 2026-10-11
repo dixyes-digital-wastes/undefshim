@@ -12,6 +12,7 @@
  * every drawing call checks its own mapping first
  */
 
+#include "common/hex.h"
 #include "common/layout.h"
 #include "core/translate.h"
 #include "payload/fb.h"
@@ -67,19 +68,16 @@ static uint32_t widthOf(const char *s) {
 /*
  * How wide a number comes out, in characters
  *
- * The report writes them with usFBHex, which is 0x and as many digits as the
- * number needs and no more, so the width of a line is a fact about the value
- * rather than a constant. This is that rule again, kept beside the thing it
- * describes
+ * The report writes them with the same spelling every other channel uses, so
+ * the width of a line is a fact about the value rather than a constant. It is
+ * asked of the spelling itself rather than worked out again here, which is
+ * what keeps the column this sizes from disagreeing with the column that is
+ * written
  */
 static uint32_t hexWidth(uint64_t value) {
-    uint32_t digits = 1;
+    char out[US_HEX_TEXT + 1U];
 
-    while (value > 0xFU) {
-        value >>= 4U;
-        digits++;
-    }
-    return 2U + digits;
+    return (uint32_t)usHex(out, (uint32_t)sizeof(out), value);
 }
 
 /*
@@ -273,7 +271,7 @@ void usPanicCountTrap(void) {
         return;
     }
     if (bump(&cfg->panicTraps) == cfg->panicAfterTraps) {
-        usPanicHalt(US_PANIC_INJECTED, "trap", cfg->panicTraps);
+        usPanicHalt(US_PANIC_CODE_INJECTED, "trap", cfg->panicTraps);
     }
 }
 
@@ -284,6 +282,6 @@ void usPanicCountRewrite(void) {
         return;
     }
     if (bump(&cfg->panicRewrites) == cfg->panicAfterRewrites) {
-        usPanicHalt(US_PANIC_INJECTED, "rewrite", cfg->panicRewrites);
+        usPanicHalt(US_PANIC_CODE_INJECTED, "rewrite", cfg->panicRewrites);
     }
 }

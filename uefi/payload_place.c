@@ -8,19 +8,17 @@
 
 #include <uefi.h>
 
-/* Kept in step with payload/uart.h, which the driver does not include */
-#define US_PAYLOAD_UART_PL011 1U
-#define US_PAYLOAD_UART_8250 2U
-
 #include <stddef.h>
 
+#include "common/abi.h"
 #include "common/layout.h"
 #include "core/stackgen.h"
 #include "payload/payload.h"
 #include "payload_blob.h"
-#include "uefi/cache.h"
+#include "core/cache.h"
 #include "uefi/console.h"
 #include "uefi/payload_place.h"
+#include "uefi/stage.h"
 #include "uefi/session.h"
 
 /*
@@ -50,10 +48,24 @@ static void writeConfig(const UsPayloadPlace *place, const UsSession *session) {
      * payload stays silent for it
      */
     cfg->uartBase = session->uartOpen ? session->uartBase : 0U;
-    cfg->uartKind = !session->uartOpen
-                        ? 0U
-                        : (session->uartKind == UsUARTPL011 ? US_PAYLOAD_UART_PL011
-                                                            : US_PAYLOAD_UART_8250);
+    cfg->uartKind = US_UART_KIND_SILENT;
+    if (session->uartOpen) {
+        /*
+         * A switch rather than a comparison, so that a kind added to the
+         * console and not to the shared encoding is a warning here instead of
+         * a port the payload writes to with the wrong register layout
+         */
+        switch (session->uartKind) {
+        case UsUARTPL011:
+            cfg->uartKind = US_UART_KIND_PL011;
+            break;
+        case UsUART8250:
+            cfg->uartKind = US_UART_KIND_8250;
+            break;
+        case UsUARTOff:
+            break;
+        }
+    }
     cfg->uartWidth = session->uartOpen ? session->uartWidth : 32U;
     /*
      * The array's own extent, not a constant that has to be kept in step with
@@ -251,5 +263,5 @@ void usPayloadReport(const UsSession *session) {
     /* Printed last, on its own line: the deployment checks stop the machine
      * the moment they see a marker, and stopping on the payload's own output
      * would cut it in half */
-    usConsoleMilestone("M6 payload placed");
+    usStageMilestone(UsStageM6PayloadPlaced);
 }
