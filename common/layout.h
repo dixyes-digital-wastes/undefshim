@@ -442,6 +442,57 @@ typedef struct UsPoolEntry_t {
 
 } UsPoolEntry;
 
+/*
+ * One processor's share of the trap work
+ *
+ * The counters in the entry record cannot answer these questions. Every
+ * processor writes them, so at the trap rate this machine reaches they are one
+ * cache line in flight between six clusters, and the numbers then cost more
+ * than they say. One record per processor keeps the writes apart.
+ *
+ * This is instrumentation. Something outside samples it while the machine is
+ * still moving, which is the only way to tell a machine that is slow from one
+ * that has stopped.
+ */
+#define US_POOL_HOT_SLOTS 8U
+
+typedef struct UsPoolTrapCPU_t {
+    uint64_t entries;      /* exceptions this processor took */
+    uint64_t el0;          /* and how many arrived through each slot */
+    uint64_t el1h;
+    uint64_t el1t;
+    uint64_t claimed;      /* the handler carried the load out itself */
+    uint64_t handedBack;   /* and how many went to the kernel's own handler */
+    uint64_t stale;        /* the memory already held the substitute */
+    uint64_t faulted;      /* the emulated access itself faulted */
+    uint64_t firstCycle;   /* CNTVCT_EL0 at the first entry */
+    uint64_t lastCycle;    /* and at the last, so the span is known */
+    uint64_t busyCycles;   /* total time this processor spent in the handler */
+    uint64_t busyMax;      /* and the longest single entry */
+    /*
+     * Where the exceptions land. Direct mapped and overwritten in place, so a
+     * busy address keeps its slot: a loop that traps on a few instructions
+     * shows up as a few high counts, and the table cannot fill up and hide it
+     */
+    uint64_t hotAddress[US_POOL_HOT_SLOTS];
+    uint64_t hotCount[US_POOL_HOT_SLOTS];
+
+    /*
+     * What the shim saw of the one state it must not disturb
+     *
+     * sctlrEl1 is the register read at this processor's first entry, and its
+     * SPAN bit is what decides whether an exception to EL1 sets PAN at all.
+     * kernelPan counts entries whose interrupted context was in EL1 with PAN
+     * set, which nothing in the kernel ever asks for: the kernel has no write
+     * of PAN anywhere in it, so a non-zero count here is this code's doing,
+     * and the first one says where
+     */
+    uint64_t sctlrEl1;
+    uint64_t kernelPan;
+    uint64_t kernelPanELR;
+    uint64_t kernelPanSPSR;
+} UsPoolTrapCPU;
+
 typedef struct UsPool_t {
     uint32_t magic;
     /* Slots provided, which is the processor count the pool was built for.
@@ -493,6 +544,9 @@ typedef struct UsPool_t {
      * is what the entry treats as "no stack for this processor"
      */
     uint64_t stackTop[US_MAX_CPUS];
+
+    /* Per processor, so that sampling one does not need the others to stop */
+    UsPoolTrapCPU trap[US_MAX_CPUS];
 } UsPool;
 
 /* The pool header occupies whole pages, so everything after it starts aligned */

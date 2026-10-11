@@ -216,6 +216,90 @@ UsPayloadConfig *usPayloadConfig(void) {
     return &usPayloadConfigBlock;
 }
 
+/* The generic counter, used as a clock for this processor alone. Two readings
+ * bound one entry, and the difference is what that entry cost */
+static inline uint64_t usCycleCount(void) {
+    uint64_t count;
+
+    __asm__ volatile("mrs %0, cntvct_el0" : "=r"(count));
+    return count;
+}
+
+/* One processor's trap record, or NULL when there is no pool to keep it in */
+static UsPoolTrapCPU *trapAccount(int cpu) {
+    UsPayloadConfig *cfg = usPayloadConfig();
+
+    if (cfg->poolBase == 0 || cpu < 0 || cpu >= (int)US_MAX_CPUS) {
+        return NULL;
+    }
+    return &((UsPool *)(uintptr_t)cfg->poolBase)->trap[cpu];
+}
+
+/* What arrived, recorded before the handler does anything that can fault */
+static void trapAccountEnter(UsPoolTrapCPU *acc, UsFrame *frame,
+                             uint64_t cycle0) {
+    uint64_t at;
+
+    if (acc == NULL || frame == NULL) {
+        return;
+    }
+    if (acc->entries == 0) {
+        uint64_t sctlr;
+
+        __asm__ volatile("mrs %0, sctlr_el1" : "=r"(sctlr));
+        acc->firstCycle = cycle0;
+        acc->sctlrEl1 = sctlr;
+    }
+    acc->entries++;
+    switch (usSlotOfSPSR(frame->spsr)) {
+    case UsStubSlotEL0:
+        acc->el0++;
+        break;
+    case UsStubSlotEL1h:
+        acc->el1h++;
+        break;
+    default:
+        acc->el1t++;
+        break;
+    }
+    /* A kernel context with PAN set is a state nothing in the kernel asks
+     * for, so the first one is worth keeping whole */
+    if (usSlotOfSPSR(frame->spsr) != UsStubSlotEL0
+        && (frame->spsr & US_SPSR_PAN) != 0) {
+        if (acc->kernelPan == 0) {
+            acc->kernelPanELR = frame->elr;
+            acc->kernelPanSPSR = frame->spsr;
+        }
+        acc->kernelPan++;
+    }
+    /* The address decides the slot, so a loop that traps on the same few
+     * instructions overwrites nothing else and its counts climb */
+    at = (frame->elr >> 2) & (US_POOL_HOT_SLOTS - 1U);
+    if (acc->hotAddress[at] == frame->elr) {
+        acc->hotCount[at]++;
+    } else {
+        acc->hotAddress[at] = frame->elr;
+        acc->hotCount[at] = 1;
+    }
+}
+
+/* What the entry cost, on the way out */
+static void trapAccountDone(UsPoolTrapCPU *acc, uint64_t cycle0) {
+    uint64_t now;
+    uint64_t cost;
+
+    if (acc == NULL) {
+        return;
+    }
+    now = usCycleCount();
+    cost = now - cycle0;
+    acc->busyCycles += cost;
+    if (cost > acc->busyMax) {
+        acc->busyMax = cost;
+    }
+    acc->lastCycle = now;
+}
+
 void usPayloadStuck(uint64_t kind) {
     UsPayloadConfig *cfg = usPayloadConfig();
     UsPool *pool;
@@ -360,6 +444,15 @@ static bool emulateLDAPR(UsFrame *frame, int cpu) {
 
     if (replaced && !usLDARDecode(insn, &decoded)) {
         return false;
+    }
+    if (replaced) {
+        /* The substitute is in memory and this processor ran the old word:
+         * the site is covered, and this is the only path that says so */
+        UsPoolTrapCPU *acc = trapAccount(cpu);
+
+        if (acc != NULL) {
+            acc->stale++;
+        }
     }
 
     /* Rn=31 selects the interrupted stack pointer, not the zero register */
@@ -541,16 +634,20 @@ static void usStatsRecord(uint64_t va) {
 }
 
 int usPayloadHandle(UsFrame *frame) {
-    if (usPayloadConfig()->statsEnabled != 0) {
-        usStatsRecord(frame->elr);
-    }
+    uint64_t cycle0 = usCycleCount();
     UsPayloadConfig *cfg = usPayloadConfig();
+    UsPoolTrapCPU *acc;
     uint64_t vbar;
     uint32_t ec;
     int cpu;
 
+    if (cfg->statsEnabled != 0 && frame != NULL) {
+        usStatsRecord(frame->elr);
+    }
     gCurrentFrame = frame;
     cpu = currentCPU();
+    acc = trapAccount(cpu);
+    trapAccountEnter(acc, frame, cycle0);
 
     /*
      * The exception in flight, recorded before anything that can fault: a
@@ -624,6 +721,7 @@ int usPayloadHandle(UsFrame *frame) {
         if (cfg->quiet == 0) {
             usUARTPuts("payload: no-frame\n");
         }
+        trapAccountDone(acc, cycle0);
         return 0;
     }
 
@@ -655,8 +753,12 @@ int usPayloadHandle(UsFrame *frame) {
             usUARTPuts("payload: emulated\n");
         }
         /* Claimed: the entry resumes at the instruction after this one */
+        if (acc != NULL) {
+            acc->claimed++;
+        }
         usPayloadLeave(cpu);
         recordHandback(frame);
+        trapAccountDone(acc, cycle0);
         return 1;
     }
 
@@ -682,13 +784,18 @@ int usPayloadHandle(UsFrame *frame) {
             pool->entry.handbackESR = frame->esr;
             pool->entry.handbackELR = frame->elr;
         }
+        if (acc != NULL) {
+            acc->handedBack++;
+        }
         usPANEnterHandler(frame->spsr);
         usPayloadLeave(cpu);
         recordHandback(frame);
+        trapAccountDone(acc, cycle0);
         return 2;
     }
     usPayloadLeave(cpu);
     recordHandback(frame);
+    trapAccountDone(acc, cycle0);
     return 0;
 }
 
@@ -788,6 +895,12 @@ UsFrame *usPayloadFault(void) {
         /* The emulated access: the kernel's handler for the slot the
          * exception was taken through is where its instruction's fault
          * belongs, in the context it was interrupted from */
+        UsPoolTrapCPU *acc = trapAccount(cpu);
+
+        if (acc != NULL) {
+            acc->faulted++;
+            acc->handedBack++;
+        }
         if (usSlotOfSPSR(outer->spsr) == UsStubSlotEL0) {
             /* The instruction was the user's, so the fault has to read as one
              * the user took; the fault status and the direction are the same
