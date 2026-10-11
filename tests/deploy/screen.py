@@ -403,7 +403,19 @@ class RapidOCR(Engine):
 
     @classmethod
     def available(cls):
-        return importlib.util.find_spec("rapidocr_onnxruntime") is not None
+        if importlib.util.find_spec("rapidocr_onnxruntime") is None:
+            return False
+        # Installed is not the same as usable. The engine and the runtime under
+        # it are compiled, and a machine carrying a package built for another
+        # interpreter has the files and cannot use them. A check that stopped
+        # at the file would say the text can be read and then report every
+        # screen as saying nothing, which is the one answer that must never be
+        # guessed at
+        try:
+            from rapidocr_onnxruntime import RapidOCR  # noqa: F401
+        except Exception:
+            return False
+        return True
 
     @classmethod
     def read(cls, image, args):
@@ -465,10 +477,18 @@ def readText(args, ppm):
         print("screen: no such engine: %s" % args.engine, file=sys.stderr)
         return None
     if not engine.available():
-        print("screen: %s is not installed, skipping" % args.engine,
+        print("screen: %s is not installed or cannot be used here, skipping"
+              % args.engine, file=sys.stderr)
+        return None
+    try:
+        return engine.read(ppm, args)
+    except Exception as why:
+        # A reader that cannot run is not a screen that said nothing. The
+        # caller of this one stops a run when the text it wanted is missing,
+        # and only the reader's absence is a reason to stop watching instead
+        print("screen: %s could not read: %s" % (args.engine, why),
               file=sys.stderr)
         return None
-    return engine.read(ppm, args)
 
 
 # The line a bugcheck puts its reason on, and the reason. Worth reading even
