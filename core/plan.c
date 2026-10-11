@@ -140,6 +140,8 @@ void usPlanEmit(const UsPlan *plan, const UsSink *sink) {
         emitDec(sink, plan->thunk.bytes);
         emitPuts(sink, " of ");
         emitDec(sink, plan->thunk.matches);
+        emitPuts(sink, " in ");
+        emitPuts(sink, plan->thunk.section);
     } else {
         emitPuts(sink, "none");
     }

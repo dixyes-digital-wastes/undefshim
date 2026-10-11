@@ -154,6 +154,8 @@ typedef struct UsSpareSlot_t {
     uint32_t rva;      /* where the run starts */
     uint32_t bytes;    /* how much room it offers */
     size_t   matches;  /* how many runs were long enough */
+    /* The section it was found in, for the log */
+    char        section[9];
 } UsSpareSlot;
 
 /*

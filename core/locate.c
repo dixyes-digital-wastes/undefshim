@@ -8,6 +8,7 @@
 
 // us-build: driver
 
+#include <string.h>
 #include "core/locate.h"
 #include "core/thunk.h"
 
@@ -209,13 +210,33 @@ UsSpareSlot usLocateSpareSlot(UsImage *img, uint32_t minBytes) {
         uint32_t span;
         uint32_t off;
 
+
         if ((s->characteristics & US_PE_SECTION_EXECUTABLE) == 0 || s->virtualSize == 0) {
             continue;
         }
         if (s->rawSize == 0) {
             continue;
         }
-        span = s->virtualSize;
+        /*
+         * Only the part the file carries. Past the raw size the section is
+         * zeroes until something writes it, and the thing that writes it is
+         * the running kernel: a stub put there is the kernel's own data by the
+         * time the first exception arrives
+         */
+        /*
+         * Not the pageable family and not the discardable one. Their pages are
+         * not all there when this runs: what is read as zeroes is a page that
+         * has not been read in yet, and the kernel fills it from the file the
+         * moment it touches it. A stub written there is gone by the time the
+         * first exception arrives, and the slot that branches to it lands in
+         * whatever the file held. KSCP is one of those: it is where the kernel
+         * keeps its own patched code
+         */
+        if (strncmp(s->name, "PAGE", 4U) == 0 || strncmp(s->name, "INIT", 4U) == 0
+            || strncmp(s->name, "KSCP", 4U) == 0) {
+            continue;
+        }
+        span = s->rawSize < s->virtualSize ? s->rawSize : s->virtualSize;
 
         for (off = 0; off + 4 <= span;) {
             uint32_t bytes = 0;
@@ -236,6 +257,8 @@ UsSpareSlot usLocateSpareSlot(UsImage *img, uint32_t minBytes) {
                     best.found = true;
                     best.rva = s->virtualAddress + off;
                     best.bytes = bytes;
+                    memcpy(best.section, s->name, sizeof(best.section));
+                    best.section[sizeof(best.section) - 1U] = 0;
                 }
             }
             off += bytes != 0 ? bytes : 4;
