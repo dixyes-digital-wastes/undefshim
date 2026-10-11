@@ -218,6 +218,14 @@ typedef struct UsPayloadStub_t {
      * offset from the image's base, passed with the stub
      */
     uint32_t descriptorBaseRVA;
+    /*
+     * What the stub's body is encoded from, so that the handover can write it
+     * again. The image the boot wrote it into is not ours, and the kernel
+     * writes into its own sections while it boots
+     */
+    uint32_t tail0;
+    uint32_t tail1;
+    uint32_t stubSlot;
     uint32_t reserved;   /* keeps the stride a multiple of eight */
 } UsPayloadStub;
 

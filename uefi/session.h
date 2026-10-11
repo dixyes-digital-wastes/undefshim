@@ -19,6 +19,8 @@
 
 #include "core/acpi.h"
 #include "core/cfg.h"
+#include "core/thunk.h"
+#include "payload/payload.h"
 #include "uefi/console.h"
 #include "uefi/payload_place.h"
 #include "uefi/pool.h"
@@ -124,6 +126,21 @@ typedef struct UsSession_t {
      */
     uint32_t       kernelSpareRVA;
     uint32_t       kernelSpareBytes;
+
+    /*
+     * What each armed stub was written with, so it can be checked and put back
+     *
+     * An image is not ours: the loader and the kernel itself write into their
+     * own sections while they run, and a stub that a later write lands on is a
+     * slot that branches into whatever is there instead. The copy is small and
+     * the check is one pass, so it is done once more after the image has been
+     * rewritten, which is the last moment before the kernel runs
+     */
+    size_t         armedStubCount;
+    struct {
+        uint64_t address;
+        uint32_t words[US_SLOT_RUNTIME_WORDS];
+    }              armedStubs[US_PAYLOAD_MAX_STUBS];
 
     /*
      * The parsed configuration, owned here. Its patch table names stages that

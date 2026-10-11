@@ -10,6 +10,7 @@
 
 #include "core/plan.h"
 #include "uefi/arm.h"
+#include "uefi/arm_vectors.h"
 #include "uefi/console.h"
 #include "uefi/rewrite.h"
 #include "uefi/stack.h"
@@ -137,5 +138,11 @@ void usWorkCollect(UsSession *session) {
         } else {
             usStageMilestone(UsStageM7Skipped);
         }
+        /*
+         * The stubs are checked after the image has been rewritten and not
+         * before: the rewrite is a write to the same image, so anything it
+         * lands on is caught here rather than at the exception that reaches it
+         */
+        (void)usArmVerifyStubs(session);
     }
 }

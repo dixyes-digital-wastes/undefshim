@@ -38,4 +38,13 @@ bool usArmVectorTables(UsSession *session, UsImageKind kind, size_t *armed);
  */
 bool usArmDriverHookRecord(UsSession *session);
 
+/*
+ * Reads back every armed stub and writes again any that has changed since
+ *
+ * The call belongs after the last write to the image before the kernel runs.
+ * Returns true always: a stub that had to be put back is not an error, and the
+ * count is in the log
+ */
+bool usArmVerifyStubs(UsSession *session);
+
 #endif

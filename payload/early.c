@@ -90,16 +90,38 @@ static bool mapsStub(const UsPayloadStub *stub, uint64_t address) {
 static bool publishStub(UsPayloadStub *stub, uint64_t address, uint64_t target) {
     uint32_t expected = 0;
     uint32_t branch;
+    uint32_t body[US_SLOT_STUB_WORDS];
     uint32_t *words;
 
     if (!__atomic_compare_exchange_n(&stub->published, &expected, 2, false,
                                       __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
         return false;
     }
-    usEncodeBranch(stub->targetIndex * 4U, US_SLOT_STUB_WORDS * 4U, &branch);
     words = (uint32_t *)(uintptr_t)address;
+    /*
+     * The stub is written here in full, not only the word that points it at
+     * the payload
+     *
+     * What the boot wrote went into an image, and an image is not ours: the
+     * loader copies its sections and the kernel writes into them while it
+     * boots, so the body can be something else by the time the first exception
+     * arrives. A stub whose first words are not its own faults on the way in
+     * and comes back to its own slot, which is a machine that never reaches
+     * the payload at all
+     *
+     * The word that reaches the destination is the one the slot's entry ends
+     * at, so it is written last: a processor that reads the body while this
+     * runs finds the trap until the whole stub is there
+     */
+    usEncodeBranch(stub->targetIndex * 4U, US_SLOT_STUB_WORDS * 4U, &branch);
+    usEncodeSlotStub(body, target, stub->tail0, stub->tail1,
+                     (UsStubSlot)stub->stubSlot);
+    body[stub->targetIndex] = US_NOP;
+    for (uint32_t i = 0; i < US_SLOT_STUB_WORDS; i++) {
+        words[i] = body[i];
+    }
     usEncodeSlotTarget(words + US_SLOT_STUB_WORDS, target);
-    usCacheFlushRange(words + US_SLOT_STUB_WORDS, US_SLOT_TARGET_BYTES);
+    usCacheFlushRange(words, US_SLOT_RUNTIME_BYTES);
     __atomic_store_n(words + stub->targetIndex, branch, __ATOMIC_RELEASE);
     usCacheFlushRange(words + stub->targetIndex, sizeof(branch));
     __atomic_store_n(&stub->published, 1, __ATOMIC_RELEASE);

@@ -188,6 +188,11 @@ static bool armSlot(UsSession *s, const UsArmTarget *target) {
                        s->payloadPlace.baseVA + entryOffset);
     memcpy(stubAt, stub, sizeof(stub));
     usCacheFlushRange(stubAt, sizeof(stub));
+    if (s->armedStubCount < US_PAYLOAD_MAX_STUBS) {
+        memcpy(s->armedStubs[s->armedStubCount].words, stub, sizeof(stub));
+        s->armedStubs[s->armedStubCount].address = (uint64_t)(uintptr_t)stubAt;
+        s->armedStubCount++;
+    }
     cfg->stubs[cfg->stubCount++] = (UsPayloadStub){
         .address = (uint64_t)(uintptr_t)stubAt,
         .tableAddress = tableAddress,
@@ -196,6 +201,9 @@ static bool armSlot(UsSession *s, const UsArmTarget *target) {
         .addressPA = stubPA,
         .targetIndex = usSlotStubTargetIndex(stubSlot),
         .descriptorBaseRVA = target->descriptorBaseRVA,
+        .tail0 = tail0,
+        .tail1 = tail1,
+        .stubSlot = (uint32_t)stubSlot,
     };
 
     /* The slot last: until the stub is there, a branch into it would be a
@@ -207,6 +215,32 @@ static bool armSlot(UsSession *s, const UsArmTarget *target) {
            US_VALUE("%#x") " -> payload " US_VALUE("%#llx") "\n",
            target->tableRVA, (unsigned)target->slot, target->stubRVA,
            (unsigned long long)(s->payloadPlace.baseVA + entryOffset));
+    return true;
+}
+
+/*
+ * Puts back any stub a later write has landed on
+ *
+ * Every one of them is read and compared against what was written. One that
+ * differs is written again, and the count is what says whether anything does
+ * this on a given build: zero means the holes the locator chose are the
+ * image's own and stay that way
+ */
+bool usArmVerifyStubs(UsSession *s) {
+    size_t repaired = 0;
+
+    for (size_t i = 0; i < s->armedStubCount; i++) {
+        uint32_t *at = (uint32_t *)(uintptr_t)s->armedStubs[i].address;
+
+        if (memcmp(at, s->armedStubs[i].words, sizeof(s->armedStubs[i].words)) == 0) {
+            continue;
+        }
+        memcpy(at, s->armedStubs[i].words, sizeof(s->armedStubs[i].words));
+        usCacheFlushRange(at, sizeof(s->armedStubs[i].words));
+        repaired++;
+    }
+    usLogI("arm", "stubs " US_VALUE("%u") ", rewritten " US_VALUE("%u") "\n",
+           (unsigned)s->armedStubCount, (unsigned)repaired);
     return true;
 }
 
