@@ -8,7 +8,7 @@
 
 #include <uefi.h>
 
-#include "uefi/cache.h"
+#include "core/cache.h"
 #include "uefi/service_hook.h"
 
 /*

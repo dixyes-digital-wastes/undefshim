@@ -4,6 +4,8 @@
  * Copyright (C) 2026 Yun Dou <dixyes@gmail.com>
  */
 
+// us-build: driver
+
 #include "core/stackgen.h"
 
 #include <stddef.h>

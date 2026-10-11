@@ -21,6 +21,8 @@
  * ones, and nothing about them looks wrong
  */
 
+// us-build: payload
+
 #include "core/ldr.h"
 
 /* --- LOADER_PARAMETER_BLOCK ------------------------------------------------- */

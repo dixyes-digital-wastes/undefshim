@@ -10,6 +10,8 @@
  * instructions behind
  */
 
+// us-build: both
+
 #include "core/cache.h"
 
 static uint32_t dataCacheLineSize(void) {

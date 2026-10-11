@@ -11,6 +11,8 @@
  * opcodes would go wrong
  */
 
+// us-build: both
+
 #include <stddef.h>
 
 #include "core/ldapr.h"

@@ -6,6 +6,8 @@
  * Image-local branches and exception stubs
  */
 
+// us-build: both
+
 #include "core/thunk.h"
 
 #define US_MOVZ_OPCODE 0xD2800000U

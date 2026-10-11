@@ -6,6 +6,8 @@
  * Building and printing the plan, see plan.h for the contract
  */
 
+// us-build: driver
+
 #include "core/plan.h"
 
 void usPlanInit(UsPlan *plan) {

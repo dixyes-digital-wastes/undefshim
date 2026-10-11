@@ -20,6 +20,8 @@
  * the same thing there
  */
 
+// us-build: both
+
 #include "core/translate.h"
 
 #include "common/layout.h"

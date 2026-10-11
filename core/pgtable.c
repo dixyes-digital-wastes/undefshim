@@ -10,6 +10,8 @@
  * makes finding a descriptor a computation rather than a search
  */
 
+// us-build: payload
+
 #include "core/pgtable.h"
 
 /* A block descriptor at L1 covers 1GB, at L2 2MB, in 4KB granule */

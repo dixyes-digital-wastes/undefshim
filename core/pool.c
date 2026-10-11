@@ -6,6 +6,8 @@
  * Laying out the runtime pool, see pool.h for why this is separate
  */
 
+// us-build: both
+
 #include "core/pool.h"
 
 /*

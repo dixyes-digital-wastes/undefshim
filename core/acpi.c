@@ -13,6 +13,8 @@
  * compiler is free to pad is how a reader ends up one byte out
  */
 
+// us-build: driver
+
 #include "core/acpi.h"
 
 /* --- little endian reads, because the tables are not aligned ------------------ */

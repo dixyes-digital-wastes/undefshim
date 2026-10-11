@@ -6,6 +6,8 @@
  * Decoding a translation result, see par.h
  */
 
+// us-build: both
+
 #include "core/par.h"
 
 /*
