@@ -171,7 +171,8 @@ static uint32_t runBytes(const Token *token) {
  * hexadecimal digits, hyphens between the groups, then another hyphen and the
  * age in decimal. All of that is one token, because that is how it is
  * written; the bytes keep the order they are written in, unlike a site's
- * fields
+ * fields, and both orders a uuid is written in stand for the same build once
+ * usPatchGUIDMatches() has looked at them
  */
 static bool readIdentity(const Token *token, uint8_t *out, uint32_t bytes,
                          uint32_t *outAge) {
@@ -425,4 +426,25 @@ void usPatchWrite(const UsPatchSite *site, uint8_t *memory) {
     for (uint32_t i = 0; i < site->width; i++) {
         memory[i] = site->replace[i];
     }
+}
+
+bool usPatchGUIDMatches(const uint8_t *written, const uint8_t *record) {
+    /* The three fields that are numbers, in the order that turns one spelling
+     * into the other: the eight bytes of the byte string follow them as they
+     * are */
+    static const uint8_t turnRound[16] = {
+        3U, 2U, 1U, 0U, 5U, 4U, 7U, 6U, 8U, 9U, 10U, 11U, 12U, 13U, 14U, 15U,
+    };
+    bool asWritten = true;
+    bool asRecorded = true;
+
+    for (uint32_t i = 0; i < 16U; i++) {
+        if (written[i] != record[i]) {
+            asWritten = false;
+        }
+        if (written[turnRound[i]] != record[i]) {
+            asRecorded = false;
+        }
+    }
+    return asWritten || asRecorded;
 }

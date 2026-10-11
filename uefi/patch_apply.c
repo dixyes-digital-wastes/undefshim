@@ -126,6 +126,125 @@ static bool imageIdentity(UsImage *image, UsPatchIdentity *out) {
     return false;
 }
 
+/*
+ * A uuid as a debugger prints it, which is how a list and a symbol path both
+ * write it: the sixteen bytes with hyphens after the fourth, sixth, eighth and
+ * tenth, in the order the caller hands them over
+ */
+static void formatGUID(const uint8_t *bytes, char out[16U * 2U + 4U + 1U]) {
+    static const char digits[] = "0123456789abcdef";
+    uint32_t at = 0;
+
+    for (uint32_t i = 0; i < 16U; i++) {
+        if (i == 4U || i == 6U || i == 8U || i == 10U) {
+            out[at++] = '-';
+        }
+        out[at++] = digits[bytes[i] >> 4];
+        out[at++] = digits[bytes[i] & 0xfU];
+    }
+    out[at] = '\0';
+}
+
+/* The first three fields of a uuid are numbers: the record holds them least
+ * significant byte first, and everything that prints one writes them the other
+ * way. The eight bytes after them are a byte string and do not move */
+static void guidTurnedRound(const uint8_t *record, uint8_t out[16]) {
+    static const uint8_t turnRound[16] = {
+        3U, 2U, 1U, 0U, 5U, 4U, 7U, 6U, 8U, 9U, 10U, 11U, 12U, 13U, 14U, 15U,
+    };
+
+    for (uint32_t i = 0; i < 16U; i++) {
+        out[i] = record[turnRound[i]];
+    }
+}
+
+static void formatHash(const uint8_t *bytes, char out[32U * 2U + 1U]) {
+    static const char digits[] = "0123456789abcdef";
+
+    for (uint32_t i = 0; i < 32U; i++) {
+        out[i * 2U] = digits[bytes[i] >> 4];
+        out[i * 2U + 1U] = digits[bytes[i] & 0xfU];
+    }
+    out[32U * 2U] = '\0';
+}
+
+/*
+ * Why a list was refused. What a reader needs here is what the machine is,
+ * said the way the list says what it is for: the build's uuid in both
+ * spellings, because a debugger prints one of them and the image's own record
+ * holds the other, and a uuid that looks the same in both is exactly the
+ * mistake this report exists to make visible
+ */
+static void reportRefusal(const char *name, const UsPatchFile *file,
+                          const UsPatchMatchers *matchers, const UsPatchStats *stats) {
+    char hex[32U * 2U + 1U];
+    char guid[16U * 2U + 4U + 1U];
+    char turned[16U * 2U + 4U + 1U];
+    uint8_t turnedBytes[16];
+
+    switch (stats->mismatch) {
+    case UsPatchMismatchName: {
+        /* The name in the list is a run of the file's own text, not a
+         * terminated string, and it is short by construction */
+        char target[16];
+        uint32_t bytes = file->targetLength;
+
+        if (bytes > sizeof(target) - 1U) {
+            bytes = sizeof(target) - 1U;
+        }
+        memcpy(target, file->target, bytes);
+        target[bytes] = '\0';
+        usLogW("patch", "%s names %s, this image is %s\n", name, target,
+               matchers->imageName);
+        return;
+    }
+    case UsPatchMismatchDigest:
+        formatHash(matchers->digest, hex);
+        usLogW("patch", "%s is for another build: text sha256\n", name);
+        usLogI("patch", "  image " US_VALUE("%s") "\n", hex);
+        return;
+    case UsPatchMismatchIdentity:
+        formatGUID(file->pdbGUID, guid);
+        usLogW("patch", "%s is for another build: pdb\n", name);
+        usLogI("patch", "  the list asks for " US_VALUE("%s") "-" US_VALUE("%u") "\n",
+               guid, (unsigned)file->pdbAge);
+        guidTurnedRound(matchers->identity->guid, turnedBytes);
+        formatGUID(matchers->identity->guid, guid);
+        formatGUID(turnedBytes, turned);
+        usLogI("patch", "  this image is " US_VALUE("%s") "-" US_VALUE("%u")
+               ", which a debugger writes " US_VALUE("%s") "-" US_VALUE("%u") "\n",
+               guid, (unsigned)matchers->identity->age,
+               turned, (unsigned)matchers->identity->age);
+        return;
+    case UsPatchMismatchNone:
+    default:
+        break;
+    }
+    if (file->hasPDBIdentity && matchers->identity == NULL) {
+        usLogW("patch", "%s asks for a build by its program database, and this "
+               "image states none\n", name);
+        return;
+    }
+    usLogW("patch", "%s is not for this image\n", name);
+}
+
+/*
+ * The site a list could not use, at the level the count is worth reading: one
+ * address is what tells a list written for another build from one the machine
+ * has already had applied
+ */
+static void reportSites(const UsPatchStats *stats) {
+    if (stats->refused != 0U) {
+        usLogI("patch", "  first of them " US_VALUE("%#x")
+               ", the bytes there are not the ones the list names\n",
+               (unsigned)stats->firstRefused);
+    }
+    if (stats->outOfRange != 0U) {
+        usLogI("patch", "  first outside the image " US_VALUE("%#x") "\n",
+               (unsigned)stats->firstOutOfRange);
+    }
+}
+
 static void applyOne(UsImage *image, const char *name, const char *text,
                      size_t length) {
     UsPatchSite *sites;
@@ -176,8 +295,7 @@ static void applyOne(UsImage *image, const char *name, const char *text,
                                                     (uint8_t *)(uintptr_t)image->base,
                                                     image->sizeOfImage, &stats);
     if (result != UsPatchApplied) {
-        usLogW("patch", "%s is for another %s\n", name,
-               result == UsPatchWrongBuild ? "build" : "image");
+        reportRefusal(name, &file, &matchers, &stats);
         BS->FreePool(sites);
         return;
     }
@@ -185,6 +303,7 @@ static void applyOne(UsImage *image, const char *name, const char *text,
            " out of range " US_VALUE("%u") "\n",
            name, (unsigned)stats.applied, (unsigned)stats.refused,
            (unsigned)stats.outOfRange);
+    reportSites(&stats);
     BS->FreePool(sites);
 }
 
@@ -311,22 +430,19 @@ void usImageReportBuild(UsImage *image) {
         usLogV("image", "text sha256 %s\n", hex);
     }
     if (imageIdentity(image, &identity)) {
-        /* Written the way a debugger writes it: the sixteen bytes are in the
-         * order the record holds them, which is not the order a GUID is
-         * usually spelled in, and the age follows the same way it does there.
-         * This is the string a list carries, so it has to match it */
+        /* Both spellings of the build: the bytes as the record holds them,
+         * which is what the image's own file states and what a list written
+         * from it carries, and the same value as a debugger writes it, which
+         * is what a symbol path shows and what a person is likely to copy */
         char guid[16U * 2U + 4U + 1U];
-        uint32_t at = 0;
+        char turned[16U * 2U + 4U + 1U];
+        uint8_t turnedBytes[16];
 
-        for (uint32_t i = 0; i < 16U; i++) {
-            if (i == 4U || i == 6U || i == 8U || i == 10U) {
-                guid[at++] = '-';
-            }
-            guid[at++] = digits[identity.guid[i] >> 4];
-            guid[at++] = digits[identity.guid[i] & 0xfU];
-        }
-        guid[at] = '\0';
-        usLogV("image", "pdb %s-" US_VALUE("%u") "\n", guid, (unsigned)identity.age);
+        formatGUID(identity.guid, guid);
+        guidTurnedRound(identity.guid, turnedBytes);
+        formatGUID(turnedBytes, turned);
+        usLogV("image", "pdb %s-" US_VALUE("%u") ", written %s-" US_VALUE("%u") "\n",
+               guid, (unsigned)identity.age, turned, (unsigned)identity.age);
     }
 }
 
@@ -388,22 +504,27 @@ void usPatchApplyLists(UsSession *session, UsImage *image) {
         efi_file_handle_t *file = NULL;
         char *text = NULL;
         size_t length = 0;
+        char name[64];
+        size_t k = 0;
 
+        for (; info.FileName[k] != 0 && k + 1U < sizeof(name); k++) {
+            name[k] = (char)info.FileName[k];
+        }
+        name[k] = '\0';
         if (EFI_ERROR(dir->Open(dir, &file, info.FileName, EFI_FILE_MODE_READ, 0))
             || file == NULL) {
+            usLogW("patch", "cannot open %s\n", name);
             continue;
         }
+        /* A file that cannot be read at all is a machine to look at, not a
+         * list to apply: say which one it was */
         if (readFile(file, &text, &length) && text != NULL) {
-            char name[64];
-            size_t k = 0;
-
-            for (; info.FileName[k] != 0 && k + 1U < sizeof(name); k++) {
-                name[k] = (char)info.FileName[k];
-            }
-            name[k] = '\0';
             files++;
             applyOne(image, name, text, length);
             BS->FreePool(text);
+        } else {
+            usLogW("patch", "cannot read %s, or it is larger than "
+                   US_VALUE("%u") " bytes\n", name, (unsigned)US_PATCH_FILE_MAX_BYTES);
         }
         file->Close(file);
     }

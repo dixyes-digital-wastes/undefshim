@@ -64,7 +64,7 @@ test_screen: test_screen.c $(ROOT)/uefi/screen.c $(ROOT)/uefi/screen.h \
 
 test_patchlist: test_patchlist.c $(ROOT)/core/patchlist.c $(ROOT)/core/patchapply.c \
                 $(ROOT)/core/sha256.c
-	$(CC) -std=gnu23 -O2 -Wall -Wextra -I$(ROOT) $^ -o $@
+	$(CC) -std=gnu23 -O2 -Wall -Wextra -I$(ROOT) -DUS_ROOT='"$(ROOT)"' $^ -o $@
 
 test_ldr: test_ldr.c $(ROOT)/core/ldr.c
 	$(CC) -std=gnu23 -O2 -Wall -Wextra -I$(ROOT) $^ -o $@

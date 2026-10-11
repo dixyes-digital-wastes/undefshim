@@ -85,7 +85,13 @@ def functions(data, sectionsByName, directories, textRva, textBytes):
 
 
 def identityFor(data, byName, directories):
-    """The program database's GUID and age, as the image itself states them."""
+    """The program database's GUID and age, as the image itself states them.
+
+    The record keeps the first three fields least significant byte first, and
+    this prints them the conventional way round instead, which is what a
+    debugger, llvm-pdbutil and the symbol server all print.
+    The runtime takes either spelling, so a list written by hand from any of
+    those still matches."""
     debug = directories[6]
     if debug[0] == 0:
         return None
@@ -108,8 +114,10 @@ def identityFor(data, byName, directories):
             continue
         guid = record[4:20]
         age = struct.unpack_from("<I", record, 20)[0]
-        return "%s-%s-%s-%s-%s-%d" % (guid[0:4].hex(), guid[4:6].hex(), guid[6:8].hex(),
-                                      guid[8:10].hex(), guid[10:16].hex(), age)
+        return "%08X-%04X-%04X-%s-%s-%d" % (
+            struct.unpack_from("<I", guid, 0)[0], struct.unpack_from("<H", guid, 4)[0],
+            struct.unpack_from("<H", guid, 6)[0], guid[8:10].hex().upper(),
+            guid[10:16].hex().upper(), age)
     return None
 
 

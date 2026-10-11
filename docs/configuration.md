@@ -94,9 +94,56 @@ This is per build. A value from another build is checked against the hardware be
 |---|---|---|
 | `dir` | `"usPatch"` | Directory of patch list files, relative to the volume `us.toml` was read from. An empty string turns the feature off. |
 
-Each `.txt` in the directory is a list of places to write bytes, with the bytes already there, so a file that does not match its image is refused rather than applied. `scripts/enumerate_sites.py` writes one from an image. The lists are not kept in the project tree.
+The driver reads every file in that directory as a list, and applies it to the kernel image. A list names the build it applies to. The driver refuses a list that names another build, writes nothing, and says so in the serial log. So one directory can hold lists for several builds, and each boot applies the list for the build it runs. The driver skips a subdirectory.
 
-The volume root is refused as a directory.
+The driver refuses the volume root as a directory. It also refuses a file larger than 512 kB as a list.
+
+### The list format
+
+```text
+USPATCHV1
+peFile ntoskrnl                                   # optional
+textSHA256Hash 3f2a...c9                          # optional
+pdbUUID 1713AA50-9114-C4C6-99D3-46F086029846-1    # optional
+0x711e64 2a0003f3d63f01e0 2a0003f352800000        # address, bytes there, bytes to write
+```
+
+`USPATCHV1` must be the first token. A `#` starts a comment that runs to the end of the line. Whitespace and comments may stand between any two tokens. So the parser reads the grammar, and not the shape of the lines.
+
+Each of the three matchers is optional, and each may appear once. Every matcher in a list must agree with the image before the driver writes one site. The driver refuses the whole list when it carries no matcher, or two copies of one.
+
+| Matcher | What the driver compares |
+|---|---|
+| `peFile` | The image's name, without case and without the extension, so `ntoskrnl` and `NTOSKRNL.EXE` are the same image |
+| `textSHA256Hash` | The SHA-256 of the image's `.text`, with the bytes a relocation writes left out. The loader writes those, so they differ from boot to boot. 64 hexadecimal digits |
+| `pdbUUID` | The program database's GUID and age, as the image's own CodeView record states them. The age follows the last field, after a hyphen |
+
+`pdbUUID` takes the GUID in either of two orders, and both name the same build. Debuggers write `1713AA50-9114-C4C6-99D3-46F086029846`, and so do `llvm-pdbutil` and the symbol server. The image's own record holds the same sixteen bytes in the other order, `50aa1317-1491-c6c4-99d3-46f086029846`. The list must state the age in that record. That age is not always the age of the file the symbol server serves.
+
+A site is an RVA, then two or three runs of hexadecimal digits. The runs are the bytes that have to be there, the bytes to write, and an optional mask. A field is one to sixteen bytes, written in pairs of digits, upper or lower case.
+
+The digits of a field are a value, so the bytes land in reverse. For example, `2a0003f3d63f01e0` at `0x711e64` means the eight bytes `e0 01 3f d6 f3 03 00 2a` there. Those bytes are `blr x15`, and then `mov w19, w0`.
+
+A mask bit of zero means "do not care about this bit". With three fields the branch is this. The bytes at the address, masked, have to equal the first field, masked. Then the driver writes the second field. The driver leaves out a line whose fields cannot describe a write, and counts it. That is not a reason to refuse the file.
+
+The driver writes nothing for a site whose bytes differ from the list. That is what makes a stale address harmless. It is also why a list can name a site in a section other than `.text`, without the driver having to know which section.
+
+After each list the log carries one line, and one more line for each kind of site it could not use:
+
+```text
+patch: no-ci-break-24h2.txt applied 2 refused 0 out of range 0
+patch:   first of them 0x8f25a0, the bytes there are not the ones the list names
+```
+
+When the driver refuses a list, it says why, and names the build it found:
+
+```text
+patch: no-ci-break-24h2.txt is for another build: pdb
+patch:   the list asks for 1713aa50-9114-c4c6-99d3-46f086029846-1
+patch:   this image is b5833c9b-5780-715e-9d55-92619e29c053-1, which a debugger writes 9B3C83B5-8057-5E71-9D55-92619E29C053-1
+```
+
+`scripts/enumerate_sites.py` writes a list of the RCpc loads in an image. **No list is kept in the project tree.** The directory a list lives in ignores every file in it, because a list belongs to the run that made it and names one build. Two lists used during development are `no-ci-break-<build>.txt`, which quiets both code integrity front ends, and `no-ci-page-<build>.txt`, which quiets only the per-page one. Neither is in the tree. Put at most one list for a given site in the directory. A second list that names the same site sees the bytes the first one wrote, and leaves the site alone.
 
 ## `[debug]`
 

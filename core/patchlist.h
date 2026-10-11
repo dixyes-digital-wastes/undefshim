@@ -32,6 +32,11 @@
  * and the hash) or, better, for one that has (the uuid, which is the same in
  * the file and in memory). A file with none of them, or with two copies of
  * one, is refused whole: there would be nothing to check it against
+ *
+ * The uuid is one value with two spellings and both are taken, because both
+ * are in use: a debugger prints the symbol path of a kernel from the first
+ * spelling and the image's own record holds the second. See
+ * usPatchGUIDMatches() for which bytes differ
  */
 #ifndef US_PATCHLIST_H
 #define US_PATCHLIST_H
@@ -70,7 +75,9 @@ typedef struct {
     bool          hasHash;
     /* The build as the program database states it: the pair the image's own
      * CodeView record carries. Nothing relocates those bytes and the loader
-     * does not patch them, so they are the same in the file and in memory */
+     * does not patch them, so they are the same in the file and in memory.
+     * The bytes are kept in the order the line spells them, which is one of
+     * the two spellings usPatchGUIDMatches() accepts */
     uint8_t       pdbGUID[16];
     uint32_t      pdbAge;
     bool          hasPDBIdentity;
@@ -91,5 +98,21 @@ bool usPatchMatches(const UsPatchSite *site, const uint8_t *memory);
 
 /* Put the replacement there */
 void usPatchWrite(const UsPatchSite *site, uint8_t *memory);
+
+/*
+ * Is the uuid a list spells the build an image states? The first two arguments
+ * are the same sixteen bytes, one as a line wrote them and one as the image's
+ * CodeView record holds them
+ *
+ * The first three fields of a uuid are numbers, and a number is written with
+ * its most significant digit first while the record keeps its least
+ * significant byte first. So 1713AA50-9114-C4C6-99D3-46F086029846, which is
+ * how a debugger prints a kernel's symbol path, is 50aa1317-1491-c6c4-99d3-
+ * 46f086029846 in the record. The last eight bytes are a byte string and are
+ * the same either way. Both spellings name one build, so a list matches when
+ * it writes either of them: one a person copied from a debugger, and one
+ * scripts/enumerate_sites.py prints from the record itself
+ */
+bool usPatchGUIDMatches(const uint8_t *written, const uint8_t *record);
 
 #endif

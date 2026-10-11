@@ -42,15 +42,6 @@ bool usPatchTargetMatches(const UsPatchFile *file, const char *imageName) {
     return stemEquals(file->target, file->targetLength, imageName);
 }
 
-static bool memcmpBytes(const uint8_t *left, const uint8_t *right, uint32_t bytes) {
-    for (uint32_t i = 0; i < bytes; i++) {
-        if (left[i] != right[i]) {
-            return true;
-        }
-    }
-    return false;
-}
-
 static bool digestMatches(const UsPatchFile *file, const uint8_t *digest) {
     if (digest == NULL) {
         return false;
@@ -68,6 +59,7 @@ UsPatchApplyResult usPatchApplyMatched(const UsPatchFile *file, const UsPatchSit
                                        uint8_t *text, uint32_t textBytes,
                                        UsPatchStats *stats) {
     stats->files++;
+    stats->mismatch = UsPatchMismatchNone;
 
     /* Whichever matchers the file carries have to agree; the ones it does not
      * carry are not asked about, which is what lets one format serve kernels
@@ -78,14 +70,18 @@ UsPatchApplyResult usPatchApplyMatched(const UsPatchFile *file, const UsPatchSit
         }
         if (!usPatchTargetMatches(file, matchers->imageName)) {
             stats->wrongTarget++;
+            stats->mismatch = UsPatchMismatchName;
             return UsPatchNotThisImage;
         }
     }
     if (file->hasHash) {
-        if (matchers == NULL || !digestMatches(file, matchers->digest)) {
+        if (matchers == NULL || matchers->digest == NULL) {
+            return UsPatchUnverifiable;
+        }
+        if (!digestMatches(file, matchers->digest)) {
             stats->wrongBuild++;
-            return matchers == NULL || matchers->digest == NULL ? UsPatchUnverifiable
-                                                                : UsPatchWrongBuild;
+            stats->mismatch = UsPatchMismatchDigest;
+            return UsPatchWrongBuild;
         }
     }
     if (file->hasPDBIdentity) {
@@ -93,8 +89,9 @@ UsPatchApplyResult usPatchApplyMatched(const UsPatchFile *file, const UsPatchSit
             return UsPatchUnverifiable;
         }
         if (matchers->identity->age != file->pdbAge
-            || memcmpBytes(matchers->identity->guid, file->pdbGUID, 16U)) {
+            || !usPatchGUIDMatches(file->pdbGUID, matchers->identity->guid)) {
             stats->wrongBuild++;
+            stats->mismatch = UsPatchMismatchIdentity;
             return UsPatchWrongBuild;
         }
     }
@@ -110,10 +107,18 @@ UsPatchApplyResult usPatchApplyMatched(const UsPatchFile *file, const UsPatchSit
 
         if (width == 0U || site->rva < textRVA || offset > textBytes
             || width > textBytes - offset) {
+            if (stats->outOfRange == 0U) {
+                stats->firstOutOfRange = site->rva;
+            }
             stats->outOfRange++;
             continue;
         }
         if (!usPatchMatches(site, text + offset)) {
+            /* Nothing is written for a site whose bytes are not what the list
+             * says, which is what keeps a stale address harmless */
+            if (stats->refused == 0U) {
+                stats->firstRefused = site->rva;
+            }
             stats->refused++;
             continue;
         }

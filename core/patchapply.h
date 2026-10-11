@@ -26,6 +26,18 @@ typedef enum {
     UsPatchUnverifiable,   /* it carries a matcher the caller cannot answer */
 } UsPatchApplyResult;
 
+/*
+ * Which matcher said no. A list that is not applied is the one thing an
+ * operator has to be able to read off the log, and "another build" on its own
+ * does not say which of the three asked and what the answer was
+ */
+typedef enum {
+    UsPatchMismatchNone = 0,
+    UsPatchMismatchName,      /* the image's name is not the one the list names */
+    UsPatchMismatchDigest,    /* the text's digest is another build's */
+    UsPatchMismatchIdentity,  /* the program database's uuid and age are another build's */
+} UsPatchMismatch;
+
 /* The build as the program database states it: what the image's own CodeView
  * record holds */
 typedef struct {
@@ -52,6 +64,11 @@ typedef struct {
     uint32_t outOfRange;   /* sites whose bytes are not all in the text */
     uint32_t wrongTarget;
     uint32_t wrongBuild;
+    UsPatchMismatch mismatch;        /* set when a matcher refused the list */
+    /* The first site of each kind above, meaningful only while its count is
+     * not zero: one address is what tells a stale list from a wrong one */
+    uint32_t firstRefused;
+    uint32_t firstOutOfRange;
 } UsPatchStats;
 
 /*
