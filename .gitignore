@@ -37,6 +37,13 @@ tests/deploy/venv/
 # Harness state, not part of the project.
 .dsh/
 
+# Serial captures from serial_tcp.py and serial_ntoseye.py. A boot's worth of
+# them is large, and the crate is the project.
+kd-*.log
+*.sock
+*.sock.in
+*.sock.out
+
 # The demo programs are built here, but what is kept is their source.
 tests/demo/*.exe
 tests/demo/*.lib
